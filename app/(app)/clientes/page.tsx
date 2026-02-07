@@ -122,14 +122,14 @@ export default function CRMCompacto() {
 
   // Função auxiliar para status (baseado no total gasto)
   const getStatus = (cliente: Cliente) => {
-    if (cliente.totalGasto > 1000) return "VIP";
+    if (cliente.totalGasto > 1000) return "Indicação";
     if (cliente.totalGasto > 0) return "Regular";
     return "Novo";
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "VIP": return "bg-purple-100 text-purple-700 border-purple-200";
+      case "Indicação": return "bg-purple-100 text-purple-700 border-purple-200";
       case "Novo": return "bg-blue-100 text-blue-700 border-blue-200";
       default: return "bg-gray-100 text-gray-700 border-gray-200";
     }

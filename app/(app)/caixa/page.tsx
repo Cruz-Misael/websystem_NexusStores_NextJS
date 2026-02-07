@@ -44,6 +44,11 @@ export default function CaixaPDVPro() {
   const desconto = 0;
   const totalFinal = subtotal - desconto;
 
+  // Adicione após os outros estados
+   const [mostrarModalConsignado, setMostrarModalConsignado] = useState(false);
+   const [dataPrevistaPagamento, setDataPrevistaPagamento] = useState("");
+   const [observacaoConsignado, setObservacaoConsignado] = useState("");
+
   // Formatação
   const money = (val: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val);
 
@@ -231,47 +236,232 @@ export default function CaixaPDVPro() {
                </div>
             </div>
 
-            {/* Grid de Pagamento */}
-            <div className="shrink-0">
-               <label className="text-[10px] font-bold text-zinc-400 uppercase mb-2 block">Método de Pagamento</label>
-               <div className="grid grid-cols-2 gap-2">
-                  {[
-                     {id: 'credito', icon: CreditCard, label: 'Crédito', key: 'F6'},
-                     {id: 'debito', icon: CreditCard, label: 'Débito', key: 'F7'},
-                     {id: 'pix', icon: QrCode, label: 'Pix', key: 'F8'},
-                     {id: 'dinheiro', icon: Banknote, label: 'Dinheiro', key: 'F9'},
-                  ].map(metodo => (
-                     <button
-                        key={metodo.id}
-                        onClick={() => setPagamentoAtivo(metodo.id)}
-                        className={`relative flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${
-                           pagamentoAtivo === metodo.id 
-                           ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]' 
-                           : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
-                        }`}
-                     >
-                        <metodo.icon size={20} className="mb-1.5" />
-                        <span className="text-xs font-medium">{metodo.label}</span>
-                        <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${pagamentoAtivo === metodo.id ? 'text-zinc-400' : 'text-zinc-300'}`}>
-                           {metodo.key}
-                        </span>
-                     </button>
-                  ))}
+            {/* Adicione isso após o resumo financeiro, antes do grid de pagamento */}
+            {pagamentoAtivo === 'consignado' && (
+            <div className="mb-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+               <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                  <ShoppingBag size={16} className="text-orange-600" />
+                  <span className="text-sm font-medium text-orange-700">Venda Consignada</span>
+                  </div>
+                  <button 
+                  onClick={() => setMostrarModalConsignado(true)}
+                  className="text-xs text-orange-600 hover:text-orange-700 font-medium hover:underline"
+                  >
+                  Editar
+                  </button>
+               </div>
+               {dataPrevistaPagamento && (
+                  <div className="mt-2 text-xs text-orange-600">
+                  <p>Pagamento previsto: <strong>{new Date(dataPrevistaPagamento).toLocaleDateString('pt-BR')}</strong></p>
+                  {observacaoConsignado && (
+                     <p className="mt-1 truncate" title={observacaoConsignado}>
+                        Obs: {observacaoConsignado}
+                     </p>
+                  )}
+                  </div>
+               )}
+            </div>
+            )}
+            
+{/* Grid de Pagamento */}
+<div className="shrink-0">
+  <label className="text-[10px] font-bold text-zinc-400 uppercase mb-2 block">Método de Pagamento</label>
+  <div className="grid grid-cols-2 gap-2">
+    {[
+      {id: 'credito', icon: CreditCard, label: 'Crédito', key: 'F6'},
+      {id: 'debito', icon: CreditCard, label: 'Débito', key: 'F7'},
+      {id: 'pix', icon: QrCode, label: 'Pix', key: 'F8'},
+      {id: 'dinheiro', icon: Banknote, label: 'Dinheiro', key: 'F9'},
+      {id: 'consignado', icon: ShoppingBag, label: 'Consignado', key: 'F10', cor: 'orange'},
+    ].map(metodo => (
+      <button
+        key={metodo.id}
+        onClick={() => {
+          if (metodo.id === 'consignado') {
+            setMostrarModalConsignado(true);
+            setPagamentoAtivo('consignado');
+          } else {
+            setPagamentoAtivo(metodo.id);
+          }
+        }}
+        className={`relative flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${
+          pagamentoAtivo === metodo.id 
+          ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]' 
+          : metodo.id === 'consignado'
+            ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
+            : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+        }`}
+      >
+        <metodo.icon size={20} className="mb-1.5" />
+        <span className="text-xs font-medium">{metodo.label}</span>
+        {metodo.id === 'consignado' && pagamentoAtivo === 'consignado' && (
+          <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full border-2 border-white"></div>
+        )}
+        <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${
+          metodo.id === 'consignado' 
+            ? 'text-orange-400' 
+            : pagamentoAtivo === metodo.id 
+              ? 'text-zinc-400' 
+              : 'text-zinc-300'
+        }`}>
+          {metodo.key}
+        </span>
+      </button>
+    ))}
+  </div>
+</div>
+         </div>
+
+         {/* Footer de Ação */}
+         <div className="p-4 bg-white border-t border-zinc-200 shrink-0">
+         <button 
+            onClick={() => {
+               if (pagamentoAtivo === 'consignado') {
+               // Se for consignado, reabre o modal para confirmar
+               setMostrarModalConsignado(true);
+               } else {
+               // Lógica normal de finalização
+               alert(`Venda finalizada via ${pagamentoAtivo.toUpperCase()}! Total: ${money(totalFinal)}`);
+               }
+            }}
+            className={`w-full h-14 rounded-lg font-bold text-lg shadow-lg transition-all flex items-center justify-between px-6 group active:scale-[0.98] ${
+               pagamentoAtivo === 'consignado'
+               ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200'
+               : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+            }`}
+         >
+            <span>
+               {pagamentoAtivo === 'consignado' ? 'FINALIZAR CONSIGNADO' : 'FINALIZAR VENDA'}
+            </span>
+            <div className="flex items-center gap-2">
+               <span className={`text-sm font-medium opacity-80 group-hover:opacity-100 ${
+               pagamentoAtivo === 'consignado' ? 'text-orange-200' : 'text-emerald-200'
+               }`}>
+               R$ {money(totalFinal)}
+               </span>
+               <span className={`px-2 py-1 rounded text-xs font-mono ${
+               pagamentoAtivo === 'consignado' 
+                  ? 'bg-orange-800/40 text-orange-100' 
+                  : 'bg-emerald-800/40 text-emerald-100'
+               }`}>
+               {pagamentoAtivo === 'consignado' ? 'F10' : 'F5'}
+               </span>
+            </div>
+         </button>
+         </div>
+
+         {/* Modal de Consignado */}
+         {mostrarModalConsignado && (
+         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
+               
+               {/* Header */}
+               <div className="px-6 py-4 border-b border-zinc-200 bg-orange-50 flex justify-between items-center">
+               <div className="flex items-center gap-2">
+                  <div className="bg-orange-100 p-2 rounded-lg">
+                     <ShoppingBag className="text-orange-600" size={20} />
+                  </div>
+                  <div>
+                     <h2 className="text-lg font-bold text-zinc-900">Venda Consignada</h2>
+                     <p className="text-xs text-zinc-500">Configure os detalhes do pagamento futuro</p>
+                  </div>
+               </div>
+               <button 
+                  onClick={() => {
+                     setMostrarModalConsignado(false);
+                     setDataPrevistaPagamento("");
+                     setObservacaoConsignado("");
+                     setPagamentoAtivo('credito'); 
+                  }}
+                  className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200 rounded-full transition-colors"
+               >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+               </button>
+               </div>
+
+               {/* Body */}
+               <div className="p-6 space-y-4">
+               <div>
+                  <label className="text-sm font-medium text-zinc-700 mb-2 block">
+                     Data Prevista de Pagamento *
+                  </label>
+                  <input
+                     type="date"
+                     value={dataPrevistaPagamento}
+                     onChange={(e) => setDataPrevistaPagamento(e.target.value)}
+                     className="w-full h-12 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500"
+                     min={new Date().toISOString().split('T')[0]}
+                     required
+                  />
+               </div>
+
+               <div>
+                  <label className="text-sm font-medium text-zinc-700 mb-2 block">
+                     Observação (Opcional)
+                  </label>
+                  <textarea
+                     value={observacaoConsignado}
+                     onChange={(e) => setObservacaoConsignado(e.target.value)}
+                     placeholder="Ex: Pagamento após venda do lote, acordo com cliente XYZ..."
+                     className="w-full h-24 px-3 py-2 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500 resize-none"
+                  />
+               </div>
+
+               <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                  <div className="flex items-start gap-2">
+                     <div className="text-orange-600 mt-0.5">
+                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                     </svg>
+                     </div>
+                     <div className="text-xs text-orange-700">
+                     <p className="font-medium mb-1">Informação Importante</p>
+                     <p>O cliente levará os produtos agora e pagará na data especificada. Certifique-se de registrar todas as informações necessárias.</p>
+                     </div>
+                  </div>
+               </div>
+               </div>
+
+               {/* Footer */}
+               <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-end gap-3">
+               <button 
+                  onClick={() => {
+                     setMostrarModalConsignado(false);
+                     setDataPrevistaPagamento("");
+                     setObservacaoConsignado("");
+                  }}
+                  className="px-5 py-2.5 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
+               >
+                  Cancelar
+               </button>
+               <button
+                  onClick={() => {
+                     if (!dataPrevistaPagamento) {
+                     alert("Por favor, selecione uma data prevista para o pagamento");
+                     return;
+                     }
+                     
+                     setPagamentoAtivo('consignado');
+                     setMostrarModalConsignado(false);
+                     
+                     // Aqui você pode salvar os dados da venda consignada
+                     console.log("Venda consignada configurada:", {
+                     dataPrevistaPagamento,
+                     observacao: observacaoConsignado,
+                     total: totalFinal
+                     });
+                  }}
+                  className="px-5 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 transition-colors shadow-sm shadow-orange-200"
+               >
+                  Confirmar Consignado
+               </button>
                </div>
             </div>
          </div>
-
-         {/* Footer de Ação - shrink-0 fixo no fundo */}
-         <div className="p-4 bg-white border-t border-zinc-200 shrink-0">
-            <button className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-14 rounded-lg font-bold text-lg shadow-lg shadow-emerald-200 transition-all flex items-center justify-between px-6 group active:scale-[0.98]">
-               <span>FINALIZAR VENDA</span>
-               <div className="flex items-center gap-2">
-                  <span className="text-emerald-200 text-sm font-medium opacity-80 group-hover:opacity-100">R$ {money(totalFinal)}</span>
-                  <span className="bg-emerald-800/40 px-2 py-1 rounded text-xs font-mono">F5</span>
-               </div>
-            </button>
-         </div>
-
+         )}
          </div>
       </div>
    </div>

@@ -38,7 +38,7 @@ export default function LoginPage() {
               PDV
             </div>
             <h1 className="text-3xl font-black text-zinc-900 tracking-tighter">
-              Bem-vindo de volta.
+              Bem-vindo de volta
             </h1>
             <p className="text-zinc-500 font-medium">
               Acesse sua conta para gerenciar seu negócio.

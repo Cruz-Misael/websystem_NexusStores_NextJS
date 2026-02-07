@@ -12,7 +12,12 @@ export type Produto = {
   localizacao: string;
   ultimaMovimentacao: string;
   codigoBarras?: string;
-  imagem?: string;
+  imagem?: string;  
+  description?: string;
+  color?: string;
+  size?: string;
+  units_type?: string;
+  is_active?: boolean;
 };
 
 export const produtosMock: Produto[] = [
