@@ -1,4 +1,4 @@
-import { Venda } from "@/types/vendas";
+import { Venda } from "@/types/sales";
 
 export const vendasMock: Venda[] = [
   {

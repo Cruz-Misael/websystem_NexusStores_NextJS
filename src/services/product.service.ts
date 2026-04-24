@@ -1,11 +1,16 @@
-// product.service.ts completo
+// product.service.ts - CORRIGIDO
 import { supabase } from "@/src/lib/supabase/client";
 
 export async function criarProduto(produto: any) {
+  // Remover campos undefined
   const produtoParaInserir = { ...produto };
+  
+  // Se o SKU for undefined, remover para deixar o banco gerar automaticamente
   if (produtoParaInserir.sku === undefined) {
     delete produtoParaInserir.sku;
   }
+
+  console.log("Inserindo produto:", produtoParaInserir);
 
   const { data, error } = await supabase
     .from("products")
@@ -18,10 +23,14 @@ export async function criarProduto(produto: any) {
     throw new Error(`Erro ao criar produto: ${error.message}`);
   }
 
+  console.log("Produto criado com sucesso:", data);
   return data;
 }
 
 export async function atualizarProduto(sku: number, produto: any) {
+  console.log("Atualizando produto com SKU:", sku);
+  console.log("Dados para atualização:", produto);
+
   const { data, error } = await supabase
     .from("products")
     .update(produto)
@@ -34,10 +43,13 @@ export async function atualizarProduto(sku: number, produto: any) {
     throw new Error(`Erro ao atualizar produto: ${error.message}`);
   }
 
+  console.log("Produto atualizado com sucesso:", data);
   return data;
 }
 
 export async function buscarProdutoPorSKU(sku: number) {
+  console.log("Buscando produto com SKU:", sku);
+
   const { data, error } = await supabase
     .from("products")
     .select("*")
@@ -49,23 +61,28 @@ export async function buscarProdutoPorSKU(sku: number) {
     throw new Error(`Erro ao buscar produto: ${error.message}`);
   }
 
+  console.log("Produto encontrado:", data);
   return data;
 }
 
-// product.service.ts - Versão paginada
-// Opção A: Mantenha listarProdutos() original para array simples
 export async function listarProdutos() {
+  console.log("Listando todos os produtos");
+
   const { data, error } = await supabase
     .from("products")
     .select("*")
     .order("created_at", { ascending: false })
-    .limit(1000); // Máximo do Supabase
+    .limit(1000);
 
-  if (error) throw new Error(`Erro ao listar produtos: ${error.message}`);
+  if (error) {
+    console.error("Erro ao listar produtos:", error);
+    throw new Error(`Erro ao listar produtos: ${error.message}`);
+  }
+
+  console.log(`Encontrados ${data?.length || 0} produtos`);
   return data || [];
 }
 
-// Opção B: Renomeie a função paginada para ficar claro
 export async function listarProdutosPaginado(
   pagina: number = 1, 
   itensPorPagina: number = 50
@@ -73,13 +90,20 @@ export async function listarProdutosPaginado(
   const inicio = (pagina - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina - 1;
 
+  console.log(`Buscando produtos - Página ${pagina}, itens ${inicio} a ${fim}`);
+
   const { data, error, count } = await supabase
     .from("products")
     .select("*", { count: 'exact' })
     .order("created_at", { ascending: false })
     .range(inicio, fim);
 
-  if (error) throw new Error(`Erro: ${error.message}`);
+  if (error) {
+    console.error("Erro ao listar produtos paginado:", error);
+    throw new Error(`Erro: ${error.message}`);
+  }
+
+  console.log(`Encontrados ${data?.length || 0} produtos nesta página. Total: ${count}`);
 
   return {
     produtos: data || [],
@@ -91,6 +115,8 @@ export async function listarProdutosPaginado(
 }
 
 export async function deletarProduto(sku: number) {
+  console.log("Deletando produto com SKU:", sku);
+
   const { error } = await supabase
     .from("products")
     .delete()
@@ -101,5 +127,6 @@ export async function deletarProduto(sku: number) {
     throw new Error(`Erro ao deletar produto: ${error.message}`);
   }
 
+  console.log("Produto deletado com sucesso");
   return { success: true };
 }

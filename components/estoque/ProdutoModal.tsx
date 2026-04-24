@@ -16,7 +16,8 @@ import {
   Tag,
   Ruler,
   Palette,
-  FileText
+  FileText,
+  AlertCircle
 } from "lucide-react";
 import EtiquetaProduto from "./EtiquetaProduto";
 
@@ -68,13 +69,27 @@ const estadoInicial: ProdutoForm = {
   is_active: true,
 };
 
-// Funções de mapeamento
-const mapearParaBanco = (form: ProdutoForm) => {
+// Função para converter do formato do formulário para o formato do banco
+const converterParaBanco = (form: ProdutoForm) => {
+  // Extrair o número do SKU (remover o prefixo "SKU-" se existir)
+  let skuNumber = undefined;
+  if (form.sku) {
+    const skuMatch = form.sku.match(/\d+$/);
+    if (skuMatch) {
+      skuNumber = parseInt(skuMatch[0]);
+    } else {
+      const numbers = form.sku.replace(/\D/g, '');
+      if (numbers) {
+        skuNumber = parseInt(numbers);
+      }
+    }
+  }
+
   return {
     name: form.nome,
-    description: form.description || "",
-    color: form.color || "",
-    size: form.size || "",
+    description: form.description,
+    color: form.color,
+    size: form.size,
     category: form.categoria,
     supplier: form.fornecedor,
     localizacao: form.localizacao,
@@ -83,15 +98,18 @@ const mapearParaBanco = (form: ProdutoForm) => {
     stock_quantity: Number(form.estoque) || 0,
     minimum_stock: Number(form.estoqueMinimo) || 0,
     maximum_stock: Number(form.estoqueMaximo) || 0,
-    sku: form.sku ? parseInt(form.sku.replace('SKU-', '')) : undefined,
-    barcode: form.codigoBarras ? parseInt(form.codigoBarras) : null,
+    sku: skuNumber,
+    barcode: form.codigoBarras || null,
     imagem: form.imagem || null,
-    units_type: form.units_type || "un",
-    is_active: form.is_active ?? true,
+    units_type: form.units_type,
+    is_active: form.is_active,
   };
 };
 
-const mapearParaForm = (produtoDB: any): ProdutoForm => {
+// Função para converter do formato do banco para o formato do formulário
+const converterDoBancoParaForm = (produtoDB: any): ProdutoForm => {
+  console.log("Convertendo do banco para form:", produtoDB);
+  
   return {
     nome: produtoDB.name || "",
     categoria: produtoDB.category || "",
@@ -117,6 +135,8 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [form, setForm] = useState<ProdutoForm>(estadoInicial);
   const [preview, setPreview] = useState<string | null>(null);
+  const [erros, setErros] = useState<Record<string, string>>({});
+  const [isLoading, setIsLoading] = useState(false);
   
   // Funções de geração
   const gerarSKU = () => {
@@ -130,14 +150,32 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
     return base.slice(0, 13);
   };
 
+  // Efeito para carregar dados quando o modal abre
   useEffect(() => {
+    if (!aberto) return;
+
+    console.log("=== MODAL ABERTO ===");
+    console.log("Mode:", mode);
+    console.log("Produto recebido:", produto);
+
     if (mode === "edit" && produto) {
-      const produtoMapeado = mapearParaForm(produto);
-      setForm(produtoMapeado);
+      // IMPORTANTE: O produto já está no formato do formulário!
+      // Não precisa mapear, só garantir que todos os campos existam
+      const produtoPreenchido = {
+        ...estadoInicial,
+        ...produto, // Sobrescreve com os valores do produto
+      };
+      
+      console.log("Produto para edição (preenchido):", produtoPreenchido);
+      setForm(produtoPreenchido);
       
       if (produto.imagem) {
         setPreview(produto.imagem);
+      } else {
+        setPreview(null);
       }
+      
+      setErros({});
     } else if (mode === "create") {
       const novoForm = {
         ...estadoInicial,
@@ -145,22 +183,54 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
         codigoBarras: gerarCodigoBarras(),
         is_active: true,
       };
+      console.log("Criando novo produto:", novoForm);
       setForm(novoForm);
       setPreview(null);
+      setErros({});
     }
-  }, [mode, produto]);
+  }, [aberto, mode, produto]);
+
+  // Função para validar o formulário
+  const validarForm = (): boolean => {
+    const novosErros: Record<string, string> = {};
+
+    if (!form.nome.trim()) {
+      novosErros.nome = "Nome do produto é obrigatório";
+    }
+
+    if (form.preco <= 0) {
+      novosErros.preco = "Preço deve ser maior que zero";
+    }
+
+    if (form.estoque < 0) {
+      novosErros.estoque = "Estoque não pode ser negativo";
+    }
+
+    if (form.estoqueMinimo < 0) {
+      novosErros.estoqueMinimo = "Estoque mínimo não pode ser negativo";
+    }
+
+    if (form.estoqueMaximo < 0) {
+      novosErros.estoqueMaximo = "Estoque máximo não pode ser negativo";
+    }
+
+    if (form.estoqueMaximo > 0 && form.estoqueMinimo > form.estoqueMaximo) {
+      novosErros.estoqueMinimo = "Estoque mínimo não pode ser maior que o máximo";
+    }
+
+    setErros(novosErros);
+    return Object.keys(novosErros).length === 0;
+  };
 
   const handleImagemChange = (file: File | null) => {
     if (!file) return;
     
-    // Validação básica do tipo de arquivo
     const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
     if (!validTypes.includes(file.type)) {
       alert('Por favor, selecione uma imagem JPEG, PNG ou WebP');
       return;
     }
     
-    // Validação de tamanho (máximo 5MB)
     if (file.size > 5 * 1024 * 1024) {
       alert('A imagem deve ter no máximo 5MB');
       return;
@@ -172,42 +242,45 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
   };
 
   const handleInputChange = (field: keyof ProdutoForm, value: any) => {
+    console.log(`Campo alterado: ${field} =`, value);
     setForm(prev => ({ ...prev, [field]: value }));
+    
+    if (erros[field]) {
+      setErros(prev => {
+        const novos = { ...prev };
+        delete novos[field];
+        return novos;
+      });
+    }
   };
 
   const handleSave = () => {
-    // Validações básicas
-    if (!form.nome.trim()) {
-      alert('O nome do produto é obrigatório');
+    if (!validarForm()) {
+      const primeiroErro = Object.keys(erros)[0];
+      if (primeiroErro) {
+        const elemento = document.querySelector(`[name="${primeiroErro}"]`);
+        elemento?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
       return;
     }
     
-    if (form.preco <= 0) {
-      alert('O preço deve ser maior que zero');
-      return;
-    }
+    setIsLoading(true);
     
-    if (form.estoque < 0) {
-      alert('O estoque não pode ser negativo');
-      return;
+    try {
+      console.log("Salvando produto - Mode:", mode);
+      console.log("Dados do formulário:", form);
+      
+      // Para salvar, precisamos converter para o formato do banco
+      const dadosParaBanco = converterParaBanco(form);
+      console.log("Dados convertidos para banco:", dadosParaBanco);
+      
+      onSave(form); // Passa o form original (em português) para o componente pai
+    } catch (error) {
+      console.error("Erro ao salvar produto:", error);
+      alert("Erro ao salvar produto. Verifique os dados e tente novamente.");
+    } finally {
+      setIsLoading(false);
     }
-    
-    if (form.estoqueMinimo < 0) {
-      alert('O estoque mínimo não pode ser negativo');
-      return;
-    }
-    
-    if (form.estoqueMaximo < 0) {
-      alert('O estoque máximo não pode ser negativo');
-      return;
-    }
-    
-    if (form.estoqueMaximo > 0 && form.estoqueMinimo > form.estoqueMaximo) {
-      alert('O estoque mínimo não pode ser maior que o estoque máximo');
-      return;
-    }
-    
-    onSave(form);
   };
 
   const imprimirEtiqueta = () => {
@@ -288,7 +361,7 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
           </button>
         </div>
 
-        {/* Body Scrollable */}
+        {/* Body Scrollable - (o resto do JSX permanece igual) */}
         <div className="flex-1 overflow-y-auto p-6 bg-white">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
             
@@ -354,12 +427,14 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                   <span className="text-xs font-bold text-zinc-500 uppercase flex items-center gap-2">
                     <Tag size={14} /> Identificação
                   </span>
-                  <button 
-                    onClick={handleGerarNovosCodigos}
-                    className="text-[10px] font-medium text-indigo-600 flex items-center gap-1 hover:underline"
-                  >
-                    <RefreshCw size={10} /> Gerar Novos
-                  </button>
+                  {mode === "create" && (
+                    <button 
+                      onClick={handleGerarNovosCodigos}
+                      className="text-[10px] font-medium text-indigo-600 flex items-center gap-1 hover:underline"
+                    >
+                      <RefreshCw size={10} /> Gerar Novos
+                    </button>
+                  )}
                 </div>
 
                 <div className="space-y-3">
@@ -371,7 +446,13 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                       onChange={(e) => handleInputChange("sku", e.target.value.toUpperCase())}
                       className="w-full h-8 px-3 text-xs border border-zinc-300 rounded font-mono bg-white"
                       placeholder="SKU-123456"
+                      readOnly={mode === "edit"}
                     />
+                    {mode === "edit" && (
+                      <p className="text-[8px] text-zinc-400 mt-1">
+                        SKU não pode ser alterado após criação
+                      </p>
+                    )}
                   </div>
 
                   {/* Código de Barras */}
@@ -417,10 +498,23 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
               {/* Seção Dados Básicos */}
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs font-medium text-zinc-700 mb-1.5 block">Nome do Produto *</label>
+                  <label className="text-xs font-medium text-zinc-700 mb-1.5 block">
+                    Nome do Produto *
+                    {erros.nome && (
+                      <span className="ml-2 text-red-500 text-[10px]">
+                        <AlertCircle size={10} className="inline mr-1" />
+                        {erros.nome}
+                      </span>
+                    )}
+                  </label>
                   <input
+                    name="nome"
                     placeholder="Ex: Tênis Esportivo Nike Air Max"
-                    className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-zinc-400"
+                    className={`w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all placeholder:text-zinc-400 ${
+                      erros.nome 
+                        ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500' 
+                        : 'border-zinc-300 focus:ring-indigo-500/20 focus:border-indigo-500'
+                    }`}
                     value={form.nome}
                     onChange={(e) => handleInputChange("nome", e.target.value)}
                   />
@@ -529,7 +623,15 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                 </h3>
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-medium text-zinc-700 mb-1.5 block">Preço de Venda *</label>
+                    <label className="text-xs font-medium text-zinc-700 mb-1.5 block">
+                      Preço de Venda *
+                      {erros.preco && (
+                        <span className="ml-2 text-red-500 text-[10px]">
+                          <AlertCircle size={10} className="inline mr-1" />
+                          {erros.preco}
+                        </span>
+                      )}
+                    </label>
                     <div className="relative">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 text-sm">R$</span>
                       <input
@@ -537,7 +639,11 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                         step="0.01"
                         min="0"
                         placeholder="0,00"
-                        className="w-full h-10 pl-9 pr-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                        className={`w-full h-10 pl-9 pr-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${
+                          erros.preco 
+                            ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500' 
+                            : 'border-zinc-300 focus:ring-emerald-500/20 focus:border-emerald-500'
+                        }`}
                         value={form.preco || ""}
                         onChange={(e) => handleInputChange("preco", parseFloat(e.target.value) || 0)}
                       />
@@ -570,31 +676,67 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                 </h3>
                 <div className="grid grid-cols-4 gap-4">
                   <div>
-                    <label className="text-xs font-medium text-zinc-700 mb-1.5 block">Estoque Atual</label>
+                    <label className="text-xs font-medium text-zinc-700 mb-1.5 block">
+                      Estoque Atual
+                      {erros.estoque && (
+                        <span className="ml-2 text-red-500 text-[10px]">
+                          <AlertCircle size={10} className="inline mr-1" />
+                          {erros.estoque}
+                        </span>
+                      )}
+                    </label>
                     <input
                       type="number"
                       min="0"
-                      className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      className={`w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${
+                        erros.estoque 
+                          ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500' 
+                          : 'border-zinc-300 focus:ring-indigo-500/20 focus:border-indigo-500'
+                      }`}
                       value={form.estoque || ""}
                       onChange={(e) => handleInputChange("estoque", parseInt(e.target.value) || 0)}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-700 mb-1.5 block">Estoque Mínimo</label>
+                    <label className="text-xs font-medium text-zinc-700 mb-1.5 block">
+                      Estoque Mínimo
+                      {erros.estoqueMinimo && (
+                        <span className="ml-2 text-red-500 text-[10px]">
+                          <AlertCircle size={10} className="inline mr-1" />
+                          {erros.estoqueMinimo}
+                        </span>
+                      )}
+                    </label>
                     <input
                       type="number"
                       min="0"
-                      className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      className={`w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${
+                        erros.estoqueMinimo 
+                          ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500' 
+                          : 'border-zinc-300 focus:ring-indigo-500/20 focus:border-indigo-500'
+                      }`}
                       value={form.estoqueMinimo || ""}
                       onChange={(e) => handleInputChange("estoqueMinimo", parseInt(e.target.value) || 0)}
                     />
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-zinc-700 mb-1.5 block">Estoque Máximo</label>
+                    <label className="text-xs font-medium text-zinc-700 mb-1.5 block">
+                      Estoque Máximo
+                      {erros.estoqueMaximo && (
+                        <span className="ml-2 text-red-500 text-[10px]">
+                          <AlertCircle size={10} className="inline mr-1" />
+                          {erros.estoqueMaximo}
+                        </span>
+                      )}
+                    </label>
                     <input
                       type="number"
                       min="0"
-                      className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      className={`w-full h-10 px-3 border rounded-lg text-sm focus:outline-none focus:ring-2 transition-all ${
+                        erros.estoqueMaximo 
+                          ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500' 
+                          : 'border-zinc-300 focus:ring-indigo-500/20 focus:border-indigo-500'
+                      }`}
                       value={form.estoqueMaximo || ""}
                       onChange={(e) => handleInputChange("estoqueMaximo", parseInt(e.target.value) || 0)}
                     />
@@ -647,20 +789,25 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
             <button 
               onClick={onClose} 
               className="px-5 py-2.5 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors shadow-sm"
+              disabled={isLoading}
             >
               Cancelar
             </button>
             <button
               onClick={handleSave}
-              className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200 flex items-center gap-2"
+              disabled={isLoading}
+              className="px-5 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-all shadow-sm shadow-indigo-200 flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {mode === "create" ? (
+              {isLoading ? (
                 <>
-                  <Package size={16} />
-                  Salvar Produto
+                  <RefreshCw size={16} className="animate-spin" />
+                  Salvando...
                 </>
               ) : (
-                "Atualizar Produto"
+                <>
+                  <Package size={16} />
+                  {mode === "create" ? "Salvar Produto" : "Atualizar Produto"}
+                </>
               )}
             </button>
           </div>

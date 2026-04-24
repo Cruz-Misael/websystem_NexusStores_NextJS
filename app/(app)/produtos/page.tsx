@@ -1,20 +1,19 @@
 "use client";
 
 import ProdutoModal from "@/components/estoque/ProdutoModal";
+import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
+import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { listarProdutos, criarProduto, atualizarProduto } from "@/src/services/product.service";
 import type { Produto } from "@/mocks/produtos";
 import { useState, useEffect } from "react";
 import { 
   Search, 
   Plus, 
-  Filter, 
   Package, 
   AlertCircle, 
   History,
-  QrCode,
   Edit2,
   Trash2,
-  Save,
   ArrowUp,
   ArrowDown,
   Loader2,
@@ -48,7 +47,7 @@ interface ProdutoDB {
 // Função para converter do banco para seu tipo Produto
 const converterParaProduto = (produtoDB: ProdutoDB): Produto => {
   return {
-    id: produtoDB.sku, // Usa o SKU como ID
+    id: produtoDB.sku,
     nome: produtoDB.name || "",
     categoria: produtoDB.category || "",
     fornecedor: produtoDB.supplier || "",
@@ -120,7 +119,7 @@ export default function GestaoEstoqueCompacto() {
   const [selecionado, setSelecionado] = useState<Produto | null>(null);
   const [listaProdutos, setListaProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState("");
-  const [ajusteEstoque, setAjusteEstoque] = useState(0);
+  const [ajusteEstoque, setAjusteEstoque] = useState(1);
   const [modalAberto, setModalAberto] = useState(false);
   const [modoModal, setModoModal] = useState<"create" | "edit">("create");
   const [produtoParaEditar, setProdutoParaEditar] = useState<Produto | null>(null);
@@ -128,33 +127,112 @@ export default function GestaoEstoqueCompacto() {
   const [carregandoAcao, setCarregandoAcao] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
+  
+  // Estados para popup e toast
+  const [popupAberto, setPopupAberto] = useState(false);
+  const [popupConfig, setPopupConfig] = useState({
+    titulo: "",
+    mensagem: "",
+    tipo: "info" as "sucesso" | "erro" | "aviso" | "info",
+    onConfirmar: undefined as (() => void) | undefined,
+    textoConfirmar: "Confirmar",
+    textoCancelar: "Cancelar",
+  });
+
+  const [toastAberto, setToastAberto] = useState(false);
+  const [toastConfig, setToastConfig] = useState({
+    mensagem: "",
+    tipo: "sucesso" as "sucesso" | "erro" | "info",
+  });
+
+  // Funções auxiliares para mostrar popups e toasts
+  const mostrarPopup = (
+    titulo: string,
+    mensagem: string,
+    tipo: "sucesso" | "erro" | "aviso" | "info" = "info",
+    onConfirmar?: () => void,
+    textoConfirmar = "Confirmar",
+    textoCancelar = "Cancelar"
+  ) => {
+    setPopupConfig({
+      titulo,
+      mensagem,
+      tipo,
+      onConfirmar,
+      textoConfirmar,
+      textoCancelar,
+    });
+    setPopupAberto(true);
+  };
+
+  const mostrarToast = (mensagem: string, tipo: "sucesso" | "erro" | "info" = "sucesso") => {
+    setToastConfig({ mensagem, tipo });
+    setToastAberto(true);
+  };
+
+  const fecharPopup = () => {
+    setPopupAberto(false);
+    setTimeout(() => {
+      setPopupConfig({
+        titulo: "",
+        mensagem: "",
+        tipo: "info",
+        onConfirmar: undefined,
+        textoConfirmar: "Confirmar",
+        textoCancelar: "Cancelar",
+      });
+    }, 300);
+  };
 
   // Carrega produtos do Supabase
-  const carregarProdutos = async () => {
-    try {
-      setCarregando(true);
-      setErro(null);
-      
-      const produtosDB = await listarProdutos();
-      
-      // Converte para o formato da aplicação
-      const produtosConvertidos = produtosDB.map(converterParaProduto);
-      
-      setListaProdutos(produtosConvertidos);
-      
-      // Seleciona o primeiro produto automaticamente
-      if (produtosConvertidos.length > 0 && !selecionado) {
+// Função para carregar produtos do Supabase
+const carregarProdutos = async () => {
+  try {
+    setCarregando(true);
+    setErro(null);
+    
+    console.log("🔄 Buscando produtos no Supabase...");
+    const produtosDB = await listarProdutos();
+    console.log("📦 Dados brutos do banco:", produtosDB);
+    
+    // Converte para o formato da aplicação
+    const produtosConvertidos = produtosDB.map(converterParaProduto);
+    console.log("✅ Produtos convertidos:", produtosConvertidos);
+    
+    setListaProdutos(produtosConvertidos);
+    
+    // Mantém o produto selecionado se ele ainda existir na lista
+    if (selecionado) {
+      const produtoAindaExiste = produtosConvertidos.find(p => p.id === selecionado.id);
+      if (produtoAindaExiste) {
+        setSelecionado(produtoAindaExiste);
+      } else if (produtosConvertidos.length > 0) {
+        // Se o produto selecionado não existe mais, seleciona o primeiro
         setSelecionado(produtosConvertidos[0]);
+      } else {
+        setSelecionado(null);
       }
-      
-      console.log("✅ Produtos carregados:", produtosConvertidos.length);
-    } catch (error: any) {
-      console.error("❌ Erro ao carregar produtos:", error);
-      setErro(error.message || "Erro ao carregar produtos");
-    } finally {
-      setCarregando(false);
+    } else if (produtosConvertidos.length > 0) {
+      // Se não tem produto selecionado, seleciona o primeiro
+      setSelecionado(produtosConvertidos[0]);
     }
-  };
+    
+    mostrarToast("Produtos atualizados com sucesso!", "sucesso");
+    
+  } catch (error: any) {
+    console.error("❌ Erro ao carregar produtos:", error);
+    setErro(error.message || "Erro ao carregar produtos");
+    mostrarPopup(
+      "Erro ao carregar produtos",
+      error.message || "Ocorreu um erro ao tentar carregar os produtos. Tente novamente.",
+      "erro",
+      undefined,
+      "OK"
+    );
+  } finally {
+    setCarregando(false);
+  }
+};
 
   // Carrega produtos na inicialização
   useEffect(() => {
@@ -171,10 +249,8 @@ export default function GestaoEstoqueCompacto() {
       const novoEstoque = Math.max(0, selecionado.estoque + quantidade);
       
       // Atualiza no Supabase
-      await atualizarProduto(
-        parseInt(selecionado.sku.replace('SKU-', '')), 
-        { stock_quantity: novoEstoque }
-      );
+      const skuNumber = parseInt(selecionado.sku.replace('SKU-', ''));
+      await atualizarProduto(skuNumber, { stock_quantity: novoEstoque });
       
       // Atualiza localmente
       const produtoAtualizado = {
@@ -189,14 +265,67 @@ export default function GestaoEstoqueCompacto() {
         )
       );
       
-      setAjusteEstoque(0);
+      const tipoMovimento = quantidade > 0 ? 'entrada' : 'saída';
+      const mensagem = quantidade > 0 
+        ? `✅ Entrada de ${quantidade} ${selecionado.units_type || 'un'} registrada com sucesso!`
+        : `✅ Saída de ${Math.abs(quantidade)} ${selecionado.units_type || 'un'} registrada com sucesso!`;
       
-      console.log(`✅ Estoque atualizado: ${quantidade > 0 ? '+' : ''}${quantidade}`);
+      mostrarToast(mensagem, "sucesso");
+      
+      // Fecha popup se estiver aberto
+      fecharPopup();
+      
     } catch (error: any) {
       console.error("❌ Erro ao atualizar estoque:", error);
-      alert(`Erro ao atualizar estoque: ${error.message}`);
+      mostrarPopup(
+        "Erro ao atualizar estoque",
+        error.message || "Ocorreu um erro ao tentar atualizar o estoque. Tente novamente.",
+        "erro",
+        undefined,
+        "OK"
+      );
     } finally {
       setCarregandoAcao(false);
+    }
+  };
+
+  // Função para entrada de estoque
+  const handleEntrada = () => {
+    if (!selecionado || ajusteEstoque <= 0) return;
+    
+    const novoEstoque = selecionado.estoque + ajusteEstoque;
+    
+    // Verificar se ultrapassa máximo
+    if (selecionado.estoqueMaximo > 0 && novoEstoque > selecionado.estoqueMaximo) {
+      mostrarPopup(
+        "Atenção",
+        `A quantidade (${novoEstoque} ${selecionado.units_type}) ultrapassa o estoque máximo (${selecionado.estoqueMaximo}). Deseja continuar mesmo assim?`,
+        "aviso",
+        () => atualizarEstoque(ajusteEstoque),
+        "Sim, continuar",
+        "Cancelar"
+      );
+    } else {
+      atualizarEstoque(ajusteEstoque);
+    }
+  };
+
+  // Função para saída de estoque
+  const handleSaida = () => {
+    if (!selecionado || ajusteEstoque <= 0) return;
+    
+    // Verificar se tem estoque suficiente
+    if (selecionado.estoque < ajusteEstoque) {
+      mostrarPopup(
+        "Atenção",
+        `Estoque atual: ${selecionado.estoque} ${selecionado.units_type}. A saída de ${ajusteEstoque} unidades deixará o estoque negativo. Deseja continuar?`,
+        "aviso",
+        () => atualizarEstoque(-ajusteEstoque),
+        "Sim, continuar",
+        "Cancelar"
+      );
+    } else {
+      atualizarEstoque(-ajusteEstoque);
     }
   };
 
@@ -216,36 +345,45 @@ export default function GestaoEstoqueCompacto() {
 
   // Função para deletar produto
   const deletarProduto = async (produto: Produto) => {
-    if (!confirm(`Tem certeza que deseja excluir o produto "${produto.nome}"?`)) {
-      return;
-    }
-    
-    try {
-      setCarregandoAcao(true);
-      
-      // Aqui você precisa criar uma função deleteProduto no product.service
-      // Por enquanto, vamos apenas marcar como inativo
-      const skuNumber = parseInt(produto.sku.replace('SKU-', ''));
-      await atualizarProduto(skuNumber, { is_active: false });
-      
-      // Remove da lista local
-      const novaLista = listaProdutos.filter(p => p.id !== produto.id);
-      setListaProdutos(novaLista);
-      
-      // Se o produto deletado era o selecionado, seleciona outro
-      if (selecionado?.id === produto.id && novaLista.length > 0) {
-        setSelecionado(novaLista[0]);
-      } else if (novaLista.length === 0) {
-        setSelecionado(null);
-      }
-      
-      console.log("✅ Produto excluído:", produto.nome);
-    } catch (error: any) {
-      console.error("❌ Erro ao excluir produto:", error);
-      alert(`Erro ao excluir produto: ${error.message}`);
-    } finally {
-      setCarregandoAcao(false);
-    }
+    mostrarPopup(
+      "Confirmar exclusão",
+      `Tem certeza que deseja inativar o produto "${produto.nome}"?\n\nEsta ação pode ser revertida posteriormente ativando o produto novamente.`,
+      "aviso",
+      async () => {
+        try {
+          setCarregandoAcao(true);
+          
+          const skuNumber = parseInt(produto.sku.replace('SKU-', ''));
+          await atualizarProduto(skuNumber, { is_active: false });
+          
+          // Atualiza lista local
+          const produtoAtualizado = { ...produto, is_active: false };
+          setListaProdutos(prev => 
+            prev.map(p => p.id === produto.id ? produtoAtualizado : p)
+          );
+          
+          if (selecionado?.id === produto.id) {
+            setSelecionado(produtoAtualizado);
+          }
+          
+          mostrarToast(`Produto "${produto.nome}" inativado com sucesso!`, "sucesso");
+          fecharPopup();
+        } catch (error: any) {
+          console.error("❌ Erro ao inativar produto:", error);
+          mostrarPopup(
+            "Erro ao inativar produto",
+            error.message || "Ocorreu um erro ao tentar inativar o produto. Tente novamente.",
+            "erro",
+            undefined,
+            "OK"
+          );
+        } finally {
+          setCarregandoAcao(false);
+        }
+      },
+      "Sim, inativar",
+      "Cancelar"
+    );
   };
 
   // Função que é chamada quando salva no modal
@@ -256,29 +394,27 @@ export default function GestaoEstoqueCompacto() {
       const produtoBanco = converterParaBanco(produtoForm);
       
       if (modoModal === "edit" && produtoParaEditar) {
-        // Atualiza produto existente
         const skuNumber = parseInt(produtoParaEditar.sku.replace('SKU-', ''));
         await atualizarProduto(skuNumber, produtoBanco);
-        
-        // Recarrega produtos
-        await carregarProdutos();
-        
-        console.log("✅ Produto editado:", produtoForm.nome);
+        mostrarToast(`Produto "${produtoForm.nome}" atualizado com sucesso!`, "sucesso");
       } else {
-        // Cria novo produto
         await criarProduto(produtoBanco);
-        
-        // Recarrega produtos
-        await carregarProdutos();
-        
-        console.log("🆕 Novo produto criado:", produtoForm.nome);
+        mostrarToast(`Produto "${produtoForm.nome}" criado com sucesso!`, "sucesso");
       }
       
+      await carregarProdutos();
       setModalAberto(false);
       setProdutoParaEditar(null);
+      
     } catch (error: any) {
       console.error("❌ Erro ao salvar produto:", error);
-      alert(`Erro ao salvar produto: ${error.message}`);
+      mostrarPopup(
+        "Erro ao salvar produto",
+        error.message || "Ocorreu um erro ao tentar salvar o produto. Tente novamente.",
+        "erro",
+        undefined,
+        "OK"
+      );
     } finally {
       setCarregandoAcao(false);
     }
@@ -340,16 +476,17 @@ export default function GestaoEstoqueCompacto() {
             <div className="flex gap-2">
               <button 
                 onClick={carregarProdutos}
-                className="p-2 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors"
-                title="Recarregar"
+                className="p-2 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors relative"
+                title="Recarregar produtos do banco"
+                disabled={carregando}
               >
-                <RefreshCw size={18} />
-              </button>
-              <button 
-                onClick={abrirNovoProduto}
-                className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-all shadow-sm hover:shadow"
-              >
-                <Plus size={18} strokeWidth={2.5} />
+                <RefreshCw 
+                  size={18} 
+                  className={`${carregando ? 'animate-spin' : ''}`} 
+                />
+                {carregando && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-600 rounded-full animate-ping"></span>
+                )}
               </button>
             </div>
           </div>
@@ -480,11 +617,11 @@ export default function GestaoEstoqueCompacto() {
             <header className="bg-white border-b border-zinc-200 px-6 py-4 flex justify-between items-start shrink-0 shadow-sm z-10">
               <div>
                 <div className="flex items-center gap-2 text-[10px] text-zinc-400 uppercase tracking-wider mb-1">
-                  <span>{selecionado.categoria}</span>
+                  <span>{selecionado.categoria || "Sem categoria"}</span>
                   <span>•</span>
                   <span>SKU: {selecionado.sku}</span>
                   <span>•</span>
-                  <span>Loc: {selecionado.localizacao}</span>
+                  <span>Loc: {selecionado.localizacao || "Não definida"}</span>
                   {!selecionado.is_active && (
                     <>
                       <span>•</span>
@@ -506,7 +643,7 @@ export default function GestaoEstoqueCompacto() {
                   onClick={() => deletarProduto(selecionado)}
                   disabled={carregandoAcao}
                   className="p-1.5 text-zinc-400 hover:text-red-600 transition-colors disabled:opacity-50"
-                  title="Excluir produto"
+                  title="Inativar produto"
                 >
                   {carregandoAcao ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                 </button>
@@ -522,7 +659,7 @@ export default function GestaoEstoqueCompacto() {
                   <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm relative overflow-hidden">
                     <div className={`absolute top-0 left-0 w-1 h-full ${getStatusEstoque(selecionado.estoque, selecionado.estoqueMinimo).dot}`}></div>
                     <p className="text-zinc-500 text-xs font-medium uppercase mb-1">Estoque Atual</p>
-                    <p className="text-3xl font-bold text-zinc-900">{selecionado.estoque}</p>
+                    <p className="text-3xl font-bold text-zinc-900">{selecionado.estoque} {selecionado.units_type || 'un'}</p>
                     <div className="flex items-center gap-1 mt-2 text-xs">
                       <span className="text-zinc-400">Capacidade:</span>
                       <div className="flex-1 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
@@ -578,18 +715,18 @@ export default function GestaoEstoqueCompacto() {
                   <div className="flex items-end gap-4 bg-zinc-50 p-4 rounded-lg border border-zinc-100">
                     <div>
                       <label className="text-xs font-medium text-zinc-500 block mb-1.5">Tipo de Movimento</label>
-                      <div className="flex bg-white rounded-md border border-zinc-200 p-1">
+                      <div className="flex bg-white rounded-md border border-zinc-200 p-1 gap-1">
                         <button 
-                          onClick={() => atualizarEstoque(ajusteEstoque)}
+                          onClick={handleEntrada}
                           disabled={carregandoAcao || ajusteEstoque <= 0}
-                          className="px-4 py-1.5 text-xs font-medium rounded bg-emerald-100 text-emerald-700 flex items-center gap-1 hover:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-4 py-1.5 text-xs font-medium rounded bg-emerald-100 text-emerald-700 flex items-center gap-1 hover:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           <ArrowUp size={12}/> Entrada
                         </button>
                         <button 
-                          onClick={() => atualizarEstoque(-ajusteEstoque)}
+                          onClick={handleSaida}
                           disabled={carregandoAcao || ajusteEstoque <= 0}
-                          className="px-4 py-1.5 text-xs font-medium rounded hover:bg-zinc-50 text-zinc-600 flex items-center gap-1 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="px-4 py-1.5 text-xs font-medium rounded hover:bg-rose-50 text-zinc-600 flex items-center gap-1 hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                         >
                           <ArrowDown size={12}/> Saída
                         </button>
@@ -600,22 +737,27 @@ export default function GestaoEstoqueCompacto() {
                       <label className="text-xs font-medium text-zinc-500 block mb-1.5">Quantidade</label>
                       <div className="flex items-center">
                         <button 
-                          onClick={() => setAjusteEstoque(Math.max(0, ajusteEstoque - 1))}
+                          onClick={() => setAjusteEstoque(Math.max(1, ajusteEstoque - 1))}
                           disabled={carregandoAcao}
-                          className="w-8 h-9 bg-white border border-zinc-300 rounded-l-md flex items-center justify-center hover:bg-zinc-50 disabled:opacity-50"
-                        >-</button>
+                          className="w-8 h-9 bg-white border border-zinc-300 rounded-l-md flex items-center justify-center hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+                        >
+                          -
+                        </button>
                         <input 
                           type="number" 
                           value={ajusteEstoque}
-                          onChange={(e) => setAjusteEstoque(Math.max(0, parseInt(e.target.value) || 0))}
+                          onChange={(e) => setAjusteEstoque(Math.max(1, parseInt(e.target.value) || 1))}
                           disabled={carregandoAcao}
+                          min="1"
                           className="w-16 h-9 border-y border-zinc-300 text-center text-sm font-bold focus:outline-none disabled:bg-zinc-100"
                         />
                         <button 
                           onClick={() => setAjusteEstoque(ajusteEstoque + 1)}
                           disabled={carregandoAcao}
-                          className="w-8 h-9 bg-white border border-zinc-300 rounded-r-md flex items-center justify-center hover:bg-zinc-50 disabled:opacity-50"
-                        >+</button>
+                          className="w-8 h-9 bg-white border border-zinc-300 rounded-r-md flex items-center justify-center hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+                        >
+                          +
+                        </button>
                       </div>
                     </div>
 
@@ -629,18 +771,52 @@ export default function GestaoEstoqueCompacto() {
                       />
                     </div>
 
-                    <button 
-                      onClick={() => atualizarEstoque(ajusteEstoque)}
-                      disabled={carregandoAcao || ajusteEstoque <= 0}
-                      className="h-9 px-4 bg-zinc-900 text-white rounded-md text-xs font-medium hover:bg-zinc-800 flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {carregandoAcao ? (
-                        <Loader2 size={14} className="animate-spin" />
-                      ) : (
-                        <Save size={14} />
-                      )}
-                      Confirmar
-                    </button>
+                    <div className="flex gap-2">
+                      <button 
+                        onClick={handleEntrada}
+                        disabled={carregandoAcao || ajusteEstoque <= 0}
+                        className="h-9 px-4 bg-emerald-600 text-white rounded-md text-xs font-medium hover:bg-emerald-700 flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Confirmar entrada"
+                      >
+                        {carregandoAcao ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <ArrowUp size={14} />
+                        )}
+                        Entrada
+                      </button>
+                      <button 
+                        onClick={handleSaida}
+                        disabled={carregandoAcao || ajusteEstoque <= 0}
+                        className="h-9 px-4 bg-rose-600 text-white rounded-md text-xs font-medium hover:bg-rose-700 flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        title="Confirmar saída"
+                      >
+                        {carregandoAcao ? (
+                          <Loader2 size={14} className="animate-spin" />
+                        ) : (
+                          <ArrowDown size={14} />
+                        )}
+                        Saída
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Informação de Estoque Mínimo/Máximo */}
+                  <div className="mt-4 flex items-center gap-4 text-xs text-zinc-500">
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
+                      <span>Estoque Mínimo: {selecionado.estoqueMinimo}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <div className="w-2 h-2 rounded-full bg-zinc-800"></div>
+                      <span>Estoque Máximo: {selecionado.estoqueMaximo || "Ilimitado"}</span>
+                    </div>
+                    {selecionado.estoque <= selecionado.estoqueMinimo && (
+                      <div className="flex items-center gap-1 text-amber-600">
+                        <AlertCircle size={14} />
+                        <span>Estoque baixo! Recomenda-se fazer um pedido.</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -712,7 +888,7 @@ export default function GestaoEstoqueCompacto() {
         )}
       </div>
 
-      {/* MODAL */}
+      {/* MODAL de Produto */}
       {modalAberto && (
         <ProdutoModal
           aberto={modalAberto}
@@ -725,6 +901,29 @@ export default function GestaoEstoqueCompacto() {
           onSave={handleSalvarProduto}
         />
       )}
+
+      {/* POPUP DE CONFIRMAÇÃO */}
+      <PopupConfirmacao
+        aberto={popupAberto}
+        titulo={popupConfig.titulo}
+        mensagem={popupConfig.mensagem}
+        tipo={popupConfig.tipo}
+        onConfirmar={popupConfig.onConfirmar}
+        onCancelar={fecharPopup}
+        onFechar={fecharPopup}
+        confirmando={carregandoAcao}
+        textoConfirmar={popupConfig.textoConfirmar}
+        textoCancelar={popupConfig.textoCancelar}
+      />
+
+      {/* TOAST DE NOTIFICAÇÃO */}
+      <ToastNotificacao
+        aberto={toastAberto}
+        mensagem={toastConfig.mensagem}
+        tipo={toastConfig.tipo}
+        onFechar={() => setToastAberto(false)}
+        duracao={3000}
+      />
     </div>
   );
 }
