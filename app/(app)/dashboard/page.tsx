@@ -277,8 +277,7 @@ export default function DashboardExecutive() {
                     <Tooltip 
                       contentStyle={{ backgroundColor: '#18181b', borderRadius: '8px', border: 'none', color: '#fff', fontSize: '12px' }}
                       itemStyle={{ color: '#e4e4e7' }}
-                      formatter={(value: number) => formatCurrency(value)}
-                    />
+                      formatter={(value) => formatCurrency(value as number)}                    />
                     <Area type="monotone" dataKey="receita" stroke="#4f46e5" strokeWidth={3} fill="url(#colorReceita)" name="Receita" />
                     <Area type="monotone" dataKey="custo" stroke="#d4d4d8" strokeWidth={2} fill="transparent" name="Custo" />
                   </AreaChart>
@@ -314,7 +313,7 @@ export default function DashboardExecutive() {
                       </Pie>
                       <Tooltip 
                         contentStyle={{ backgroundColor: '#fff', borderRadius: '8px', border: '1px solid #e4e4e7', fontSize: '12px', color: '#18181b' }}
-                        formatter={(value: number) => `${value}%`}
+                        formatter={(value) => `${Number(value)}%`}
                       />
                     </PieChart>
                   </ResponsiveContainer>
