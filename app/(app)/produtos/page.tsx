@@ -3,8 +3,7 @@
 import ProdutoModal from "@/components/estoque/ProdutoModal";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
-import { listarProdutos, criarProduto, atualizarProduto } from "@/src/services/product.service";
-import type { Produto } from "@/mocks/produtos";
+import { listarProdutos, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
 import { useState, useEffect } from "react";
 import { 
   Search, 
@@ -21,6 +20,29 @@ import {
   Eye,
   EyeOff
 } from "lucide-react";
+
+// TIPO PARA USO NA APLICAÇÃO (substituindo o mock)
+export interface Produto {
+  id: number;
+  nome: string;
+  categoria: string;
+  fornecedor: string;
+  localizacao: string;
+  preco: number;
+  custo: number;
+  estoque: number;
+  estoqueMinimo: number;
+  estoqueMaximo: number;
+  sku: string;
+  codigoBarras: string;
+  imagem: string;
+  ultimaMovimentacao: string;
+  description: string;
+  color: string;
+  size: string;
+  units_type: string;
+  is_active: boolean;
+}
 
 // Interface para o produto do banco
 interface ProdutoDB {
