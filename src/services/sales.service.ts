@@ -82,6 +82,8 @@ export async function criarVenda(venda: CreateSaleDTO) {
     throw new Error(`Erro ao criar venda: ${saleError?.message}`);
   }
 
+  console.log("Venda criada com sucesso, ID:", sale.id);
+
   // Inserir itens
   const itemsWithSaleId = saleItems.map(item => ({
     ...item,
@@ -99,15 +101,19 @@ export async function criarVenda(venda: CreateSaleDTO) {
     throw new Error(`Erro ao criar itens da venda: ${itemsError.message}`);
   }
 
-  // Atualizar estoque dos produtos
+  // Atualizar estoque dos produtos - BLOCO CORRIGIDO
+  console.log("Itens da venda para decrementar estoque:", venda.items);
   for (const item of venda.items) {
-    const { error: stockError } = await supabase.rpc('decrement_stock', {
+    console.log(`Decrementando estoque para produto SKU: ${item.product_id}, quantidade: ${item.quantity}`);
+    const { data: stockData, error: stockError } = await supabase.rpc('decrement_stock', {
       product_sku: item.product_id,
       quantity: item.quantity
     });
 
     if (stockError) {
       console.error(`Erro ao atualizar estoque do produto ${item.product_id}:`, stockError);
+    } else {
+      console.log(`Estoque decrementado com sucesso para produto ${item.product_id}. Resultado:`, stockData);
     }
   }
 
@@ -514,4 +520,30 @@ export async function getTopPerformingProducts(periodo: { inicio: string; fim: s
   
   // 4. Ordena os produtos por receita (do maior para o menor) e retorna o limite solicitado
   return result.sort((a, b) => b.receita - a.receita).slice(0, limit);
+}
+
+/* =========================
+   BUSCAR VENDAS POR CLIENTE
+========================= */
+export async function getSalesByCustomerId(customerId: number) {
+  console.log("Buscando vendas para o cliente ID:", customerId);
+
+  const { data, error } = await supabase
+    .from("sales")
+    .select(`
+      *,
+      items:sale_items(
+        *,
+        product:products(sku, name)
+      )
+    `)
+    .eq("customer_id", customerId)
+    .order("sale_date", { ascending: false });
+
+  if (error) {
+    console.error("Erro ao buscar vendas do cliente:", error);
+    throw new Error(error.message);
+  }
+
+  return data || [];
 }

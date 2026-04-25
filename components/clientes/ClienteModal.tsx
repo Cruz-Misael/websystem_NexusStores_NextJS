@@ -19,6 +19,7 @@ import { useEffect, useState } from "react";
 import { criarPessoa, atualizarPessoa, buscarPessoaPorId } from "@/src/services/people.service";
 import { criarDocumento, listarDocumentosPorPessoa, deletarDocumento } from "@/src/services/document.service";
 import ListaDocumentos from "./ListaDocumentos";
+import toast from "react-hot-toast";
 
 /* ========= TIPOS ========= */
 
@@ -162,9 +163,10 @@ export default function ClienteModal({
       setSalvando(true);
       await deletarDocumento(documentId);
       setDocumentosExistentes(prev => prev.filter(d => d.id !== documentId));
+      toast.success("Documento deletado com sucesso!");
     } catch (error: any) {
       console.error("Erro ao deletar documento:", error);
-      alert(`Erro ao deletar documento: ${error.message}`);
+      toast.error(`Erro ao deletar documento: ${error.message}`);
     } finally {
       setSalvando(false);
     }

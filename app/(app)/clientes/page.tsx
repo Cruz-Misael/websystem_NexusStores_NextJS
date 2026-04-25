@@ -3,6 +3,7 @@ import { useState, useEffect } from "react";
 import ClienteModal from "@/components/clientes/ClienteModal";
 import VisualizarDocumento from "@/components/clientes/VisualizarDocumento";
 import PopupConfirmacao from "@/components/clientes/PopupConfirmacao";
+import { History } from "lucide-react";
 import { 
   Search, 
   Mail, 
@@ -34,6 +35,8 @@ import {
   ResponsiveContainer 
 } from "recharts";
 import { listarPessoas, buscarPessoaPorId, deletarPessoa, atualizarPessoa } from "@/src/services/people.service";
+import { getSalesByCustomerId } from "@/src/services/sales.service";
+import { Sale } from "@/types/sales";
 
 // Tipo do backend
 interface PessoaDB {
@@ -81,6 +84,27 @@ export type Cliente = {
   } | null;
 };
 
+// Componente de Card de Estatística - CORRIGIDO
+const StatCard = ({ icon: Icon, label, value, isLoading }: any) => {
+  if (isLoading) {
+    return (
+      <div className="p-5 border border-zinc-200 shadow-sm rounded-xl">
+        <div className="h-4 w-3/4 bg-zinc-200 rounded animate-pulse mb-3"></div>
+        <div className="h-8 w-1/2 bg-zinc-200 rounded animate-pulse"></div>
+      </div>
+    );
+  }
+  return (
+    <div className="relative p-5 border border-zinc-200 shadow-sm overflow-hidden group hover:border-indigo-200 transition-all rounded-xl">
+      <p className="text-zinc-500 text-[10px] font-bold uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-3xl font-black text-zinc-900 tracking-tighter">
+        {value}
+      </p>
+      <Icon size={48} className="absolute -right-3 -bottom-3 text-zinc-100 group-hover:text-indigo-100 transition-colors" />
+    </div>
+  );
+};
+
 export default function CRMCompacto() {
   const [selecionado, setSelecionado] = useState<Cliente | null>(null);
   const [listaClientes, setListaClientes] = useState<Cliente[]>([]);
@@ -91,15 +115,15 @@ export default function CRMCompacto() {
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
   const [atualizando, setAtualizando] = useState(false);
+  const [historicoVendas, setHistoricoVendas] = useState<Sale[]>([]);
+  const [carregandoHistorico, setCarregandoHistorico] = useState(false);
   
-  // Estados para documentos
   const [documentoAberto, setDocumentoAberto] = useState(false);
   const [documentoSelecionado, setDocumentoSelecionado] = useState<{
     id: number;
     document_file: string;
   } | null>(null);
   
-  // Estados para popup de confirmação
   const [popupAberto, setPopupAberto] = useState(false);
   const [popupConfig, setPopupConfig] = useState({
     titulo: "",
@@ -108,10 +132,8 @@ export default function CRMCompacto() {
     onConfirmar: undefined as (() => void) | undefined,
   });
   
-  // Estado para menu de ações
   const [menuAberto, setMenuAberto] = useState<number | null>(null);
 
-  // Funções do popup
   const mostrarPopup = (
     titulo: string,
     mensagem: string,
@@ -134,28 +156,19 @@ export default function CRMCompacto() {
     }, 300);
   };
 
-  // Carregar clientes do banco
   const carregarClientes = async (mostrarInativos = false) => {
     try {
       setCarregando(true);
       setErro(null);
-      
       const pessoas = await listarPessoas();
-      console.log("Pessoas carregadas:", pessoas);
-      
-      // Filtrar inativos se necessário
-      const pessoasFiltradas = mostrarInativos 
-        ? pessoas 
-        : pessoas.filter((p: any) => p.is_active !== false);
-      
-      // Converter do formato do banco para o formato da interface
+      const pessoasFiltradas = mostrarInativos ? pessoas : pessoas.filter((p: any) => p.is_active !== false);
       const clientesConvertidos: Cliente[] = pessoasFiltradas.map((p: PessoaDB) => ({
         id: p.id,
         nome: p.name || "Sem nome",
         email: p.email || "",
         telefone: p.phone || "",
-        ultimaCompra: "", // Implementar depois
-        totalGasto: 0, // Implementar depois
+        ultimaCompra: "", 
+        totalGasto: 0,
         documento: p.identity_number?.toString() || "",
         endereco: p.address_street || "",
         cidade: p.city || "",
@@ -165,14 +178,10 @@ export default function CRMCompacto() {
         is_active: p.is_active ?? true,
         document: p.document,
       }));
-      
       setListaClientes(clientesConvertidos);
-      
-      // Seleciona o primeiro cliente se não houver selecionado
       if (clientesConvertidos.length > 0 && !selecionado) {
         setSelecionado(clientesConvertidos[0]);
       } else if (selecionado) {
-        // Atualiza o cliente selecionado se ele ainda existir
         const clienteAtualizado = clientesConvertidos.find(c => c.id === selecionado.id);
         if (clienteAtualizado) {
           setSelecionado(clienteAtualizado);
@@ -180,7 +189,6 @@ export default function CRMCompacto() {
           setSelecionado(clientesConvertidos[0]);
         }
       }
-      
     } catch (error: any) {
       console.error("Erro ao carregar clientes:", error);
       setErro(error.message || "Erro ao carregar clientes");
@@ -190,40 +198,42 @@ export default function CRMCompacto() {
     }
   };
 
-  // Função para deletar/inativar cliente
+  useEffect(() => {
+    const carregarHistorico = async () => {
+      if (!selecionado) {
+        setHistoricoVendas([]);
+        return;
+      }
+      try {
+        setCarregandoHistorico(true);
+        const vendas = await getSalesByCustomerId(selecionado.id);
+        setHistoricoVendas(vendas);
+      } catch (error) {
+        console.error("Erro ao buscar histórico de vendas:", error);
+        mostrarPopup("Erro", "Não foi possível carregar o histórico de vendas.", "erro");
+      } finally {
+        setCarregandoHistorico(false);
+      }
+    };
+    carregarHistorico();
+  }, [selecionado]);
+
   const handleDeletarCliente = async (cliente: Cliente) => {
-    mostrarPopup(
-      "Confirmar exclusão",
-      `Tem certeza que deseja excluir permanentemente o cliente "${cliente.nome}"?\n\nEsta ação não pode ser desfeita.`,
-      "aviso",
+    mostrarPopup("Confirmar exclusão", `Tem certeza que deseja excluir permanentemente o cliente "${cliente.nome}"?`, "aviso",
       async () => {
         try {
           setAtualizando(true);
           await deletarPessoa(cliente.id);
-          
-          // Remover da lista
           const novaLista = listaClientes.filter(c => c.id !== cliente.id);
           setListaClientes(novaLista);
-          
-          // Se o cliente deletado era o selecionado, seleciona outro
           if (selecionado?.id === cliente.id) {
             setSelecionado(novaLista.length > 0 ? novaLista[0] : null);
           }
-          
-          mostrarPopup(
-            "Cliente excluído",
-            `O cliente "${cliente.nome}" foi excluído com sucesso.`,
-            "info"
-          );
-          
+          mostrarPopup("Cliente excluído", `O cliente "${cliente.nome}" foi excluído com sucesso.`, "info");
           fecharPopup();
         } catch (error: any) {
           console.error("Erro ao deletar cliente:", error);
-          mostrarPopup(
-            "Erro ao excluir",
-            error.message || "Ocorreu um erro ao tentar excluir o cliente.",
-            "erro"
-          );
+          mostrarPopup("Erro ao excluir", error.message || "Ocorreu um erro ao tentar excluir o cliente.", "erro");
         } finally {
           setAtualizando(false);
         }
@@ -231,44 +241,24 @@ export default function CRMCompacto() {
     );
   };
 
-  // Função para inativar/ativar cliente
   const handleToggleAtivo = async (cliente: Cliente) => {
     const novoStatus = !cliente.is_active;
     const acao = novoStatus ? "ativar" : "inativar";
-    
-    mostrarPopup(
-      `Confirmar ${acao}`,
-      `Tem certeza que deseja ${acao} o cliente "${cliente.nome}"?`,
-      "aviso",
+    mostrarPopup(`Confirmar ${acao}`, `Tem certeza que deseja ${acao} o cliente "${cliente.nome}"?`, "aviso",
       async () => {
         try {
           setAtualizando(true);
           await atualizarPessoa(cliente.id, { is_active: novoStatus });
-          
-          // Atualizar na lista
           const clienteAtualizado = { ...cliente, is_active: novoStatus };
-          setListaClientes(prev => 
-            prev.map(c => c.id === cliente.id ? clienteAtualizado : c)
-          );
-          
+          setListaClientes(prev => prev.map(c => c.id === cliente.id ? clienteAtualizado : c));
           if (selecionado?.id === cliente.id) {
             setSelecionado(clienteAtualizado);
           }
-          
-          mostrarPopup(
-            "Sucesso",
-            `Cliente ${acao}do com sucesso.`,
-            "info"
-          );
-          
+          mostrarPopup("Sucesso", `Cliente ${acao}do com sucesso.`, "info");
           fecharPopup();
         } catch (error: any) {
           console.error(`Erro ao ${acao} cliente:`, error);
-          mostrarPopup(
-            "Erro",
-            error.message || `Ocorreu um erro ao tentar ${acao} o cliente.`,
-            "erro"
-          );
+          mostrarPopup("Erro", error.message || `Ocorreu um erro ao tentar ${acao} o cliente.`, "erro");
         } finally {
           setAtualizando(false);
         }
@@ -276,64 +266,54 @@ export default function CRMCompacto() {
     );
   };
 
-  // Função para visualizar documento
   const handleVisualizarDocumento = (documento: any) => {
     if (!documento) {
-      mostrarPopup(
-        "Sem documento",
-        "Este cliente não possui documento anexado.",
-        "info"
-      );
+      mostrarPopup("Sem documento", "Este cliente não possui documento anexado.", "info");
       return;
     }
     setDocumentoSelecionado(documento);
     setDocumentoAberto(true);
   };
 
-  // Carregar na inicialização
   useEffect(() => {
     carregarClientes();
   }, []);
 
-  // Fechar menu ao clicar fora
   useEffect(() => {
     const handleClickOutside = () => setMenuAberto(null);
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
-  // Função para abrir modal de NOVO cliente
   const abrirNovoCliente = () => {
     setModoModal("create");
     setClienteIdEdit(null);
     setModalAberto(true);
   };
 
-  // Função para abrir modal de EDIÇÃO
   const abrirEdicao = (cliente: Cliente) => {
     setModoModal("edit");
     setClienteIdEdit(cliente.id);
     setModalAberto(true);
   };
 
-  // Função chamada após salvar no modal
   const handleSalvarCliente = async () => {
     await carregarClientes();
   };
 
-  // Filtra clientes pela busca
   const filtrarClientes = () => {
-    return listaClientes.filter(c => 
-      c.nome.toLowerCase().includes(busca.toLowerCase()) || 
-      c.email.toLowerCase().includes(busca.toLowerCase())
-    );
+    return listaClientes.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()) || c.email.toLowerCase().includes(busca.toLowerCase()));
   };
+  
+  const totalGasto = historicoVendas.reduce((acc, venda) => acc + (venda.final_amount || 0), 0);
+  const ultimaCompra = historicoVendas.length > 0 ? new Date(historicoVendas[0].sale_date).toLocaleDateString('pt-BR') : "N/A";
+  const totalCompras = historicoVendas.length;
+  const formatarMoeda = (val: number) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(val);
 
-  // Função auxiliar para status
   const getStatus = (cliente: Cliente) => {
     if (!cliente.is_active) return "Inativo";
-    if (cliente.totalGasto > 1000) return "VIP";
-    if (cliente.totalGasto > 0) return "Regular";
+    if (totalGasto > 1000) return "VIP"; // Usando o totalGasto real
+    if (totalCompras > 0) return "Regular";
     return "Novo";
   };
 
@@ -346,10 +326,8 @@ export default function CRMCompacto() {
     }
   };
 
-  const getIniciais = (nome: string) => 
-    nome.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase();
+  const getIniciais = (nome: string) => nome.split(" ").map(n => n[0]).join("").substring(0, 2).toUpperCase();
 
-  // Loading state
   if (carregando && listaClientes.length === 0) {
     return (
       <div className="flex h-full items-center justify-center bg-zinc-50">
@@ -546,21 +524,11 @@ export default function CRMCompacto() {
         </div>
       </div>
 
-      {/* COLUNA DIREITA: DETALHES */}
-      <div className="flex-1 flex flex-col bg-zinc-50 h-full overflow-hidden">
-        
-        {/* Se não tem cliente selecionado */}
-        {!selecionado ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8">
-            <Users className="h-16 w-16 text-zinc-300 mb-4" />
-            <h3 className="text-lg font-semibold text-zinc-700 mb-2">Nenhum cliente selecionado</h3>
-            <p className="text-zinc-500 text-sm mb-6 text-center max-w-md">
-              Selecione um cliente da lista ao lado para ver os detalhes.
-            </p>
-          </div>
-        ) : (
+      {/* COLUNA DIREITA: DETALHES DO CLIENTE */}
+      <div className="flex-1 flex flex-col min-w-0">
+        {selecionado ? (
           <>
-            {/* Header do Detalhe */}
+            {/* Header do Detalhe - Botão Editar já estava aqui, só garantindo que a função abrirEdicao(selecionado) está correta */}
             <header className="bg-white border-b border-zinc-200 px-6 py-5 flex justify-between items-center shrink-0 shadow-sm z-10">
               <div className="flex items-center gap-4">
                 <div className="w-14 h-14 rounded-2xl bg-zinc-900 flex items-center justify-center text-white font-black text-xl shadow-lg border-4 border-white relative">
@@ -627,172 +595,127 @@ export default function CRMCompacto() {
               </div>
             </header>
 
-            {/* Área de Conteúdo Scrollavel */}
-            <div className="flex-1 overflow-y-auto p-8 min-h-0 bg-zinc-50/50">
-              <div className="max-w-4xl mx-auto space-y-6">
-                
-                {/* Informações do Cliente */}
-                <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-zinc-100 bg-zinc-50/50">
-                    <h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px] flex items-center gap-2">
-                      <Info size={14} className="text-indigo-600" />
-                      Informações Cadastrais
-                    </h3>
+            {/* Conteúdo scrollável dos detalhes */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-8 bg-zinc-50 min-h-0">
+              {/* Seção de KPIs */}
+              <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <StatCard 
+                  label="Total Gasto" 
+                  value={formatarMoeda(totalGasto)} 
+                  icon={ShoppingBag} 
+                  isLoading={carregandoHistorico} 
+                />
+                <StatCard 
+                  label="Total de Compras" 
+                  value={totalCompras.toString()} 
+                  icon={MessageSquare} 
+                  isLoading={carregandoHistorico} 
+                />
+                <StatCard 
+                  label="Última Compra" 
+                  value={ultimaCompra} 
+                  icon={Calendar} 
+                  isLoading={carregandoHistorico} 
+                />
+              </section>
+
+              {/* Seção de Informações Pessoais - RESTAURADA */}
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <Info size={16} className="text-zinc-400" />
+                  <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-[2px]">
+                    Detalhes do Cliente
+                  </h3>
+                </div>
+                <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-6 grid grid-cols-2 gap-x-8 gap-y-4 text-xs">
+                  <div className="space-y-1">
+                    <p className="text-zinc-400 font-semibold">Documento (CPF/CNPJ)</p>
+                    <p className="text-zinc-800 font-medium">{selecionado.documento || "Não informado"}</p>
                   </div>
-                  <div className="p-6">
-                    <div className="grid grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Documento</label>
-                          <p className="text-sm font-medium text-zinc-800">{selecionado.documento || "Não informado"}</p>
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Data de Nascimento</label>
-                          <p className="text-sm font-medium text-zinc-800">
-                            {selecionado.dataNascimento 
-                              ? new Date(selecionado.dataNascimento).toLocaleDateString('pt-BR')
-                              : "Não informada"}
-                          </p>
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Status</label>
-                          <p className="text-sm font-medium text-zinc-800">
-                            {selecionado.is_active ? (
-                              <span className="text-emerald-600">Ativo</span>
-                            ) : (
-                              <span className="text-gray-500">Inativo</span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Endereço</label>
-                          <p className="text-sm font-medium text-zinc-800">
-                            {selecionado.endereco || "Não informado"}
-                            {selecionado.cidade && ` - ${selecionado.cidade}`}
-                            {selecionado.estado && `/${selecionado.estado}`}
-                          </p>
-                        </div>
-                        {selecionado.document && (
-                          <div>
-                            <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Documento Anexado</label>
-                            <button
-                              onClick={() => handleVisualizarDocumento(selecionado.document)}
-                              className="mt-1 flex items-center gap-2 text-indigo-600 hover:text-indigo-700 text-sm"
-                            >
-                              <FileText size={16} />
-                              Visualizar documento
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    {selecionado.observacoes && (
-                      <div className="mt-4 pt-4 border-t border-zinc-100">
-                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider">Observações</label>
-                        <p className="text-sm font-medium text-zinc-800 mt-1">{selecionado.observacoes}</p>
-                      </div>
-                    )}
+                  <div className="space-y-1">
+                    <p className="text-zinc-400 font-semibold">Data de Nascimento</p>
+                    <p className="text-zinc-800 font-medium">{selecionado.dataNascimento ? new Date(selecionado.dataNascimento).toLocaleDateString('pt-BR') : "Não informado"}</p>
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <p className="text-zinc-400 font-semibold">Endereço</p>
+                    <p className="text-zinc-800 font-medium">
+                      {selecionado.endereco ? `${selecionado.endereco}, ${selecionado.cidade} - ${selecionado.estado}` : "Não informado"}
+                    </p>
+                  </div>
+                   <div className="space-y-1 col-span-2">
+                    <p className="text-zinc-400 font-semibold">Observações</p>
+                    <p className="text-zinc-800 font-medium italic">{selecionado.observacoes || "Nenhuma observação."}</p>
                   </div>
                 </div>
+              </section>
 
-                {/* KPI Cards */}
-                <div className="grid grid-cols-3 gap-5">
-                  <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-sm relative overflow-hidden group hover:border-indigo-200 transition-all">
-                    <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">Lifetime Value</p>
-                    <p className="text-3xl font-black text-zinc-900 tracking-tighter font-mono">
-                      {selecionado.totalGasto.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
-                    </p>
-                    <ShoppingBag size={48} className="absolute -right-3 -bottom-3 text-zinc-50 group-hover:text-indigo-50/50 transition-colors" />
-                  </div>
-
-                  <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-sm relative overflow-hidden group hover:border-indigo-200 transition-all">
-                    <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">Último Pedido</p>
-                    <p className="text-3xl font-black text-zinc-900 tracking-tighter font-mono">
-                      {selecionado.ultimaCompra || "Nenhum"}
-                    </p>
-                    <Calendar size={48} className="absolute -right-3 -bottom-3 text-zinc-50 group-hover:text-indigo-50/50 transition-colors" />
-                  </div>
-
-                  <div className="bg-white p-5 rounded-2xl border border-zinc-200 shadow-sm relative overflow-hidden group hover:border-indigo-200 transition-all">
-                    <p className="text-zinc-400 text-[10px] font-black uppercase tracking-widest mb-1">Ticket Médio Est.</p>
-                    <p className="text-3xl font-black text-zinc-900 tracking-tighter font-mono">
-                      {selecionado.totalGasto > 0 
-                        ? (selecionado.totalGasto / 3.2).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }) 
-                        : "R$ 0,00"}
-                    </p>
-                    <Info size={48} className="absolute -right-3 -bottom-3 text-zinc-50 group-hover:text-indigo-50/50 transition-colors" />
-                  </div>
+              {/* Seção do Histórico de Vendas */}
+              <section>
+                <div className="flex items-center gap-2 mb-4">
+                  <History size={16} className="text-zinc-400" />
+                  <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-[2px]">
+                    Histórico de Compras
+                  </h3>
                 </div>
-
-                {/* Timeline de Atividades */}
                 <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
-                  <div className="px-5 py-3 border-b border-zinc-100 flex justify-between items-center bg-zinc-50/50">
-                    <h3 className="text-[11px] font-black text-zinc-800 uppercase tracking-widest flex items-center gap-2">
-                      Histórico de Atividades
-                    </h3>
-                  </div>
-                  <div className="p-6">
-                    <div className="relative pl-6 border-l-2 border-zinc-100 space-y-8">
-                      <div className="relative">
-                        <div className="absolute -left-[31px] top-1 w-4 h-4 bg-emerald-500 rounded-full border-4 border-white shadow-sm"></div>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="font-bold text-zinc-800 text-xs uppercase">Cliente Criado</p>
-                            <p className="text-zinc-500 text-[11px] font-medium mt-0.5">Cadastro inicial</p>
-                          </div>
-                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-tighter">
-                            {new Date(selecionado.dataNascimento || Date.now()).toLocaleDateString('pt-BR')}
-                          </span>
-                        </div>
-                      </div>
+                  {carregandoHistorico ? (
+                    <div className="p-8 text-center">
+                      <Loader2 className="h-6 w-6 animate-spin text-indigo-600 mx-auto" />
+                      <p className="text-xs text-zinc-500 mt-2">Carregando histórico...</p>
                     </div>
-                  </div>
+                  ) : historicoVendas.length === 0 ? (
+                    <div className="p-8 text-center">
+                      <ShoppingBag className="h-10 w-10 text-zinc-300 mx-auto mb-2" />
+                      <p className="text-zinc-500 text-xs">Nenhuma compra encontrada para este cliente.</p>
+                    </div>
+                  ) : (
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-zinc-50 border-b border-zinc-200 text-zinc-500">
+                        <tr>
+                          <th className="p-3 font-medium">Data</th>
+                          <th className="p-3 font-medium">Itens</th>
+                          <th className="p-3 font-medium text-right">Total</th>
+                          <th className="p-3 font-medium">Status Pag.</th>
+                          <th className="p-3 font-medium"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {historicoVendas.map((venda) => (
+                          <tr key={venda.id} className="border-b border-zinc-100 last:border-0 hover:bg-zinc-50/80 transition-colors">
+                            <td className="p-3">{new Date(venda.sale_date).toLocaleDateString('pt-BR')}</td>
+                            <td className="p-3">{venda.items.length}</td>
+                            <td className="p-3 text-right font-bold">{formatarMoeda(venda.final_amount)}</td>
+                            <td className="p-3">
+                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold
+                                ${venda.payment_status === 'paid' ? 'bg-emerald-50 text-emerald-700' : 
+                                  venda.payment_status === 'cancelled' ? 'bg-rose-50 text-rose-700' :
+                                  'bg-amber-50 text-amber-700'}`}>
+                                {venda.payment_status === 'paid' ? 'Pago' : venda.payment_status === 'cancelled' ? 'Cancelado' : 'Pendente'}
+                              </span>
+                            </td>
+                            <td className="p-3 text-right">
+                              <button className="text-zinc-400 hover:text-indigo-600">
+                                <MoreVertical size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
-              </div>
+              </section>
             </div>
           </>
+        ) : (
+          <div className="flex h-full items-center justify-center bg-zinc-50">
+            <div className="text-center">
+              <Users className="h-12 w-12 text-zinc-300 mx-auto mb-3" />
+              <p className="text-zinc-500 text-sm">Selecione um cliente para ver os detalhes</p>
+            </div>
+          </div>
         )}
       </div>
-
-      {/* MODAL de Cliente */}
-      {modalAberto && (
-        <ClienteModal
-          aberto={modalAberto}
-          mode={modoModal}
-          clienteId={clienteIdEdit}
-          onClose={() => {
-            setModalAberto(false);
-            setClienteIdEdit(null);
-          }}
-          onSave={handleSalvarCliente}
-        />
-      )}
-
-      {/* MODAL de Visualização de Documento */}
-      <VisualizarDocumento
-        aberto={documentoAberto}
-        documento={documentoSelecionado}
-        onClose={() => {
-          setDocumentoAberto(false);
-          setDocumentoSelecionado(null);
-        }}
-      />
-
-      {/* POPUP de Confirmação */}
-      <PopupConfirmacao
-        aberto={popupAberto}
-        titulo={popupConfig.titulo}
-        mensagem={popupConfig.mensagem}
-        tipo={popupConfig.tipo}
-        onConfirmar={popupConfig.onConfirmar}
-        onCancelar={fecharPopup}
-        onFechar={fecharPopup}
-        confirmando={atualizando}
-        textoConfirmar="Confirmar"
-        textoCancelar="Cancelar"
-      />
     </div>
   );
 }
