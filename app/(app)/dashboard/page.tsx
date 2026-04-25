@@ -39,7 +39,7 @@ import {
   getSalesByCategory, 
   getTopPerformingProducts,
   getSalesByHour 
-} from "@/src/services/sales.service.ts";
+} from "@/src/services/sales.service";
 
 // --- TIPOS DE DADOS ---
 interface KpiData {
