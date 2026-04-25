@@ -80,7 +80,7 @@ export async function listarPessoas() {
       documents(*)
     `)
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .limit(30);
 
   if (error) {
     console.error("Erro ao listar pessoas com documentos:", error);
