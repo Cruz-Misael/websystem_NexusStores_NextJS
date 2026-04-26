@@ -716,6 +716,32 @@ export default function CRMCompacto() {
           </div>
         )}
       </div>
+
+      {/* MODAIS E POPUPS - RESTAURADOS */}
+      <ClienteModal
+        aberto={modalAberto}
+        mode={modoModal}
+        clienteId={clienteIdEdit}
+        onClose={() => setModalAberto(false)}
+        onSave={handleSalvarCliente}
+      />
+
+      <PopupConfirmacao
+        aberto={popupAberto}
+        titulo={popupConfig.titulo}
+        mensagem={popupConfig.mensagem}
+        tipo={popupConfig.tipo}
+        onConfirmar={popupConfig.onConfirmar}
+        onCancelar={fecharPopup}
+        onFechar={fecharPopup}
+        confirmando={atualizando}
+      />
+
+      <VisualizarDocumento
+        aberto={documentoAberto}
+        documento={documentoSelecionado}
+        onClose={() => setDocumentoAberto(false)}
+      />
     </div>
   );
 }
