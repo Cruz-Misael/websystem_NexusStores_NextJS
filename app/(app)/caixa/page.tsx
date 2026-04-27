@@ -132,6 +132,45 @@ export default function CaixaPDVPro() {
     }
   }, [modalClienteAberto]);
 
+  // Persistência de foco no input de bipar
+  useEffect(() => {
+    const focusInput = () => {
+      // Registrar se alguma modal ou campo de busca de cliente está aberto
+      const modalAberta = modalClienteAberto || mostrarModalConsignado || popupAberto;
+      
+      if (!modalAberta && inputRef.current && document.activeElement?.tagName !== 'INPUT') {
+        inputRef.current.focus();
+      }
+    };
+
+    // Foca ao iniciar
+    focusInput();
+
+    // Tentar focar novamente se o usuário clicar fora ou em áreas neutras
+    const handleGlobalClick = () => {
+      // Pequeno delay para permitir que o clique em outro botão/input seja processado primeiro
+      setTimeout(focusInput, 100);
+    };
+
+    window.addEventListener("click", handleGlobalClick);
+
+    // Atalhos de teclado globais
+    const handleKeyDownGlobal = (e: KeyboardEvent) => {
+      // F2 foca o input de busca/bip
+      if (e.key === "F2") {
+        e.preventDefault();
+        inputRef.current?.focus();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDownGlobal);
+
+    return () => {
+      window.removeEventListener("click", handleGlobalClick);
+      window.removeEventListener("keydown", handleKeyDownGlobal);
+    };
+  }, [modalClienteAberto, mostrarModalConsignado, popupAberto]);
+
   const carregarClientes = async () => {
     try {
       const pessoas = await listarPessoas();
@@ -233,6 +272,10 @@ export default function CaixaPDVPro() {
       mostrarToast("Erro ao buscar produto", "erro");
     } finally {
       setBuscandoProduto(false);
+      // Garante que o foco volte após a limpeza do estado
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 0);
     }
   };
 
@@ -264,6 +307,7 @@ export default function CaixaPDVPro() {
   };
 
   const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (buscandoProduto) return;
     if (e.key === 'Enter' && busca) {
       await buscarProduto(busca);
     }
@@ -446,7 +490,6 @@ export default function CaixaPDVPro() {
                 placeholder="Escaneie ou digite o código (F2)..."
                 className="w-full h-12 pl-10 pr-20 bg-zinc-50 border border-zinc-200 rounded-lg text-lg font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-zinc-400"
                 autoFocus
-                disabled={buscandoProduto}
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
                 <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-zinc-500 bg-white border border-zinc-200 rounded shadow-sm">

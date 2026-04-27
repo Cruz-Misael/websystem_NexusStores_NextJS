@@ -776,13 +776,14 @@ export default function HistoricoVendasCompacto() {
         <DevolucaoTrocaModal
           venda={{
             id: selecionada.id,
+            customer: selecionada.customer ? { id: selecionada.customer.id, name: selecionada.customer.name } : undefined,
             itens: selecionada.items.map(item => ({
               id: item.id,
-              nome: item.product_name,
+              nome: item.product?.name || item.product_name || "Produto",
               quantidade: item.quantity,
               precoUnitario: item.unit_price,
-              codigoBarras: item.product_barcode || item.product_sku,
-              variante: item.product_sku
+              codigoBarras: item.product ? item.product_barcode || item.product?.sku?.toString() || "" : "",
+              variante: item.product?.sku?.toString() || item.product_sku
             }))
           }}
           onClose={() => setModalAberto(false)}
