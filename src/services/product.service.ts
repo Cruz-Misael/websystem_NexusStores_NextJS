@@ -65,6 +65,22 @@ export async function buscarProdutoPorSKU(sku: number) {
   return data;
 }
 
+export async function buscarProdutoPorBarcodeOuSKU(codigo: string) {
+  console.log("Buscando produto por código/SKU:", codigo);
+
+  // Tenta por SKU (se for número)
+  const skuNum = parseInt(codigo);
+  
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .or(`barcode.eq.${codigo}${!isNaN(skuNum) ? `,sku.eq.${skuNum}` : ''}`)
+    .maybeSingle();
+
+  if (error) throw error;
+  return data;
+}
+
 export async function listarProdutos() {
   console.log("Listando todos os produtos");
 

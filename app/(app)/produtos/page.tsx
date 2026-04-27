@@ -8,6 +8,7 @@ import { useState, useEffect } from "react";
 import { 
   Search, 
   Plus, 
+  Minus,
   Package, 
   AlertCircle, 
   History,
@@ -142,6 +143,8 @@ export default function GestaoEstoqueCompacto() {
   const [listaProdutos, setListaProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState("");
   const [ajusteEstoque, setAjusteEstoque] = useState(1);
+  const [ajusteTipo, setAjusteTipo] = useState<"entrada" | "saida">("entrada");
+  const [ajusteObservacao, setAjusteObservacao] = useState("");
   const [modalAberto, setModalAberto] = useState(false);
   const [modoModal, setModoModal] = useState<"create" | "edit">("create");
   const [produtoParaEditar, setProdutoParaEditar] = useState<Produto | null>(null);
@@ -366,44 +369,47 @@ const carregarProdutos = async () => {
   };
 
   // Função para deletar produto
-  const deletarProduto = async (produto: Produto) => {
+  const handleExcluirProduto = async (produto: Produto) => {
     mostrarPopup(
-      "Confirmar exclusão",
-      `Tem certeza que deseja inativar o produto "${produto.nome}"?\n\nEsta ação pode ser revertida posteriormente ativando o produto novamente.`,
-      "aviso",
+      "Confirmar EXCLUSÃO DEFINITIVA",
+      `Tem certeza que deseja EXCLUIR o produto "${produto.nome}"? \n\n⚠️ ATENÇÃO: Esta ação é irreversível. Se este produto já foi vendido anteriormente, o sistema não permitirá a exclusão para preservar o histórico de vendas.`,
+      "erro",
       async () => {
         try {
           setCarregandoAcao(true);
           
           const skuNumber = parseInt(produto.sku.replace('SKU-', ''));
-          await atualizarProduto(skuNumber, { is_active: false });
+          await deletarProduto(skuNumber);
           
-          // Atualiza lista local
-          const produtoAtualizado = { ...produto, is_active: false };
-          setListaProdutos(prev => 
-            prev.map(p => p.id === produto.id ? produtoAtualizado : p)
-          );
+          // Se chegou aqui, deletou com sucesso no banco
+          setListaProdutos(prev => prev.filter(p => p.id !== produto.id));
           
           if (selecionado?.id === produto.id) {
-            setSelecionado(produtoAtualizado);
+            setSelecionado(null);
           }
           
-          mostrarToast(`Produto "${produto.nome}" inativado com sucesso!`, "sucesso");
+          mostrarToast(`Produto "${produto.nome}" excluído definitivamente!`, "sucesso");
           fecharPopup();
         } catch (error: any) {
-          console.error("❌ Erro ao inativar produto:", error);
+          console.error("❌ Erro ao deletar produto:", error);
+          
+          let mensagemErro = error.message || "Erro desconhecido";
+          if (mensagemErro.includes("foreign key")) {
+            mensagemErro = "Não é possível excluir este produto pois ele já possui histórico de vendas ou movimentações. Considere apenas inativar o produto clicando em editar.";
+          }
+
           mostrarPopup(
-            "Erro ao inativar produto",
-            error.message || "Ocorreu um erro ao tentar inativar o produto. Tente novamente.",
+            "Não foi possível excluir",
+            mensagemErro,
             "erro",
             undefined,
-            "OK"
+            "Entendido"
           );
         } finally {
           setCarregandoAcao(false);
         }
       },
-      "Sim, inativar",
+      "Sim, Excluir",
       "Cancelar"
     );
   };
@@ -509,6 +515,13 @@ const carregarProdutos = async () => {
                 {carregando && (
                   <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-600 rounded-full animate-ping"></span>
                 )}
+              </button>
+              <button 
+                onClick={abrirNovoProduto}
+                className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-all active:scale-95"
+                title="Cadastrar Novo Produto"
+              >
+                <Plus size={18} strokeWidth={2.5} />
               </button>
             </div>
           </div>
@@ -662,10 +675,10 @@ const carregarProdutos = async () => {
                   <Edit2 size={14}/> Editar
                 </button>
                 <button 
-                  onClick={() => deletarProduto(selecionado)}
+                  onClick={() => handleExcluirProduto(selecionado)}
                   disabled={carregandoAcao}
                   className="p-1.5 text-zinc-400 hover:text-red-600 transition-colors disabled:opacity-50"
-                  title="Inativar produto"
+                  title="Excluir produto"
                 >
                   {carregandoAcao ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                 </button>
@@ -728,40 +741,41 @@ const carregarProdutos = async () => {
                   </div>
                 </div>
 
-                {/* Ações Rápidas de Movimentação */}
-                <div className="bg-white rounded-xl border border-zinc-200 shadow-sm p-6">
-                  <h3 className="text-sm font-bold text-zinc-800 mb-4 flex items-center gap-2">
-                    <History size={16}/> Ajuste Rápido de Estoque
-                  </h3>
-                  
-                  <div className="flex items-end gap-4 bg-zinc-50 p-4 rounded-lg border border-zinc-100">
-                    <div>
-                      <label className="text-xs font-medium text-zinc-500 block mb-1.5">Tipo de Movimento</label>
-                      <div className="flex bg-white rounded-md border border-zinc-200 p-1 gap-1">
+                {/* Seção de Ajuste e Informação de Estoque */}
+                <div className="space-y-4">
+                  {/* Ações Rápidas de Movimentação - MINIMALISTA */}
+                  <div className="bg-white rounded-2xl border border-zinc-200 p-4 shadow-sm">
+                    <div className="flex flex-col lg:flex-row gap-4 items-center">
+                      
+                      {/* Toggle Tipo */}
+                      <div className="flex bg-zinc-100 p-1 rounded-xl shrink-0">
                         <button 
-                          onClick={handleEntrada}
-                          disabled={carregandoAcao || ajusteEstoque <= 0}
-                          className="px-4 py-1.5 text-xs font-medium rounded bg-emerald-100 text-emerald-700 flex items-center gap-1 hover:bg-emerald-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          onClick={() => setAjusteTipo("entrada")}
+                          className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                            ajusteTipo === "entrada" 
+                              ? "bg-white text-emerald-600 shadow-sm" 
+                              : "text-zinc-500 hover:text-zinc-700"
+                          }`}
                         >
-                          <ArrowUp size={12}/> Entrada
+                          Entrada
                         </button>
                         <button 
-                          onClick={handleSaida}
-                          disabled={carregandoAcao || ajusteEstoque <= 0}
-                          className="px-4 py-1.5 text-xs font-medium rounded hover:bg-rose-50 text-zinc-600 flex items-center gap-1 hover:text-rose-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                          onClick={() => setAjusteTipo("saida")}
+                          className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                            ajusteTipo === "saida" 
+                              ? "bg-white text-rose-600 shadow-sm" 
+                              : "text-zinc-500 hover:text-zinc-700"
+                          }`}
                         >
-                          <ArrowDown size={12}/> Saída
+                          Saída
                         </button>
                       </div>
-                    </div>
-                    
-                    <div>
-                      <label className="text-xs font-medium text-zinc-500 block mb-1.5">Quantidade</label>
-                      <div className="flex items-center">
+
+                      {/* Quantidade */}
+                      <div className="flex items-center bg-zinc-50 border border-zinc-100 rounded-xl p-1 w-full lg:w-40">
                         <button 
                           onClick={() => setAjusteEstoque(Math.max(1, ajusteEstoque - 1))}
-                          disabled={carregandoAcao}
-                          className="w-8 h-9 bg-white border border-zinc-300 rounded-l-md flex items-center justify-center hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+                          className="w-10 h-9 flex items-center justify-center text-zinc-400 hover:text-zinc-900 transition-colors"
                         >
                           -
                         </button>
@@ -769,74 +783,63 @@ const carregarProdutos = async () => {
                           type="number" 
                           value={ajusteEstoque}
                           onChange={(e) => setAjusteEstoque(Math.max(1, parseInt(e.target.value) || 1))}
-                          disabled={carregandoAcao}
-                          min="1"
-                          className="w-16 h-9 border-y border-zinc-300 text-center text-sm font-bold focus:outline-none disabled:bg-zinc-100"
+                          className="w-full bg-transparent text-center text-sm font-black text-zinc-900 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                         />
                         <button 
                           onClick={() => setAjusteEstoque(ajusteEstoque + 1)}
-                          disabled={carregandoAcao}
-                          className="w-8 h-9 bg-white border border-zinc-300 rounded-r-md flex items-center justify-center hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+                          className="w-10 h-9 flex items-center justify-center text-zinc-400 hover:text-zinc-900 transition-colors"
                         >
                           +
                         </button>
                       </div>
-                    </div>
 
-                    <div className="flex-1">
-                      <label className="text-xs font-medium text-zinc-500 block mb-1.5">Observação (Opcional)</label>
-                      <input 
-                        type="text" 
-                        placeholder="Ex: Ajuste de inventário" 
-                        className="w-full h-9 px-3 border border-zinc-300 rounded-md text-sm focus:outline-none focus:border-indigo-500 disabled:bg-zinc-100" 
-                        disabled={carregandoAcao}
-                      />
-                    </div>
+                      {/* Observação */}
+                      <div className="w-full relative">
+                        <input 
+                          type="text" 
+                          placeholder="Observação (opcional)..." 
+                          value={ajusteObservacao}
+                          onChange={(e) => setAjusteObservacao(e.target.value)}
+                          className="w-full bg-zinc-50 border border-zinc-100 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-zinc-300 transition-all placeholder:text-zinc-400" 
+                        />
+                      </div>
 
-                    <div className="flex gap-2">
+                      {/* Botão Ação */}
                       <button 
-                        onClick={handleEntrada}
+                        onClick={ajusteTipo === "entrada" ? handleEntrada : handleSaida}
                         disabled={carregandoAcao || ajusteEstoque <= 0}
-                        className="h-9 px-4 bg-emerald-600 text-white rounded-md text-xs font-medium hover:bg-emerald-700 flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title="Confirmar entrada"
+                        className={`h-11 px-6 rounded-xl text-[10px] font-black uppercase tracking-[2px] shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 shrink-0 w-full lg:w-auto
+                          ${ajusteTipo === "entrada" 
+                            ? "bg-emerald-600/10 text-emerald-600 hover:bg-emerald-600 hover:text-white" 
+                            : "bg-rose-600/10 text-rose-600 hover:bg-rose-600 hover:text-white"}
+                        `}
                       >
                         {carregandoAcao ? (
-                          <Loader2 size={14} className="animate-spin" />
+                          <Loader2 size={16} className="animate-spin" />
                         ) : (
-                          <ArrowUp size={14} />
+                          <>
+                            {ajusteTipo === "entrada" ? <Plus size={14} /> : <Minus size={14} />}
+                            Confirmar
+                          </>
                         )}
-                        Entrada
-                      </button>
-                      <button 
-                        onClick={handleSaida}
-                        disabled={carregandoAcao || ajusteEstoque <= 0}
-                        className="h-9 px-4 bg-rose-600 text-white rounded-md text-xs font-medium hover:bg-rose-700 flex items-center gap-2 shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                        title="Confirmar saída"
-                      >
-                        {carregandoAcao ? (
-                          <Loader2 size={14} className="animate-spin" />
-                        ) : (
-                          <ArrowDown size={14} />
-                        )}
-                        Saída
                       </button>
                     </div>
                   </div>
 
                   {/* Informação de Estoque Mínimo/Máximo */}
-                  <div className="mt-4 flex items-center gap-4 text-xs text-zinc-500">
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-amber-500"></div>
-                      <span>Estoque Mínimo: {selecionado.estoqueMinimo}</span>
+                  <div className="flex items-center flex-wrap gap-x-6 gap-y-2 text-[11px] font-medium text-zinc-400 px-2 mt-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div>
+                      <span>Estoque Mínimo: <b className="text-zinc-600">{selecionado.estoqueMinimo}</b></span>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <div className="w-2 h-2 rounded-full bg-zinc-800"></div>
-                      <span>Estoque Máximo: {selecionado.estoqueMaximo || "Ilimitado"}</span>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                      <span>Estoque Máximo: <b className="text-zinc-600">{selecionado.estoqueMaximo || "Ilimitado"}</b></span>
                     </div>
                     {selecionado.estoque <= selecionado.estoqueMinimo && (
-                      <div className="flex items-center gap-1 text-amber-600">
-                        <AlertCircle size={14} />
-                        <span>Estoque baixo! Recomenda-se fazer um pedido.</span>
+                      <div className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100 animate-pulse">
+                        <AlertCircle size={12} />
+                        <span className="font-bold uppercase text-[9px] tracking-tighter">Pedido Recomendado</span>
                       </div>
                     )}
                   </div>

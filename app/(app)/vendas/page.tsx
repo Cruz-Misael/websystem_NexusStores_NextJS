@@ -2,17 +2,19 @@
 
 import { useState, useEffect } from "react";
 import DevolucaoTrocaModal from "@/components/troca/DevolucaoTrocaModal";
-import { listarVendas, buscarVendaPorId, atualizarStatusPagamento } from "@/src/services/sales.service";
+import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
+import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
+import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { Sale } from "@/types/sales";
-import { 
-  Search, 
-  Filter, 
-  Download, 
-  Printer, 
-  Receipt, 
-  XCircle, 
-  RotateCcw, 
+import {
+  Search,
+  Filter,
+  Download,
+  Printer,
+  Receipt,
+  XCircle,
+  RotateCcw,
   ChevronRight,
   Calendar,
   CreditCard,
@@ -39,16 +41,63 @@ export default function HistoricoVendasCompacto() {
   const [atualizando, setAtualizando] = useState(false);
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroData, setFiltroData] = useState<string>("");
+  const [modoConsignado, setModoConsignado] = useState(false);
+
+  // Estados para popup e toast
+  const [popupAberto, setPopupAberto] = useState(false);
+  const [popupConfig, setPopupConfig] = useState({
+    titulo: "",
+    mensagem: "",
+    tipo: "info" as "sucesso" | "erro" | "aviso" | "info",
+    onConfirmar: undefined as (() => void) | undefined,
+    textoConfirmar: "Confirmar",
+    textoCancelar: "Cancelar",
+  });
+
+  const [toastAberto, setToastAberto] = useState(false);
+  const [toastConfig, setToastConfig] = useState({
+    mensagem: "",
+    tipo: "sucesso" as "sucesso" | "erro" | "info",
+  });
+
+  // Funções auxiliares para mostrar popups e toasts
+  const mostrarPopup = (
+    titulo: string,
+    mensagem: string,
+    tipo: "sucesso" | "erro" | "aviso" | "info" = "info",
+    onConfirmar?: () => void,
+    textoConfirmar = "Confirmar",
+    textoCancelar = "Cancelar"
+  ) => {
+    setPopupConfig({
+      titulo,
+      mensagem,
+      tipo,
+      onConfirmar,
+      textoConfirmar,
+      textoCancelar,
+    });
+    setPopupAberto(true);
+  };
+
+  const mostrarToast = (mensagem: string, tipo: "sucesso" | "erro" | "info" = "sucesso") => {
+    setToastConfig({ mensagem, tipo });
+    setToastAberto(true);
+  };
+
+  const fecharPopup = () => {
+    setPopupAberto(false);
+  };
 
   // Carregar vendas do backend
   const carregarVendas = async () => {
     try {
       setCarregando(true);
       setErro(null);
-      
+
       const result = await listarVendas(1, 100);
       setVendas(result.sales);
-      
+
       if (result.sales.length > 0 && !selecionada) {
         setSelecionada(result.sales[0]);
       }
@@ -68,93 +117,231 @@ export default function HistoricoVendasCompacto() {
   // Cancelar venda
   const handleCancelarVenda = async () => {
     if (!selecionada) return;
-    
-    if (!confirm(`Tem certeza que deseja cancelar a venda #${selecionada.id}?`)) return;
-    
-    try {
-      setAtualizando(true);
-      await atualizarStatusPagamento(selecionada.id, 'cancelled');
-      
-      // Atualizar lista local
-      setVendas(prev => prev.map(v => 
-        v.id === selecionada.id ? { ...v, payment_status: 'cancelled' } : v
-      ));
-      
-      setSelecionada(prev => prev ? { ...prev, payment_status: 'cancelled' } : null);
-      
-      alert("✅ Venda cancelada com sucesso!");
-    } catch (error: any) {
-      console.error("Erro ao cancelar venda:", error);
-      alert(`❌ Erro ao cancelar venda: ${error.message}`);
-    } finally {
-      setAtualizando(false);
-    }
+
+    mostrarPopup(
+      "Confirmar Cancelamento",
+      `Deseja realmente cancelar a venda #${selecionada.id}? Esta ação irá estornar os produtos ao estoque.`,
+      "aviso",
+      async () => {
+        try {
+          setAtualizando(true);
+          await atualizarStatusPagamento(selecionada.id, 'cancelled');
+
+          setVendas(prev => prev.map(v =>
+            v.id === selecionada.id ? { ...v, payment_status: 'cancelled' } : v
+          ));
+
+          setSelecionada(prev => prev ? { ...prev, payment_status: 'cancelled' } : null);
+          fecharPopup();
+          mostrarToast("Venda cancelada com sucesso!", "sucesso");
+        } catch (error: any) {
+          console.error("Erro ao cancelar venda:", error);
+          mostrarToast(`Erro ao cancelar: ${error.message}`, "erro");
+        } finally {
+          setAtualizando(false);
+        }
+      },
+      "Sim, Cancelar",
+      "Não, Voltar"
+    );
   };
 
   // Confirmar pagamento (se estiver pendente)
   const handleConfirmarPagamento = async () => {
     if (!selecionada) return;
-    
+
     try {
       setAtualizando(true);
       await atualizarStatusPagamento(selecionada.id, 'paid');
-      
-      setVendas(prev => prev.map(v => 
+
+      setVendas(prev => prev.map(v =>
         v.id === selecionada.id ? { ...v, payment_status: 'paid' } : v
       ));
-      
+
       setSelecionada(prev => prev ? { ...prev, payment_status: 'paid' } : null);
-      
-      alert("✅ Pagamento confirmado com sucesso!");
+
+      mostrarToast("Pagamento confirmado com sucesso!", "sucesso");
     } catch (error: any) {
       console.error("Erro ao confirmar pagamento:", error);
-      alert(`❌ Erro ao confirmar pagamento: ${error.message}`);
+      mostrarToast(`Erro ao confirmar pagamento: ${error.message}`, "erro");
     } finally {
       setAtualizando(false);
     }
   };
 
-  // Processar devolução/troca
+  // Processar devolução/troca (Ajustado para suportar adições)
   const handleDevolucao = async (payload: any) => {
     try {
       setAtualizando(true);
-      
-      // Criar registro de devolução
-      const devolucao = await criarDevolucao({
-        vendaId: payload.vendaId,
-        itens: payload.itens.map((item: any) => ({
-          itemId: item.itemId,
-          quantidade: item.quantidade
-        })),
-        motive: payload.motivo,
-        type: payload.tipo
-      });
-      
-      console.log("Devolução registrada:", devolucao);
-      
-      // Recarregar venda para atualizar status dos itens
+
+      // 1. Processar Devoluções
+      if (payload.itens.length > 0) {
+        await criarDevolucao({
+          vendaId: payload.vendaId,
+          itens: payload.itens.map((item: any) => ({
+            itemId: item.itemId,
+            quantidade: item.quantidade
+          })),
+          motive: payload.motivo,
+          type: payload.tipo
+        });
+
+        // Atualizar quantidades na venda
+        for (const itemDevolvido of payload.itens) {
+          const itemOriginal = selecionada?.items.find(i => i.id === itemDevolvido.itemId);
+          if (itemOriginal) {
+            const novaQtd = itemOriginal.quantity - itemDevolvido.quantidade;
+            await atualizarQuantidadeItemVenda(itemDevolvido.itemId, novaQtd);
+          }
+        }
+      }
+
+      // 2. Processar Adições (Novos itens na troca)
+      if (payload.itensAdicionados && payload.itensAdicionados.length > 0) {
+        for (const novoItem of payload.itensAdicionados) {
+          await adicionarItemVenda(payload.vendaId, {
+            product_id: novoItem.sku,
+            quantity: novoItem.quantidade
+          });
+        }
+      }
+
+      // 3. Atualizar Valor Final da Venda (Apenas se não for acerto de consignado com juros)
+      await atualizarValorVenda(payload.vendaId, payload.valorFinal);
+
+      // Recarregar venda para atualizar UI
       const vendaAtualizada = await buscarVendaPorId(payload.vendaId);
-      
-      setVendas(prev => prev.map(v => 
+
+      setVendas(prev => prev.map(v =>
         v.id === vendaAtualizada.id ? vendaAtualizada : v
       ));
-      
+
       setSelecionada(vendaAtualizada);
-      
-      alert(`✅ ${payload.tipo === 'troca' ? 'Troca' : 'Devolução'} processada com sucesso!`);
-      
+      setModalAberto(false);
+
+      mostrarToast(`Operação de ${payload.tipo === 'troca' ? 'Troca' : 'Devolução'} concluída!`, "sucesso");
+
     } catch (error: any) {
       console.error("Erro ao processar devolução:", error);
-      alert(`❌ Erro ao processar devolução: ${error.message}`);
+      mostrarPopup("Erro no Processamento", `Não foi possível processar: ${error.message}`, "erro");
     } finally {
       setAtualizando(false);
     }
   };
 
+  // Processar fechamento de consignado
+  const handleFecharConsignado = async (payload: any) => {
+    try {
+      setAtualizando(true);
+
+      // 1. Processar devolução dos itens não vendidos
+      if (payload.itens.length > 0) {
+        await criarDevolucao({
+          vendaId: payload.vendaId,
+          itens: payload.itens.map((item: any) => ({
+            itemId: item.itemId,
+            quantidade: item.quantidade
+          })),
+          motive: "Fechamento de Consignado",
+          type: 'devolucao'
+        });
+      }
+
+      // 2. Atualizar quantidades de itens na venda original (subtrair devolvidos)
+      if (payload.itens.length > 0) {
+        for (const itemDevolvido of payload.itens) {
+          const itemOriginal = selecionada?.items.find(i => i.id === itemDevolvido.itemId);
+          if (itemOriginal) {
+            const novaQtd = itemOriginal.quantity - itemDevolvido.quantidade;
+            await atualizarQuantidadeItemVenda(itemDevolvido.itemId, novaQtd);
+          }
+        }
+      }
+
+      // 2.1 Adicionar novos itens (se houver troca no fechamento)
+      if (payload.itensAdicionados && payload.itensAdicionados.length > 0) {
+        for (const novoItem of payload.itensAdicionados) {
+          await adicionarItemVenda(payload.vendaId, {
+            product_id: novoItem.sku,
+            quantity: novoItem.quantidade
+          });
+        }
+      }
+
+      // 3. Atualizar status e valor final com juros no banco
+      const novaObs = `${selecionada?.observation || ''}\n[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] - Total final com 30% de juros sobre vendidos.`;
+
+      const { error } = await atualizarVendaConsignado(payload.vendaId, {
+        payment_status: 'paid',
+        final_amount: payload.valorFinal,
+        observation: novaObs
+      });
+
+      if (error) throw new Error(error.message);
+
+      // 4. Recarregar venda completa para atualizar a UI
+      const vendaAtualizada = await buscarVendaPorId(payload.vendaId);
+
+      // Atualizar lista local
+      setVendas(prev => prev.map(v =>
+        v.id === vendaAtualizada.id ? vendaAtualizada : v
+      ));
+
+      // Atualizar item selecionado
+      setSelecionada(vendaAtualizada);
+
+      // Fechar modal antes do alerta para melhor UX
+      setModalAberto(false);
+
+      mostrarPopup(
+        "Consignado Finalizado",
+        `O acerto do consignado foi realizado com sucesso!\n\nValor final (com juros): ${formatarMoeda(payload.valorFinal)}`,
+        "sucesso",
+        undefined,
+        "Excelente"
+      );
+
+    } catch (error: any) {
+      console.error("Erro ao fechar consignado:", error);
+      mostrarPopup(
+        "Erro ao Finalizar",
+        `Ocorreu um erro técnico: ${error.message}\n\nO banco de dados impediu a alteração para preservar o histórico de devoluções.`,
+        "erro",
+        undefined,
+        "Entendido"
+      );
+    } finally {
+      setAtualizando(false);
+    }
+  };
+
+  // ======= UTILITÁRIOS CONSIGNADO =======
+  const isConsignado = (venda: Sale) => {
+    return venda.observation?.includes("Venda consignada") || venda.payment_method === 'credit_card' && venda.payment_status === 'pending';
+  };
+
+  const extrairDataConsignado = (obs: string | null) => {
+    if (!obs) return null;
+    const match = obs.match(/Pagamento previsto: (\d{4}-\d{2}-\d{2})/);
+    return match ? match[1] : null;
+  };
+
+  const estaAtrasado = (venda: Sale) => {
+    if (venda.payment_status !== 'pending') return false;
+    const dataStr = extrairDataConsignado(venda.observation);
+    if (!dataStr) return false;
+
+    const hoje = new Date();
+    hoje.setHours(0, 0, 0, 0);
+    const dataVencimento = new Date(dataStr + 'T12:00:00'); // Garante que a data seja interpretada corretamente
+    return dataVencimento < hoje;
+  };
+  // ======================================
+
   // Formatar moeda
-  const formatarMoeda = (val: number) => new Intl.NumberFormat("pt-BR", { 
-    style: "currency", 
-    currency: "BRL" 
+  const formatarMoeda = (val: number) => new Intl.NumberFormat("pt-BR", {
+    style: "currency",
+    currency: "BRL"
   }).format(val);
 
   // Obter status baseado no payment_status
@@ -178,19 +365,19 @@ export default function HistoricoVendasCompacto() {
   const filtrarVendas = () => {
     return vendas.filter(v => {
       // Filtro de busca
-      const buscaMatch = v.customer?.name?.toLowerCase().includes(busca.toLowerCase()) || 
-                        v.id.toString().includes(busca);
-      
+      const buscaMatch = v.customer?.name?.toLowerCase().includes(busca.toLowerCase()) ||
+        v.id.toString().includes(busca);
+
       // Filtro de status
       const statusMatch = filtroStatus === "todos" || getStatusFromVenda(v) === filtroStatus;
-      
+
       // Filtro de data (simplificado)
       let dataMatch = true;
       if (filtroData) {
         const dataVenda = new Date(v.sale_date).toISOString().split('T')[0];
         dataMatch = dataVenda === filtroData;
       }
-      
+
       return buscaMatch && statusMatch && dataMatch;
     });
   };
@@ -211,10 +398,10 @@ export default function HistoricoVendasCompacto() {
 
   return (
     <div className="flex h-full max-h-screen bg-zinc-50 overflow-hidden text-sm font-sans text-zinc-900 border border-zinc-300 rounded-lg shadow-2xl mx-auto">
-      
+
       {/* SIDEBAR: LISTA DE VENDAS */}
       <div className="w-80 flex flex-col border-r border-gray-200 bg-white shrink-0">
-        
+
         {/* Header da Sidebar */}
         <div className="p-3 border-b border-gray-100 flex flex-col gap-3">
           <div className="flex justify-between items-center">
@@ -228,7 +415,7 @@ export default function HistoricoVendasCompacto() {
             </div>
 
             <div className="flex items-center gap-2">
-              <button 
+              <button
                 onClick={() => {
                   setAtualizando(true);
                   carregarVendas();
@@ -240,15 +427,15 @@ export default function HistoricoVendasCompacto() {
                 <RefreshCw size={16} className={atualizando ? 'animate-spin' : ''} />
               </button>
               <div className="flex items-center bg-white border border-zinc-200 rounded-lg p-1 shadow-sm">
-                <button 
-                  className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors" 
+                <button
+                  className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors"
                   title="Filtrar"
                 >
                   <Filter size={16} />
                 </button>
                 <div className="w-px h-4 bg-zinc-200 mx-1" />
-                <button 
-                  className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors" 
+                <button
+                  className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors"
                   title="Exportar CSV"
                 >
                   <Download size={16} />
@@ -256,12 +443,12 @@ export default function HistoricoVendasCompacto() {
               </div>
             </div>
           </div>
-          
+
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" size={14} />
-            <input 
-              type="text" 
-              placeholder="Buscar ID ou Cliente..." 
+            <input
+              type="text"
+              placeholder="Buscar ID ou Cliente..."
               value={busca}
               onChange={(e) => setBusca(e.target.value)}
               className="w-full pl-8 pr-3 py-2 bg-gray-50 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all"
@@ -280,7 +467,7 @@ export default function HistoricoVendasCompacto() {
               <option value="Pendente">Pendentes</option>
               <option value="Cancelada">Canceladas</option>
             </select>
-            
+
             <input
               type="date"
               value={filtroData}
@@ -312,18 +499,24 @@ export default function HistoricoVendasCompacto() {
             </div>
           ) : (
             vendasFiltradas.map((venda) => (
-              <div 
+              <div
                 key={venda.id}
                 onClick={() => setSelecionada(venda)}
-                className={`group p-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-all ${
-                  selecionada?.id === venda.id ? 'bg-indigo-50/60 border-l-2 border-l-indigo-600' : 'border-l-2 border-l-transparent'
-                }`}
+                className={`group p-3 border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-all ${selecionada?.id === venda.id ? 'bg-indigo-50/60 border-l-2 border-l-indigo-600' : 'border-l-2 border-l-transparent'
+                  }`}
               >
                 <div className="flex justify-between items-center mb-1">
                   <span className="font-mono font-medium text-gray-600 text-xs">#{venda.id}</span>
-                  <span className={`text-[10px] px-1.5 py-0.5 rounded border ${getStatusColor(venda)}`}>
-                    {getStatusFromVenda(venda)}
-                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {estaAtrasado(venda) && (
+                      <span className="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-black animate-pulse">
+                        ATRASADO
+                      </span>
+                    )}
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded border ${getStatusColor(venda)}`}>
+                      {getStatusFromVenda(venda)}
+                    </span>
+                  </div>
                 </div>
                 <div className="flex justify-between items-baseline mb-0.5">
                   <span className="font-bold text-gray-800 text-base">{formatarMoeda(venda.final_amount)}</span>
@@ -348,7 +541,7 @@ export default function HistoricoVendasCompacto() {
 
       {/* PAINEL PRINCIPAL: DETALHES */}
       <div className="flex-1 flex flex-col bg-gray-50 h-full overflow-hidden">
-        
+
         {!selecionada ? (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-gray-400">Selecione uma venda para ver os detalhes</p>
@@ -366,40 +559,55 @@ export default function HistoricoVendasCompacto() {
                 </div>
                 <div className="flex items-center gap-4 text-xs text-gray-500 mt-1">
                   <span className="flex items-center gap-1">
-                    <Calendar size={12}/> {new Date(selecionada.sale_date).toLocaleString('pt-BR')}
+                    <Calendar size={12} /> {new Date(selecionada.sale_date).toLocaleString('pt-BR')}
                   </span>
                   <span className="flex items-center gap-1">
-                    <User size={12}/> {selecionada.customer?.name || 'Consumidor Final'}
+                    <User size={12} /> {selecionada.customer?.name || 'Consumidor Final'}
                   </span>
                   <span className="flex items-center gap-1">
-                    <CreditCard size={12}/> {selecionada.payment_method || 'Não informado'}
+                    <CreditCard size={12} /> {selecionada.payment_method || 'Não informado'}
                   </span>
                 </div>
               </div>
-              
+
               <div className="flex gap-2">
                 {selecionada.payment_status === 'pending' && (
-                  <button 
-                    onClick={handleConfirmarPagamento}
+                  <button
+                    onClick={() => {
+                      if (isConsignado(selecionada)) {
+                        setModoConsignado(true);
+                        setModalAberto(true);
+                      } else {
+                        handleConfirmarPagamento();
+                      }
+                    }}
                     disabled={atualizando}
-                    className="px-3 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-medium text-xs flex items-center gap-2 shadow-sm disabled:opacity-50"
+                    className={`px-3 py-2 text-white rounded-lg font-medium text-xs flex items-center gap-2 shadow-sm disabled:opacity-50 ${isConsignado(selecionada)
+                      ? 'bg-orange-600 hover:bg-orange-700 animate-bounce-subtle'
+                      : 'bg-emerald-600 hover:bg-emerald-700'
+                      }`}
                   >
-                    <CheckCircle size={16}/> Confirmar Pagamento
+                    {isConsignado(selecionada) ? (
+                      <><RefreshCw size={16} /> Fechar Consignado</>
+                    ) : (
+                      <><CheckCircle size={16} /> Confirmar Pagamento</>
+                    )}
                   </button>
                 )}
-                <button 
+                <button
                   onClick={() => setModalRecibo(true)}
                   className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-xs flex items-center gap-2 shadow-sm"
                 >
-                  <Printer size={16}/> Comprovante
+                  <Printer size={16} /> Comprovante
                 </button>
                 {selecionada.payment_status !== 'cancelled' && (
-                  <button 
+                  <button
                     className="px-3 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium text-xs flex items-center gap-2 shadow-sm disabled:opacity-50"
                     onClick={handleCancelarVenda}
                     disabled={atualizando}
+                    title="Estornar todos os itens ao estoque e cancelar a venda"
                   >
-                    <XCircle size={16}/> Cancelar
+                    <XCircle size={16} /> Cancelar
                   </button>
                 )}
               </div>
@@ -408,7 +616,7 @@ export default function HistoricoVendasCompacto() {
             {/* Conteúdo Scrollavel do Detalhe */}
             <div className="flex-1 overflow-y-auto p-6">
               <div className="max-w-3xl mx-auto space-y-6">
-                
+
                 {/* Tabela de Itens */}
                 <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                   <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
@@ -425,11 +633,15 @@ export default function HistoricoVendasCompacto() {
                       </tr>
                     </thead>
                     <tbody className="text-sm">
-                      {selecionada.items?.map((item) => (
+                      {selecionada.items?.filter(item => item.quantity > 0).map((item) => (
                         <tr key={item.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                           <td className="px-4 py-3">
-                            <p className="font-medium text-gray-800">{item.product_name}</p>
-                            <p className="text-xs text-gray-400">SKU: {item.product_sku}</p>
+                            <p className="font-medium text-gray-800">
+                              {item.product?.name || item.product_name || "Produto não identificado"}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              SKU: {item.product?.sku || item.product_id}
+                            </p>
                           </td>
                           <td className="px-4 py-3 text-right text-gray-600">{item.quantity}</td>
                           <td className="px-4 py-3 text-right text-gray-600">{formatarMoeda(item.unit_price)}</td>
@@ -464,12 +676,14 @@ export default function HistoricoVendasCompacto() {
 
                 {/* Ações Secundárias */}
                 <div className="grid grid-cols-2 gap-4">
-                  <button 
-                    onClick={() => setModalAberto(true)}
+                  <button
+                    onClick={() => {
+                      setModoConsignado(false);
+                      setModalAberto(true);
+                    }}
                     disabled={selecionada.payment_status === 'cancelled'}
-                    className={`flex items-center justify-center gap-2 p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 text-gray-600 transition-colors shadow-sm text-xs font-medium ${
-                      selecionada.payment_status === 'cancelled' ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
+                    className={`flex items-center justify-center gap-2 p-4 border border-gray-200 rounded-lg bg-white hover:bg-gray-50 text-gray-600 transition-colors shadow-sm text-xs font-medium ${selecionada.payment_status === 'cancelled' ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
                   >
                     <RotateCcw size={18} />
                     Solicitar Devolução / Troca
@@ -498,61 +712,61 @@ export default function HistoricoVendasCompacto() {
       {modalRecibo && selecionada && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
           <div className="bg-[#fffef0] w-full max-w-[320px] shadow-2xl overflow-hidden relative font-mono text-xs text-gray-800 leading-tight">
-             <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-gray-200 via-white to-gray-200 opacity-50"></div>
-             
-             <div className="p-6 pb-8">
-               <div className="text-center mb-4">
-                 <h3 className="font-bold text-lg uppercase tracking-widest border-b-2 border-dashed border-gray-300 pb-2 mb-2">Minha Loja</h3>
-                 <p>CNPJ: 00.000.000/0001-00</p>
-                 <p>{new Date(selecionada.sale_date).toLocaleString('pt-BR')}</p>
-                 <p>Venda: #{selecionada.id}</p>
-               </div>
+            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-gray-200 via-white to-gray-200 opacity-50"></div>
 
-               <div className="border-b border-dashed border-gray-300 pb-2 mb-2">
-                 <div className="grid grid-cols-12 font-bold mb-1">
-                   <span className="col-span-6">ITEM</span>
-                   <span className="col-span-2 text-right">QTD</span>
-                   <span className="col-span-4 text-right">VALOR</span>
-                 </div>
-                 {selecionada.items?.map(item => (
-                   <div key={item.id} className="grid grid-cols-12 mb-1">
-                     <span className="col-span-6 truncate">{item.product_name}</span>
-                     <span className="col-span-2 text-right">{item.quantity}</span>
-                     <span className="col-span-4 text-right">{formatarMoeda(item.total_price)}</span>
-                   </div>
-                 ))}
-               </div>
+            <div className="p-6 pb-8">
+              <div className="text-center mb-4">
+                <h3 className="font-bold text-lg uppercase tracking-widest border-b-2 border-dashed border-gray-300 pb-2 mb-2">Minha Loja</h3>
+                <p>CNPJ: 00.000.000/0001-00</p>
+                <p>{new Date(selecionada.sale_date).toLocaleString('pt-BR')}</p>
+                <p>Venda: #{selecionada.id}</p>
+              </div>
 
-               <div className="flex justify-between font-bold text-sm mt-2">
-                 <span>TOTAL</span>
-                 <span>{formatarMoeda(selecionada.final_amount)}</span>
-               </div>
-               <div className="flex justify-between mt-1 text-[10px]">
-                 <span>Pagamento:</span>
-                 <span>{selecionada.payment_method?.toUpperCase() || 'NÃO INFORMADO'}</span>
-               </div>
-               
-               <div className="text-center mt-6 text-[10px] text-gray-500">
-                 <p>*** NÃO É DOCUMENTO FISCAL ***</p>
-                 <p>Obrigado pela preferência!</p>
-               </div>
-             </div>
+              <div className="border-b border-dashed border-gray-300 pb-2 mb-2">
+                <div className="grid grid-cols-12 font-bold mb-1">
+                  <span className="col-span-6">ITEM</span>
+                  <span className="col-span-2 text-right">QTD</span>
+                  <span className="col-span-4 text-right">VALOR</span>
+                </div>
+                {selecionada.items?.filter(item => item.quantity > 0).map(item => (
+                  <div key={item.id} className="grid grid-cols-12 mb-1">
+                    <span className="col-span-6 truncate">{item.product?.name || item.product_name || "PRODUTO"}</span>
+                    <span className="col-span-2 text-right">{item.quantity}</span>
+                    <span className="col-span-4 text-right">{formatarMoeda(item.total_price)}</span>
+                  </div>
+                ))}
+              </div>
 
-             {/* Botões do Modal */}
-             <div className="bg-gray-800 p-3 flex gap-2">
-               <button 
-                 onClick={() => window.print()} 
-                 className="flex-1 bg-white text-black py-2 rounded font-bold hover:bg-gray-200"
-               >
-                 IMPRIMIR
-               </button>
-               <button 
-                 onClick={() => setModalRecibo(false)} 
-                 className="flex-1 bg-gray-700 text-white py-2 rounded font-bold hover:bg-gray-600"
-               >
-                 FECHAR
-               </button>
-             </div>
+              <div className="flex justify-between font-bold text-sm mt-2">
+                <span>TOTAL</span>
+                <span>{formatarMoeda(selecionada.final_amount)}</span>
+              </div>
+              <div className="flex justify-between mt-1 text-[10px]">
+                <span>Pagamento:</span>
+                <span>{selecionada.payment_method?.toUpperCase() || 'NÃO INFORMADO'}</span>
+              </div>
+
+              <div className="text-center mt-6 text-[10px] text-gray-500">
+                <p>*** NÃO É DOCUMENTO FISCAL ***</p>
+                <p>Obrigado pela preferência!</p>
+              </div>
+            </div>
+
+            {/* Botões do Modal */}
+            <div className="bg-gray-800 p-3 flex gap-2">
+              <button
+                onClick={() => window.print()}
+                className="flex-1 bg-white text-black py-2 rounded font-bold hover:bg-gray-200"
+              >
+                IMPRIMIR
+              </button>
+              <button
+                onClick={() => setModalRecibo(false)}
+                className="flex-1 bg-gray-700 text-white py-2 rounded font-bold hover:bg-gray-600"
+              >
+                FECHAR
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -572,9 +786,30 @@ export default function HistoricoVendasCompacto() {
             }))
           }}
           onClose={() => setModalAberto(false)}
-          onConfirm={handleDevolucao}
+          onConfirm={modoConsignado ? handleFecharConsignado : handleDevolucao}
+          isConsignado={modoConsignado}
         />
       )}
+      {/* POPUP DE CONFIRMAÇÃO / INFORMAÇÃO */}
+      <PopupConfirmacao
+        aberto={popupAberto}
+        onFechar={fecharPopup}
+        onConfirmar={popupConfig.onConfirmar || fecharPopup}
+        onCancelar={popupConfig.onConfirmar ? fecharPopup : undefined}
+        titulo={popupConfig.titulo}
+        mensagem={popupConfig.mensagem}
+        tipo={popupConfig.tipo}
+        textoConfirmar={popupConfig.textoConfirmar}
+        textoCancelar={popupConfig.textoCancelar}
+      />
+
+      {/* TOAST DE NOTIFICAÇÃO */}
+      <ToastNotificacao
+        aberto={toastAberto}
+        onFechar={() => setToastAberto(false)}
+        mensagem={toastConfig.mensagem}
+        tipo={toastConfig.tipo}
+      />
     </div>
   );
 }

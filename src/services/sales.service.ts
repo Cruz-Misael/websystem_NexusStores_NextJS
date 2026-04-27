@@ -180,11 +180,35 @@ export async function listarVendas(
   };
 }
 
-export async function atualizarStatusPagamento(
-  saleId: number, 
-  status: 'paid' | 'cancelled'
-) {
+export async function atualizarStatusPagamento(saleId: number, status: 'paid' | 'pending' | 'cancelled') {
   console.log(`Atualizando status da venda ${saleId} para ${status}`);
+
+  // Se o status for cancelado, precisamos retornar os itens ao estoque
+  if (status === 'cancelled') {
+    const { data: itens, error: itensError } = await supabase
+      .from('sale_items')
+      .select('product_id, quantity')
+      .eq('sale_id', saleId);
+    
+    if (itensError) throw itensError;
+
+    for (const item of (itens || [])) {
+      if (item.quantity > 0) {
+        const { data: produto, error: pError } = await supabase
+          .from('products')
+          .select('stock_quantity')
+          .eq('sku', item.product_id)
+          .single();
+        
+        if (!pError && produto) {
+          await supabase
+            .from('products')
+            .update({ stock_quantity: (produto.stock_quantity || 0) + item.quantity })
+            .eq('sku', item.product_id);
+        }
+      }
+    }
+  }
 
   const { error } = await supabase
     .from("sales")
@@ -196,6 +220,115 @@ export async function atualizarStatusPagamento(
     throw new Error(error.message);
   }
 
+  return { success: true };
+}
+
+export async function atualizarVendaConsignado(
+  saleId: number, 
+  dados: { 
+    payment_status: 'paid' | 'pending'; 
+    final_amount: number;
+    observation?: string;
+  }
+) {
+  console.log(`Finalizando consignado da venda ${saleId}`, dados);
+
+  const { data, error } = await supabase
+    .from("sales")
+    .update(dados)
+    .eq("id", saleId)
+    .select();
+
+  if (error) {
+    console.error("Erro ao atualizar venda consignada:", error);
+    return { error };
+  }
+
+  return { success: true, data };
+}
+
+export async function atualizarQuantidadeItemVenda(itemId: number, novaQuantidade: number) {
+  console.log(`Atualizando quantidade do item ${itemId} para ${novaQuantidade}`);
+
+  // Buscamos o preço unitário para recalcular o total
+  const { data: item, error: buscaError } = await supabase
+    .from("sale_items")
+    .select("unit_price")
+    .eq("id", itemId)
+    .single();
+
+  if (buscaError) throw buscaError;
+
+  const novoTotal = item.unit_price * (novaQuantidade > 0 ? novaQuantidade : 0);
+
+  // Apenas atualizamos a quantidade e o total_price, nunca deletamos
+  // para evitar erros de chave estrangeira com a tabela de devoluções
+  const { error } = await supabase
+    .from("sale_items")
+    .update({ 
+      quantity: novaQuantidade > 0 ? novaQuantidade : 0,
+      total_price: novoTotal
+    })
+    .eq("id", itemId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
+export async function adicionarItemVenda(saleId: number, item: any) {
+  console.log(`Adicionando novo item à venda ${saleId}:`, item);
+
+  // Buscar os dados do produto para garantir integridade
+  const { data: produto, error: pError } = await supabase
+    .from("products")
+    .select("name, price, cost, barcode")
+    .eq("sku", item.product_id)
+    .single();
+
+  if (pError) throw pError;
+
+  const itemParaInserir = {
+    sale_id: saleId,
+    product_id: item.product_id,
+    product_name: produto.name,
+    product_sku: `SKU-${item.product_id}`,
+    product_barcode: produto.barcode,
+    quantity: item.quantity,
+    unit_price: produto.price,
+    unit_cost: produto.cost || 0,
+    discount_per_item: 0,
+    total_price: produto.price * item.quantity
+  };
+
+  const { data, error } = await supabase
+    .from("sale_items")
+    .insert([itemParaInserir])
+    .select()
+    .single();
+
+  if (error) throw error;
+
+  // Decrementar estoque do novo produto adicionado na troca
+  await supabase.rpc('decrement_stock', {
+    product_sku: item.product_id,
+    quantity: item.quantity
+  });
+
+  return data;
+}
+
+export async function atualizarValorVenda(saleId: number, novoValor: number) {
+  console.log(`Atualizando valor total da venda ${saleId} para ${novoValor}`);
+
+  const { error } = await supabase
+    .from("sales")
+    .update({ 
+      total_amount: novoValor,
+      final_amount: novoValor // Por enquanto assumindo que final = total
+    })
+    .eq("id", saleId);
+
+  if (error) throw error;
   return { success: true };
 }
 

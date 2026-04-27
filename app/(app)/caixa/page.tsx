@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { 
-  Search, 
-  Trash2, 
-  CreditCard, 
-  Smartphone, 
-  QrCode, 
+import {
+  Search,
+  Trash2,
+  CreditCard,
+  Smartphone,
+  QrCode,
   Banknote,
   User,
   Percent,
@@ -21,6 +21,8 @@ import {
   CheckCircle
 } from "lucide-react";
 import { criarVenda } from "@/src/services/sales.service";
+import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
+import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { CreateSaleDTO } from "@/types/sales";
 import { buscarPessoaPorId, listarPessoas } from "@/src/services/people.service";
 import { listarProdutos, buscarProdutoPorSKU } from "@/src/services/product.service";
@@ -34,6 +36,7 @@ interface ItemCarrinho {
   quantidade: number;
   sku: number;
   custo?: number;
+  estoqueAtual: number;
 }
 
 interface Cliente {
@@ -53,10 +56,10 @@ export default function CaixaPDVPro() {
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [buscaCliente, setBuscaCliente] = useState("");
   const [finalizando, setFinalizando] = useState(false);
-  
+
   // Estado para evitar hydration mismatch
   const [horaAtual, setHoraAtual] = useState("");
-  
+
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Modal de consignado
@@ -64,15 +67,61 @@ export default function CaixaPDVPro() {
   const [dataPrevistaPagamento, setDataPrevistaPagamento] = useState("");
   const [observacaoConsignado, setObservacaoConsignado] = useState("");
 
+  // Estados para popup e toast
+  const [popupAberto, setPopupAberto] = useState(false);
+  const [popupConfig, setPopupConfig] = useState({
+    titulo: "",
+    mensagem: "",
+    tipo: "info" as "sucesso" | "erro" | "aviso" | "info",
+    onConfirmar: undefined as (() => void) | undefined,
+    textoConfirmar: "Confirmar",
+    textoCancelar: "Cancelar",
+  });
+
+  const [toastAberto, setToastAberto] = useState(false);
+  const [toastConfig, setToastConfig] = useState({
+    mensagem: "",
+    tipo: "sucesso" as "sucesso" | "erro" | "info",
+  });
+
+  // Funções auxiliares para mostrar popups e toasts
+  const mostrarPopup = (
+    titulo: string,
+    mensagem: string,
+    tipo: "sucesso" | "erro" | "aviso" | "info" = "info",
+    onConfirmar?: () => void,
+    textoConfirmar = "Confirmar",
+    textoCancelar = "Cancelar"
+  ) => {
+    setPopupConfig({
+      titulo,
+      mensagem,
+      tipo,
+      onConfirmar,
+      textoConfirmar,
+      textoCancelar,
+    });
+    setPopupAberto(true);
+  };
+
+  const mostrarToast = (mensagem: string, tipo: "sucesso" | "erro" | "info" = "sucesso") => {
+    setToastConfig({ mensagem, tipo });
+    setToastAberto(true);
+  };
+
+  const fecharPopup = () => {
+    setPopupAberto(false);
+  };
+
   // Atualizar hora apenas no cliente para evitar hydration mismatch
   useEffect(() => {
     const atualizarHora = () => {
       setHoraAtual(new Date().toLocaleTimeString('pt-BR'));
     };
-    
+
     atualizarHora();
     const interval = setInterval(atualizarHora, 1000);
-    
+
     return () => clearInterval(interval);
   }, []);
 
@@ -99,9 +148,9 @@ export default function CaixaPDVPro() {
   const totalFinal = subtotal - desconto;
 
   // Formatação
-  const money = (val: number) => new Intl.NumberFormat('pt-BR', { 
-    style: 'currency', 
-    currency: 'BRL' 
+  const money = (val: number) => new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL'
   }).format(val);
 
   // Buscar produto por código
@@ -110,28 +159,40 @@ export default function CaixaPDVPro() {
     try {
       // Limpar código (remover caracteres não numéricos)
       const codigoLimpo = codigo.replace(/\D/g, '');
-      
+
       if (!codigoLimpo) {
-        alert("Código inválido");
+        mostrarToast("Código inválido", "erro");
         return;
       }
 
       // Tenta encontrar por SKU
       const skuNumerico = parseInt(codigoLimpo);
-      
+
       try {
         const produto = await buscarProdutoPorSKU(skuNumerico);
         if (produto) {
-          adicionarAoCarrinho({
-            id: produto.sku,
-            codigo: `SKU-${produto.sku}`,
-            nome: produto.name,
-            precoUnitario: produto.price || 0,
-            quantidade: 1,
-            sku: produto.sku,
-            custo: produto.cost
-          });
-          return;
+          if ((produto.stock_quantity || 0) > 0) {
+            adicionarAoCarrinho({
+              id: produto.sku,
+              codigo: `SKU-${produto.sku}`,
+              nome: produto.name,
+              precoUnitario: produto.price || 0,
+              quantidade: 1,
+              sku: produto.sku,
+              custo: produto.cost,
+              estoqueAtual: produto.stock_quantity || 0
+            });
+            return;
+          } else {
+            mostrarPopup(
+              "Produto Sem Estoque",
+              `O produto "${produto.name}" está com estoque ZERO. Não é possível realizar a venda até que seja feita uma entrada de mercadoria.`,
+              "erro",
+              undefined,
+              "Entendido"
+            );
+            return;
+          }
         }
       } catch (error: any) {
         // Se erro 404/406, tenta buscar por código de barras
@@ -141,27 +202,50 @@ export default function CaixaPDVPro() {
       // Tenta por código de barras
       const produtos = await listarProdutos();
       const produtoPorBarcode = produtos.find(p => p.barcode?.toString() === codigoLimpo);
-      
+
       if (produtoPorBarcode) {
-        adicionarAoCarrinho({
-          id: produtoPorBarcode.sku,
-          codigo: codigo,
-          nome: produtoPorBarcode.name,
-          precoUnitario: produtoPorBarcode.price || 0,
-          quantidade: 1,
-          sku: produtoPorBarcode.sku,
-          custo: produtoPorBarcode.cost
-        });
+        if ((produtoPorBarcode.stock_quantity || 0) > 0) {
+          adicionarAoCarrinho({
+            id: produtoPorBarcode.sku,
+            codigo: codigo,
+            nome: produtoPorBarcode.name,
+            precoUnitario: produtoPorBarcode.price || 0,
+            quantidade: 1,
+            sku: produtoPorBarcode.sku,
+            custo: produtoPorBarcode.cost,
+            estoqueAtual: produtoPorBarcode.stock_quantity || 0
+          });
+        } else {
+          mostrarPopup(
+            "Produto Sem Estoque",
+            `O produto "${produtoPorBarcode.name}" está com estoque esgotado.`,
+            "erro",
+            undefined,
+            "Entendido"
+          );
+        }
         return;
       }
 
-      alert("Produto não encontrado");
+      mostrarToast("Produto não encontrado", "info");
     } catch (error) {
       console.error("Erro ao buscar produto:", error);
-      alert("Erro ao buscar produto");
+      mostrarToast("Erro ao buscar produto", "erro");
     } finally {
       setBuscandoProduto(false);
     }
+  };
+
+  const adiconarComVerificacao = (item: any) => {
+    if (item.estoqueAtual <= 0) {
+      mostrarPopup(
+        "Sem Estoque",
+        `O item "${item.nome}" não possui unidades em estoque.`,
+        "erro"
+      );
+      return;
+    }
+    adicionarAoCarrinho(item);
   };
 
   const adicionarAoCarrinho = (novoItem: ItemCarrinho, barcode?: string) => {
@@ -194,6 +278,19 @@ export default function CaixaPDVPro() {
       removerItem(id);
       return;
     }
+
+    const item = carrinho.find(i => i.id === id);
+    if (item && novaQuantidade > item.estoqueAtual) {
+      mostrarPopup(
+        "Estoque Insuficiente",
+        `Você tentou adicionar ${novaQuantidade} unidades, mas existem apenas ${item.estoqueAtual} em estoque para "${item.nome}".`,
+        "aviso",
+        undefined,
+        "Entendido"
+      );
+      return;
+    }
+
     setCarrinho(prev =>
       prev.map(item =>
         item.id === id ? { ...item, quantidade: novaQuantidade } : item
@@ -209,7 +306,7 @@ export default function CaixaPDVPro() {
 
   const finalizarVenda = async () => {
     if (carrinho.length === 0) {
-      alert("Adicione itens ao carrinho antes de finalizar");
+      mostrarToast("Carrinho vazio!", "info");
       return;
     }
 
@@ -255,42 +352,49 @@ export default function CaixaPDVPro() {
       };
 
       console.log("Enviando venda:", vendaData);
-      
+
       const venda = await criarVenda(vendaData);
-      
+
       // Limpar carrinho após venda
       setCarrinho([]);
       setClienteSelecionado(null);
       setPagamentoAtivo('credito');
       setDataPrevistaPagamento("");
       setObservacaoConsignado("");
-      
-      alert(`✅ Venda finalizada com sucesso!\nID: ${venda.id}\nTotal: ${money(totalFinal)}`);
-      
+
+
+      mostrarPopup(
+        "Venda Finalizada",
+        `Venda #${venda.id} processada com sucesso!\nValor total: ${money(totalFinal)}`,
+        "sucesso",
+        undefined,
+        "Continuar"
+      );
+
     } catch (error: any) {
       console.error("Erro ao finalizar venda:", error);
-      alert(`❌ Erro ao finalizar venda: ${error.message}`);
+      mostrarPopup("Erro na Venda", `Não foi possível finalizar: ${error.message}`, "erro");
     } finally {
       setFinalizando(false);
     }
   };
 
-  const clientesFiltrados = clientes.filter(c => 
+  const clientesFiltrados = clientes.filter(c =>
     c.name.toLowerCase().includes(buscaCliente.toLowerCase()) ||
     c.email?.toLowerCase().includes(buscaCliente.toLowerCase()) ||
     c.phone?.includes(buscaCliente)
   );
 
   return (
-    <div className="flex flex-col h-full max-h-screen bg-zinc-50 text-zinc-900 font-sans overflow-hidden selection:bg-indigo-100 border border-zinc-300 rounded-lg shadow-2xl mx-auto">      
-      
+    <div className="flex flex-col h-full max-h-screen bg-zinc-50 text-zinc-900 font-sans overflow-hidden selection:bg-indigo-100 border border-zinc-300 rounded-lg shadow-2xl mx-auto">
+
       {/* HEADER COMPACTO */}
       <header className="h-14 bg-white border-b border-zinc-200 flex justify-between items-center px-4 shrink-0 z-10">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 bg-zinc-900 rounded-lg flex items-center justify-center text-white font-black text-[10px] shadow-md shrink-0">
             PDV
           </div>
-          
+
           <div className="flex flex-col gap-0.5">
             <h1 className="text-lg font-extrabold text-zinc-900 tracking-tight leading-none">
               Checkout Pro
@@ -303,17 +407,17 @@ export default function CaixaPDVPro() {
             </div>
           </div>
         </div>
-        
+
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg shadow-sm">
             <div className="w-5 h-5 rounded-full bg-zinc-200 flex items-center justify-center">
-              <User size={12} className="text-zinc-600"/>
+              <User size={12} className="text-zinc-600" />
             </div>
             <span className="text-[10px] font-bold text-zinc-700 uppercase tracking-wide">
-              Op. Ricardo
+              Operador
             </span>
           </div>
-          
+
           <button className="p-2 text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all">
             <Maximize2 size={16} />
           </button>
@@ -322,10 +426,10 @@ export default function CaixaPDVPro() {
 
       {/* BODY SPLIT VIEW */}
       <div className="flex flex-1 overflow-hidden min-h-0">
-         
+
         {/* ESQUERDA: LISTA DE PRODUTOS */}
         <div className="flex-[2] flex flex-col bg-white border-r border-zinc-200 min-h-0">
-         
+
           {/* Barra de Busca */}
           <div className="p-4 border-b border-zinc-100 shrink-0">
             <div className="relative group">
@@ -333,7 +437,7 @@ export default function CaixaPDVPro() {
                 <Search size={18} />
                 {buscandoProduto && <Loader2 size={14} className="animate-spin" />}
               </div>
-              <input 
+              <input
                 ref={inputRef}
                 type="text"
                 value={busca}
@@ -402,7 +506,7 @@ export default function CaixaPDVPro() {
                         {money(item.precoUnitario * item.quantidade)}
                       </td>
                       <td className="px-4 py-3 text-center">
-                        <button 
+                        <button
                           onClick={() => removerItem(item.id)}
                           className="p-1.5 text-zinc-300 hover:text-red-600 hover:bg-red-50 rounded transition-all opacity-0 group-hover:opacity-100"
                         >
@@ -428,12 +532,12 @@ export default function CaixaPDVPro() {
 
         {/* DIREITA: PAINEL DE PAGAMENTO */}
         <div className="w-[360px] bg-zinc-50 flex flex-col border-l border-zinc-200 shrink-0 min-h-0">
-         
+
           {/* Seção Cliente */}
           <div className="p-4 border-b border-zinc-200 bg-white shrink-0">
             <div className="flex justify-between items-center mb-2">
               <label className="text-[10px] font-bold text-zinc-400 uppercase">Cliente</label>
-              <button 
+              <button
                 onClick={() => setModalClienteAberto(true)}
                 className="text-[10px] text-indigo-600 font-bold hover:underline"
               >
@@ -449,7 +553,7 @@ export default function CaixaPDVPro() {
                   {clienteSelecionado ? clienteSelecionado.name : 'Consumidor Final'}
                 </p>
                 <p className="text-[10px] text-zinc-500 truncate">
-                  {clienteSelecionado 
+                  {clienteSelecionado
                     ? clienteSelecionado.phone || clienteSelecionado.email || 'Cliente identificado'
                     : 'Não identificado'}
                 </p>
@@ -487,7 +591,7 @@ export default function CaixaPDVPro() {
                     <ShoppingBag size={16} className="text-orange-600" />
                     <span className="text-sm font-medium text-orange-700">Venda Consignada</span>
                   </div>
-                  <button 
+                  <button
                     onClick={() => setMostrarModalConsignado(true)}
                     className="text-xs text-orange-600 hover:text-orange-700 font-medium hover:underline"
                   >
@@ -506,17 +610,17 @@ export default function CaixaPDVPro() {
                 )}
               </div>
             )}
-            
+
             {/* Grid de Pagamento */}
             <div className="shrink-0">
               <label className="text-[10px] font-bold text-zinc-400 uppercase mb-2 block">Método de Pagamento</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  {id: 'credito', icon: CreditCard, label: 'Crédito', key: 'F6'},
-                  {id: 'debito', icon: CreditCard, label: 'Débito', key: 'F7'},
-                  {id: 'pix', icon: QrCode, label: 'Pix', key: 'F8'},
-                  {id: 'dinheiro', icon: Banknote, label: 'Dinheiro', key: 'F9'},
-                  {id: 'consignado', icon: ShoppingBag, label: 'Consignado', key: 'F10', cor: 'orange'},
+                  { id: 'credito', icon: CreditCard, label: 'Crédito', key: 'F6' },
+                  { id: 'debito', icon: CreditCard, label: 'Débito', key: 'F7' },
+                  { id: 'pix', icon: QrCode, label: 'Pix', key: 'F8' },
+                  { id: 'dinheiro', icon: Banknote, label: 'Dinheiro', key: 'F9' },
+                  { id: 'consignado', icon: ShoppingBag, label: 'Consignado', key: 'F10', cor: 'orange' },
                 ].map(metodo => (
                   <button
                     key={metodo.id}
@@ -528,26 +632,24 @@ export default function CaixaPDVPro() {
                         setPagamentoAtivo(metodo.id);
                       }
                     }}
-                    className={`relative flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${
-                      pagamentoAtivo === metodo.id 
-                      ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]' 
-                      : metodo.id === 'consignado'
-                        ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
-                        : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
-                    }`}
+                    className={`relative flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${pagamentoAtivo === metodo.id
+                        ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]'
+                        : metodo.id === 'consignado'
+                          ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
+                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+                      }`}
                   >
                     <metodo.icon size={20} className="mb-1.5" />
                     <span className="text-xs font-medium">{metodo.label}</span>
                     {metodo.id === 'consignado' && pagamentoAtivo === 'consignado' && (
                       <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full border-2 border-white"></div>
                     )}
-                    <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${
-                      metodo.id === 'consignado' 
-                        ? 'text-orange-400' 
-                        : pagamentoAtivo === metodo.id 
-                          ? 'text-zinc-400' 
+                    <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${metodo.id === 'consignado'
+                        ? 'text-orange-400'
+                        : pagamentoAtivo === metodo.id
+                          ? 'text-zinc-400'
                           : 'text-zinc-300'
-                    }`}>
+                      }`}>
                       {metodo.key}
                     </span>
                   </button>
@@ -558,14 +660,13 @@ export default function CaixaPDVPro() {
 
           {/* Footer de Ação */}
           <div className="p-4 bg-white border-t border-zinc-200 shrink-0">
-            <button 
+            <button
               onClick={finalizarVenda}
               disabled={finalizando || carrinho.length === 0}
-              className={`w-full h-14 rounded-lg font-bold text-lg shadow-lg transition-all flex items-center justify-between px-6 group active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${
-                pagamentoAtivo === 'consignado'
+              className={`w-full h-14 rounded-lg font-bold text-lg shadow-lg transition-all flex items-center justify-between px-6 group active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${pagamentoAtivo === 'consignado'
                   ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200'
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
-              }`}
+                }`}
             >
               {finalizando ? (
                 <span className="flex items-center gap-2">
@@ -578,16 +679,14 @@ export default function CaixaPDVPro() {
                     {pagamentoAtivo === 'consignado' ? 'FINALIZAR CONSIGNADO' : 'FINALIZAR VENDA'}
                   </span>
                   <div className="flex items-center gap-2">
-                    <span className={`text-sm font-medium opacity-80 group-hover:opacity-100 ${
-                      pagamentoAtivo === 'consignado' ? 'text-orange-200' : 'text-emerald-200'
-                    }`}>
+                    <span className={`text-sm font-medium opacity-80 group-hover:opacity-100 ${pagamentoAtivo === 'consignado' ? 'text-orange-200' : 'text-emerald-200'
+                      }`}>
                       {money(totalFinal)}
                     </span>
-                    <span className={`px-2 py-1 rounded text-xs font-mono ${
-                      pagamentoAtivo === 'consignado' 
-                        ? 'bg-orange-800/40 text-orange-100' 
+                    <span className={`px-2 py-1 rounded text-xs font-mono ${pagamentoAtivo === 'consignado'
+                        ? 'bg-orange-800/40 text-orange-100'
                         : 'bg-emerald-800/40 text-emerald-100'
-                    }`}>
+                      }`}>
                       {pagamentoAtivo === 'consignado' ? 'F10' : 'F5'}
                     </span>
                   </div>
@@ -607,7 +706,7 @@ export default function CaixaPDVPro() {
                 <User className="text-indigo-600" size={20} />
                 <h2 className="text-lg font-bold text-zinc-900">Selecionar Cliente</h2>
               </div>
-              <button 
+              <button
                 onClick={() => setModalClienteAberto(false)}
                 className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200 rounded-full transition-colors"
               >
@@ -663,7 +762,7 @@ export default function CaixaPDVPro() {
       {mostrarModalConsignado && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
-            
+
             {/* Header */}
             <div className="px-6 py-4 border-b border-zinc-200 bg-orange-50 flex justify-between items-center">
               <div className="flex items-center gap-2">
@@ -675,7 +774,7 @@ export default function CaixaPDVPro() {
                   <p className="text-xs text-zinc-500">Configure os detalhes do pagamento futuro</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => {
                   setMostrarModalConsignado(false);
                   if (!dataPrevistaPagamento) {
@@ -731,7 +830,7 @@ export default function CaixaPDVPro() {
 
             {/* Footer */}
             <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex justify-end gap-3">
-              <button 
+              <button
                 onClick={() => {
                   setMostrarModalConsignado(false);
                   setDataPrevistaPagamento("");
@@ -745,10 +844,10 @@ export default function CaixaPDVPro() {
               <button
                 onClick={() => {
                   if (!dataPrevistaPagamento) {
-                    alert("Por favor, selecione uma data prevista para o pagamento");
+                    mostrarToast("Selecione uma data para o pagamento", "info");
                     return;
                   }
-                  
+
                   setPagamentoAtivo('consignado');
                   setMostrarModalConsignado(false);
                 }}
@@ -760,6 +859,27 @@ export default function CaixaPDVPro() {
           </div>
         </div>
       )}
+
+      {/* POPUP DE CONFIRMAÇÃO / INFORMAÇÃO */}
+      <PopupConfirmacao
+        aberto={popupAberto}
+        onFechar={fecharPopup}
+        onConfirmar={popupConfig.onConfirmar || fecharPopup}
+        onCancelar={popupConfig.onConfirmar ? fecharPopup : undefined}
+        titulo={popupConfig.titulo}
+        mensagem={popupConfig.mensagem}
+        tipo={popupConfig.tipo}
+        textoConfirmar={popupConfig.textoConfirmar}
+        textoCancelar={popupConfig.textoCancelar}
+      />
+
+      {/* TOAST DE NOTIFICAÇÃO */}
+      <ToastNotificacao
+        aberto={toastAberto}
+        onFechar={() => setToastAberto(false)}
+        mensagem={toastConfig.mensagem}
+        tipo={toastConfig.tipo}
+      />
     </div>
   );
 }
