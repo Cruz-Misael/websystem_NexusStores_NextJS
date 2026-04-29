@@ -1,9 +1,12 @@
 // app/configuracoes/page.tsx
 'use client';
-import UsuarioModal from "@/components/users/UsuarioModal";
+import UsuarioModal from '@/components/users/UsuarioModal';
 import { useState, useEffect, useRef } from 'react';
 import Image from 'next/image';
 import { Toaster, toast } from 'react-hot-toast';
+import { CompanyService, CompanyData } from '@/services/company.service';
+import { UserService, AuthorizedUser } from '@/services/user.service';
+import { supabase } from '@/lib/supabase/client';
 import {
   Building,
   Users,
@@ -77,7 +80,6 @@ export default function ConfiguracoesPage() {
     const [usuarioEditando, setUsuarioEditando] = useState<Usuario | null>(null);
     const [modoModal, setModoModal] = useState<'criacao' | 'edicao'>('criacao');
 
-    // Referências
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     // Dados da loja
@@ -102,36 +104,8 @@ export default function ConfiguracoesPage() {
         confirmarSenha: ''
     });
 
-    // Lista de usuários
-    const [usuarios, setUsuarios] = useState<Usuario[]>([
-        {
-        id: '1',
-        nome: 'João Silva',
-        email: 'joao@loja.com',
-        cargo: 'admin',
-        status: 'ativo',
-        ultimoAcesso: 'Hoje, 09:30',
-        avatar: 'JS'
-        },
-        {
-        id: '2',
-        nome: 'Maria Santos',
-        email: 'maria@loja.com',
-        cargo: 'gerente',
-        status: 'ativo',
-        ultimoAcesso: 'Ontem, 16:45',
-        avatar: 'MS'
-        },
-        {
-        id: '3',
-        nome: 'Carlos Oliveira',
-        email: 'carlos@loja.com',
-        cargo: 'colaborador',
-        status: 'pendente',
-        ultimoAcesso: 'Nunca',
-        avatar: 'CO'
-        }
-    ]);
+    // Lista de usuários autorizados
+    const [usuarios, setUsuarios] = useState<AuthorizedUser[]>([]);
 
     // Configurações das tabs
     const tabs = [
@@ -177,8 +151,18 @@ export default function ConfiguracoesPage() {
     ];
 
     // Função para abrir modal de edição
-    const abrirModalEdicao = (usuario: Usuario) => {
-    setUsuarioEditando(usuario);
+    const abrirModalEdicao = (usuario: AuthorizedUser) => {
+    setUsuarioEditando({
+        id: usuario.id,
+        nome: usuario.email || 'Usuário',
+        email: usuario.email || '',
+        cargo: usuario.role as UsuarioCargo,
+        status: usuario.status as UsuarioStatus,
+        ultimoAcesso: 'Não disponível',
+        avatar: '',
+        telefone: '',
+        departamento: ''
+    });
     setModoModal('edicao');
     setModalAberto(true);
     };
@@ -191,44 +175,6 @@ export default function ConfiguracoesPage() {
     };
 
     // ========== FUNÇÕES DA LOJA ==========
-    
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        if (file.size > 5 * 1024 * 1024) {
-        toast.error('A imagem deve ter menos de 5MB');
-        return;
-        }
-
-        if (!file.type.startsWith('image/')) {
-        toast.error('Por favor, selecione uma imagem válida');
-        return;
-        }
-
-        const reader = new FileReader();
-        reader.onloadstart = () => toast.loading('Carregando imagem...');
-        reader.onload = (event) => {
-        setFormLoja(prev => ({
-            ...prev,
-            logo: file,
-            logoPreview: event.target?.result as string
-        }));
-        toast.dismiss();
-        toast.success('Logo carregada com sucesso!');
-        calcularProgressoLoja();
-        };
-        reader.onerror = () => {
-        toast.error('Erro ao carregar a imagem');
-        };
-        reader.readAsDataURL(file);
-    };
-
-    const handleRemoveLogo = () => {
-        setFormLoja(prev => ({ ...prev, logo: null, logoPreview: '' }));
-        calcularProgressoLoja();
-        toast.success('Logo removida');
-    };
 
     const handleLojaInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
         const { name, value } = e.target;
@@ -278,22 +224,45 @@ export default function ConfiguracoesPage() {
         return total;
     };
 
-    const salvarConfiguracoesLoja = () => {
+    const salvarConfiguracoesLoja = async () => {
         if (!formLoja.nomeCompleto || !formLoja.cnpj || !formLoja.telefone || !formLoja.email) {
-        toast.error('Preencha os campos obrigatórios');
-        return;
+            toast.error('Preencha os campos obrigatórios');
+            return;
         }
 
         setIsLoading(true);
-        setTimeout(() => {
-        setIsLoading(false);
-        toast.success('Configurações da loja salvas com sucesso!');
-        }, 1500);
+        try {
+            let logoUrl = formLoja.logoPreview; // Mantém a URL existente por padrão
+
+            // Se um novo arquivo de logo foi selecionado, faz o upload
+            if (formLoja.logo) {
+                logoUrl = await CompanyService.uploadLogo(formLoja.logo);
+            }
+
+            const companyData: CompanyData = {
+                name: formLoja.nomeCompleto,
+                fantasy_name: formLoja.nomeFantasia,
+                description: formLoja.descricao,
+                cnpj: formLoja.cnpj,
+                phone: formLoja.telefone,
+                email: formLoja.email,
+                website: formLoja.website,
+                logo_url: logoUrl
+            };
+
+            await CompanyService.saveCompany(companyData);
+            toast.success('Configurações da loja salvas com sucesso!');
+        } catch (error) {
+            console.error('Erro ao salvar configurações:', error);
+            toast.error('Erro ao salvar configurações da loja');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // ========== FUNÇÕES DE USUÁRIOS ==========
 
-    const handleAddUsuario = () => {
+    const handleAddUsuario = async () => {
         if (!novoUsuario.nome || !novoUsuario.email || !novoUsuario.senha) {
         toast.error('Preencha todos os campos obrigatórios');
         return;
@@ -309,42 +278,73 @@ export default function ConfiguracoesPage() {
         return;
         }
 
-        const novo: Usuario = {
-        id: Date.now().toString(),
-        nome: novoUsuario.nome,
-        email: novoUsuario.email,
-        cargo: novoUsuario.cargo,
-        status: 'pendente',
-        ultimoAcesso: 'Nunca',
-        avatar: novoUsuario.nome.split(' ').map(n => n[0]).join('').toUpperCase()
-        };
+        setIsLoading(true);
+        try {
+            // Primeiro, criar usuário no Supabase Auth
+            const { data, error } = await supabase.auth.signUp({
+                email: novoUsuario.email,
+                password: novoUsuario.senha,
+                options: {
+                    data: {
+                        name: novoUsuario.nome
+                    }
+                }
+            });
 
-        setUsuarios(prev => [...prev, novo]);
-        setNovoUsuario({
-        nome: '',
-        email: '',
-        cargo: 'colaborador',
-        senha: '',
-        confirmarSenha: ''
-        });
-        setIsAddingUsuario(false);
-        calcularProgressoUsuarios();
-        
-        toast.success('Convite enviado! O usuário receberá um email para ativar a conta.');
+            if (error) {
+              toast.error(error.message);
+              throw error;
+            }
+
+            if (!data.user) {
+              throw new Error("Usuário não foi criado no Supabase Auth.");
+            }
+
+            // Adicionar à tabela de usuários autorizados
+            await UserService.addAuthorizedUser(data.user.id, novoUsuario.email, novoUsuario.cargo);
+
+            setNovoUsuario({
+                nome: '',
+                email: '',
+                cargo: 'colaborador',
+                senha: '',
+                confirmarSenha: ''
+            });
+            setIsAddingUsuario(false);
+            await loadAuthorizedUsers();
+            calcularProgressoUsuarios();
+            
+            toast.success('Usuário criado com sucesso! Um email de confirmação foi enviado.');
+        } catch (error) {
+            console.error('Erro ao criar usuário:', error);
+            toast.error('Erro ao criar usuário');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
-    const handleDeleteUsuario = (id: string) => {
-        setUsuarios(prev => prev.filter(u => u.id !== id));
-        toast.success('Usuário removido com sucesso');
-        calcularProgressoUsuarios();
+    const handleDeleteUsuario = async (id: string) => {
+        try {
+            await UserService.removeAuthorizedUser(id);
+            await loadAuthorizedUsers();
+            toast.success('Usuário removido com sucesso');
+            calcularProgressoUsuarios();
+        } catch (error) {
+            console.error('Erro ao remover usuário:', error);
+            toast.error('Erro ao remover usuário');
+        }
     };
 
-    const handleStatusChange = (id: string, status: UsuarioStatus) => {
-        setUsuarios(prev => 
-        prev.map(u => u.id === id ? { ...u, status } : u)
-        );
-        toast.success(`Status atualizado para ${status}`);
-        calcularProgressoUsuarios();
+    const handleStatusChange = async (id: string, status: UsuarioStatus) => {
+        try {
+            await UserService.updateUserStatus(id, status);
+            await loadAuthorizedUsers();
+            toast.success(`Status atualizado para ${status}`);
+            calcularProgressoUsuarios();
+        } catch (error) {
+            console.error('Erro ao atualizar status:', error);
+            toast.error('Erro ao atualizar status');
+        }
     };
 
     const calcularProgressoUsuarios = () => {
@@ -356,15 +356,19 @@ export default function ConfiguracoesPage() {
 
     // ========== FUNÇÕES GERAIS ==========
 
-    const salvarTodasConfiguracoes = () => {
+    const salvarTodasConfiguracoes = async () => {
         setIsLoading(true);
-        setTimeout(() => {
-        setIsLoading(false);
-        toast.success('Todas as configurações foram salvas com sucesso!', {
-            duration: 4000,
-            icon: '✅'
-        });
-        }, 2000);
+        try {
+            await salvarConfiguracoesLoja();
+            toast.success('Todas as configurações foram salvas com sucesso!', {
+                duration: 4000,
+                icon: '✅'
+            });
+        } catch (error) {
+            toast.error('Erro ao salvar configurações');
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     // ========== HELPER FUNCTIONS ==========
@@ -401,50 +405,93 @@ export default function ConfiguracoesPage() {
 
     // Efeitos
     useEffect(() => {
+        loadCompanyData();
+        loadAuthorizedUsers();
         calcularProgressoLoja();
         calcularProgressoUsuarios();
     }, []);
 
+    const loadCompanyData = async () => {
+        try {
+            const company = await CompanyService.getCompany();
+            if (company) {
+                setFormLoja({
+                    nomeCompleto: company.name,
+                    nomeFantasia: company.fantasy_name || '',
+                    descricao: company.description || '',
+                    cnpj: company.cnpj || '',
+                    telefone: company.phone || '',
+                    email: company.email || '',
+                    website: company.website || '',
+                    logo: null, // Importante: resetar o arquivo ao carregar
+                    logoPreview: company.logo_url || ''
+                });
+            }
+        } catch (error) {
+            console.error('Erro ao carregar dados da empresa:', error);
+            toast.error('Erro ao carregar dados da empresa');
+        }
+    };
+
+    const loadAuthorizedUsers = async () => {
+        try {
+            const users = await UserService.getAuthorizedUsers();
+            setUsuarios(users);
+        } catch (error) {
+            console.error('Erro ao carregar usuários:', error);
+            toast.error('Erro ao carregar usuários');
+        }
+    };
+
     const currentProgress = activeTab === 'loja' ? progresso.loja : progresso.usuarios;
 
     // Função para salvar (tanto criação quanto edição)
-    const handleSalvarUsuario = (dadosUsuario: any) => {
-    if (modoModal === 'criacao') {
-        // Adicionar novo usuário
-        const novoUsuario: Usuario = {
-        id: Date.now().toString(),
-        nome: dadosUsuario.nome,
-        email: dadosUsuario.email,
-        cargo: dadosUsuario.cargo as UsuarioCargo,
-        status: 'ativo',
-        ultimoAcesso: 'Nunca',
-        avatar: dadosUsuario.nome.split(' ').map((n: string) => n[0]).join('').toUpperCase(),
-        telefone: dadosUsuario.telefone,
-        departamento: dadosUsuario.departamento
-        };
+    const handleSalvarUsuario = async (dadosUsuario: any) => {
+    setIsLoading(true);
+    try {
+        if (modoModal === 'criacao') {
+            // Chamar a nova rota de API para criar o usuário de forma segura
+            const response = await fetch('/api/create-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: dadosUsuario.email,
+                    password: dadosUsuario.senha,
+                    name: dadosUsuario.nome,
+                    role: dadosUsuario.cargo
+                })
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                // A API route retorna a mensagem de erro que será exibida no toast
+                throw new Error(result.error || 'Falha ao criar usuário.');
+            }
+            
+            toast.success('Usuário criado com sucesso! Um email de confirmação foi enviado.');
+        } else {
+            // Editar usuário existente - atualizar role
+            if (usuarioEditando) {
+                await UserService.updateUserRole(usuarioEditando.id, dadosUsuario.cargo);
+                toast.success('Usuário atualizado com sucesso!');
+            }
+        }
         
-        setUsuarios(prev => [...prev, novoUsuario]);
-        toast.success('Usuário criado com sucesso!');
-    } else {
-        // Editar usuário existente
-        setUsuarios(prev => prev.map(u => 
-        u.id === usuarioEditando?.id 
-            ? { 
-                ...u, 
-                nome: dadosUsuario.nome,
-                email: dadosUsuario.email,
-                cargo: dadosUsuario.cargo as UsuarioCargo,
-                telefone: dadosUsuario.telefone,
-                departamento: dadosUsuario.departamento,
-                status: dadosUsuario.status || u.status
-            } 
-            : u
-        ));
-        toast.success('Usuário atualizado com sucesso!');
+        // Recarregar lista de usuários e fechar o modal em caso de sucesso
+        await loadAuthorizedUsers();
+        setModalAberto(false);
+        calcularProgressoUsuarios();
+    } catch (error: any) {
+        console.error('Erro ao salvar usuário:', error);
+        if (error.message) {
+            toast.error(error.message);
+        } else {
+            toast.error('Ocorreu um erro inesperado ao salvar o usuário.');
+        }
+    } finally {
+        setIsLoading(false);
     }
-    
-    setModalAberto(false);
-    calcularProgressoUsuarios();
     };
 
     return (
@@ -525,11 +572,11 @@ export default function ConfiguracoesPage() {
                 {activeTab === 'loja' ? (
                 <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-400">
                     
-                    {/* UPLOAD DE LOGO COMPACTO */}
+                    {/* UPLOAD DE LOGO */}
                     <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm flex items-center gap-8">
                     <div className="relative w-24 h-24 shrink-0">
                         {formLoja.logoPreview ? (
-                        <Image src={formLoja.logoPreview} alt="Logo" fill className="rounded-2xl object-cover border-4 border-white shadow-md" />
+                        <Image src={formLoja.logoPreview} alt="Pré-visualização do Logo" fill className="rounded-2xl object-cover border-4 border-white shadow-md" />
                         ) : (
                         <div className="w-full h-full bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-zinc-300">
                             <Upload size={24} />
@@ -537,16 +584,16 @@ export default function ConfiguracoesPage() {
                         )}
                     </div>
                     <div className="flex-1">
-                        <h3 className="text-[11px] font-black text-zinc-800 uppercase tracking-[2px] mb-1">Identidade Visual</h3>
-                        <p className="text-xs text-zinc-400 mb-4">A logo será exibida em recibos, PDV e relatórios.</p>
+                        <h3 className="text-[11px] font-black text-zinc-800 uppercase tracking-[2px] mb-1">Logo da Empresa</h3>
+                        <p className="text-xs text-zinc-400 mb-4">A logo será exibida em recibos, PDV e relatórios. (Max 2MB)</p>
                         <div className="flex gap-2">
-                        <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-zinc-900 text-white text-[10px] font-black rounded-lg uppercase tracking-widest hover:bg-zinc-800 transition-all">Upload</button>
+                        <button onClick={() => fileInputRef.current?.click()} className="px-4 py-2 bg-zinc-900 text-white text-[10px] font-black rounded-lg uppercase tracking-widest hover:bg-zinc-800 transition-all">Escolher Arquivo</button>
                         {formLoja.logoPreview && (
                             <button onClick={handleRemoveLogo} className="px-4 py-2 bg-white border border-red-100 text-red-500 text-[10px] font-black rounded-lg uppercase tracking-widest hover:bg-red-50 transition-all">Remover</button>
                         )}
                         </div>
                     </div>
-                    <input ref={fileInputRef} type="file" className="hidden" onChange={handleImageUpload} />
+                    <input ref={fileInputRef} type="file" className="hidden" accept="image/png, image/jpeg, image/webp" onChange={handleImageUpload} />
                     </section>
 
                     {/* FORMULÁRIO DE DADOS */}
@@ -605,22 +652,23 @@ export default function ConfiguracoesPage() {
                         </tr>
                         </thead>
                         <tbody className="divide-y divide-zinc-50 text-xs">
-                        {usuarios.map(u => (
+                        {usuarios.map(u => {
+                            const nome = u.email || 'Usuário';
+                            const avatar = nome.split('@')[0].substring(0, 2).toUpperCase();
+                            return (
                             <tr key={u.id} className="hover:bg-indigo-50/20 transition-colors group">
                             <td className="px-6 py-4 flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-xl bg-zinc-900 text-white flex items-center justify-center font-black text-[10px] shadow-md">{u.avatar}</div>
+                                <div className={`w-9 h-9 rounded-xl ${getAvatarColor(nome)} text-white flex items-center justify-center font-black text-[10px] shadow-md`}>{avatar}</div>
                                 <div>
-                                <p className="font-bold text-zinc-800 leading-none">{u.nome}</p>
+                                <p className="font-bold text-zinc-800 leading-none">{nome}</p>
                                 <p className="text-[10px] text-zinc-400 mt-1 font-medium">{u.email}</p>
                                 </div>
                             </td>
                             <td className="px-6 py-4">
-                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md border ${getCargoColor(u.cargo)}`}>{u.cargo}</span>
+                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md border ${getCargoColor(u.role as UsuarioCargo)}`}>{u.role}</span>
                             </td>
                             <td className="px-6 py-4">
-                                <div className="flex items-center gap-1.5 uppercase font-black text-[9px] text-emerald-600 tracking-tighter">
-                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" /> Ativo
-                                </div>
+                                <span className={`text-[9px] font-black uppercase px-2 py-1 rounded-md border ${getStatusColor(u.status as UsuarioStatus)}`}>{u.status}</span>
                             </td>
                             <td className="px-6 py-4 text-right">
                                 <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -631,7 +679,8 @@ export default function ConfiguracoesPage() {
                                 </div>
                             </td>
                             </tr>
-                        ))}
+                            );
+                        })}
                         </tbody>
                     </table>
                     </div>
@@ -667,3 +716,39 @@ export default function ConfiguracoesPage() {
         </div>
     );
 }
+
+// ========== FUNÇÕES DA LOJA ==========
+
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 2 * 1024 * 1024) { // Limite de 2MB
+            toast.error('A imagem deve ter no máximo 2MB.');
+            return;
+        }
+
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+            toast.error('Formato de imagem inválido. Use JPG, PNG ou WebP.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setFormLoja(prev => ({
+                ...prev,
+                logo: file,
+                logoPreview: reader.result as string
+            }));
+            toast.success('Logo pronto para o upload!');
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleRemoveLogo = () => {
+        setFormLoja(prev => ({ ...prev, logo: null, logoPreview: '' }));
+        if(fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+        toast.success('Logo removida.');
+    };

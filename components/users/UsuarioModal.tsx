@@ -40,7 +40,7 @@ export default function UsuarioModal({
   const [formData, setFormData] = useState<UsuarioData>({
     nome: '',
     email: '',
-    cargo: 'Operador',
+    cargo: 'colaborador',
     senha: '',
     telefone: '',
     departamento: '',
@@ -68,7 +68,7 @@ export default function UsuarioModal({
         setFormData({
           nome: '',
           email: '',
-          cargo: 'Operador',
+          cargo: 'colaborador',
           senha: '',
           telefone: '',
           departamento: '',
@@ -79,10 +79,10 @@ export default function UsuarioModal({
     }
   }, [isOpen, usuarioParaEditar, modo]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    
+
     // Validações
     if (!formData.nome || !formData.email) {
       setIsLoading(false);
@@ -94,13 +94,10 @@ export default function UsuarioModal({
       return;
     }
 
-    // Simulação de delay para feedback visual
-    await new Promise(resolve => setTimeout(resolve, 800));
-    
     // Prepara os dados para envio
     const usuarioData: UsuarioData = {
       ...formData,
-      id: modo === 'edicao' ? usuarioParaEditar?.id : Date.now().toString(),
+      id: modo === 'edicao' ? usuarioParaEditar?.id : undefined,
     };
 
     // Remove a senha se estiver em branco na edição
@@ -109,16 +106,13 @@ export default function UsuarioModal({
     }
 
     onSave(usuarioData);
-    setIsLoading(false);
-    onClose();
+    // O fechamento do modal e o setIsLoading(false) agora são controlados pela página pai.
   };
 
   const cargos = [
-    { value: 'Operador', label: 'Operador', desc: 'Acesso básico ao sistema', color: 'blue' },
-    { value: 'Gerente', label: 'Gerente', desc: 'Acesso a relatórios e gestão', color: 'green' },
-    { value: 'Admin', label: 'Administrador', desc: 'Acesso completo ao sistema', color: 'purple' },
-    { value: 'Financeiro', label: 'Financeiro', desc: 'Acesso a transações financeiras', color: 'amber' },
-    { value: 'Estoque', label: 'Estoque', desc: 'Acesso ao controle de inventário', color: 'orange' }
+    { value: 'colaborador', label: 'Colaborador', desc: 'Acesso básico ao sistema', color: 'blue' },
+    { value: 'gerente', label: 'Gerente', desc: 'Acesso a relatórios e gestão', color: 'green' },
+    { value: 'admin', label: 'Administrador', desc: 'Acesso completo ao sistema', color: 'purple' }
   ];
 
   const departamentos = [

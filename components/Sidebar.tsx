@@ -2,21 +2,34 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  LayoutDashboard, 
-  Package, 
-  ShoppingCart, 
-  Users, 
-  CreditCard, 
-  Settings, 
+import { supabase } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import {
+  LayoutDashboard,
+  Package,
+  ShoppingCart,
+  Users,
+  CreditCard,
+  Settings,
   LogOut,
-  Store
+  Store,
+  FileText
 } from "lucide-react";
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
 
-  // Organizando os links em um array facilita a manutenção e limpeza do JSX
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      // Redireciona para a página de login após o logout
+      router.push('/login');
+    } else {
+      console.error('Erro ao fazer logout:', error);
+    }
+  };
+
   const menuItems = [
     { name: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
     { name: "Caixa / PDV", icon: CreditCard, href: "/caixa" },
@@ -76,7 +89,10 @@ export default function Sidebar() {
           <Link href="/configuracoes" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-zinc-900 hover:text-white transition-colors">
              <Settings size={18} /> Configurações
           </Link>
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-950/30 hover:text-red-300 transition-colors">
+          <button 
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-950/30 hover:text-red-300 transition-colors"
+          >
              <LogOut size={18} /> Sair
           </button>
         </nav>

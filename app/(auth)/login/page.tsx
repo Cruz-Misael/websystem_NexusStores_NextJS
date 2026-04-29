@@ -11,22 +11,66 @@ import {
   ArrowRight,
   ShieldCheck
 } from "lucide-react";
+import { toast, Toaster } from 'react-hot-toast';
+import { useSearchParams } from 'next/navigation';
+import { useEffect } from 'react';
+import { supabase } from '@/lib/supabase/client';
+import { UserService } from '@/services/user.service';
 
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const searchParams = useSearchParams();
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    const error = searchParams.get('error');
+    if (error === 'access_denied') {
+      toast.error('Acesso negado. Faça login para continuar.');
+    }
+  }, [searchParams]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
-    // Simulação de autenticação
-    setTimeout(() => setIsLoading(false), 2000);
+    
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        toast.error('Email ou senha incorretos');
+        return;
+      }
+
+      if (data.user) {
+        // Verificar se o usuário está autorizado
+        const authorizedUser = await UserService.checkUserAuthorization(data.user.id);
+        
+        if (!authorizedUser) {
+          await supabase.auth.signOut();
+          toast.error('Acesso negado. Você não tem permissão para acessar o sistema.');
+          return;
+        }
+
+        toast.success('Login realizado com sucesso!');
+        // Redirecionar para o dashboard
+        window.location.href = '/dashboard';
+      }
+    } catch (error) {
+      console.error('Erro no login:', error);
+      toast.error('Erro ao fazer login. Tente novamente.');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-white">
+      <Toaster position="top-right" />
       
       {/* COLUNA ESQUERDA: FORMULÁRIO */}
       <div className="flex items-center justify-center p-8 lg:p-16">
