@@ -17,6 +17,8 @@ import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { UserService } from '@/services/user.service';
 
+export const dynamic = 'force-dynamic';
+
 export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
