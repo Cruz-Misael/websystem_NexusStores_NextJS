@@ -36,17 +36,16 @@ type TabType = 'loja' | 'usuarios';
 type UsuarioCargo = 'admin' | 'gerente' | 'colaborador';
 type UsuarioStatus = 'ativo' | 'inativo' | 'pendente';
 
-interface Usuario {
+// Este tipo agora reflete mais de perto o que o modal usa e o que vem do DB.
+interface UsuarioParaEdicao {
   id: string;
-  nome: string;
+  full_name: string;
   email: string;
-  cargo: UsuarioCargo;
+  role: UsuarioCargo;
   status: UsuarioStatus;
-  ultimoAcesso: string;
-  avatar?: string;
-  telefone?: string;
-  departamento?: string;
-  permissoes?: string[];
+  phone?: string;
+  department?: string;
+  permissions?: string[];
 }
 
 interface FormLojaData {
@@ -77,7 +76,7 @@ export default function ConfiguracoesPage() {
     const [mostrarSenha, setMostrarSenha] = useState(false);
     const [isAddingUsuario, setIsAddingUsuario] = useState(false);
     const [modalAberto, setModalAberto] = useState(false);
-    const [usuarioEditando, setUsuarioEditando] = useState<Usuario | null>(null);
+    const [usuarioEditando, setUsuarioEditando] = useState<UsuarioParaEdicao | null>(null);
     const [modoModal, setModoModal] = useState<'criacao' | 'edicao'>('criacao');
 
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -152,19 +151,18 @@ export default function ConfiguracoesPage() {
 
     // Função para abrir modal de edição
     const abrirModalEdicao = (usuario: AuthorizedUser) => {
-    setUsuarioEditando({
-        id: usuario.id,
-        nome: usuario.email || 'Usuário',
-        email: usuario.email || '',
-        cargo: usuario.role as UsuarioCargo,
-        status: usuario.status as UsuarioStatus,
-        ultimoAcesso: 'Não disponível',
-        avatar: '',
-        telefone: '',
-        departamento: ''
-    });
-    setModoModal('edicao');
-    setModalAberto(true);
+        setUsuarioEditando({
+            id: usuario.id,
+            full_name: usuario.full_name || '',
+            email: usuario.email,
+            role: usuario.role,
+            status: usuario.status,
+            phone: usuario.phone || '',
+            department: usuario.department || '',
+            permissions: usuario.permissions || []
+        });
+        setModoModal('edicao');
+        setModalAberto(true);
     };
 
     // Função para abrir modal de criação
@@ -371,7 +369,7 @@ export default function ConfiguracoesPage() {
 
     const handleStatusChange = async (id: string, status: UsuarioStatus) => {
         try {
-            await UserService.updateUserStatus(id, status);
+            await UserService.updateAuthorizedUser(id, { status });
             await loadAuthorizedUsers();
             toast.success(`Status atualizado para ${status}`);
             calcularProgressoUsuarios();
@@ -479,54 +477,70 @@ export default function ConfiguracoesPage() {
 
     const currentProgress = activeTab === 'loja' ? progresso.loja : progresso.usuarios;
 
-    // Função para salvar (tanto criação quanto edição)
     const handleSalvarUsuario = async (dadosUsuario: any) => {
-    setIsLoading(true);
-    try {
-        if (modoModal === 'criacao') {
-            // Chamar a nova rota de API para criar o usuário de forma segura
-            const response = await fetch('/api/create-user', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    email: dadosUsuario.email,
-                    password: dadosUsuario.senha,
-                    name: dadosUsuario.nome,
-                    role: dadosUsuario.cargo
-                })
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                // A API route retorna a mensagem de erro que será exibida no toast
-                throw new Error(result.error || 'Falha ao criar usuário.');
-            }
-            
-            toast.success('Usuário criado com sucesso! Um email de confirmação foi enviado.');
-        } else {
-            // Editar usuário existente - atualizar role
-            if (usuarioEditando) {
-                await UserService.updateUserRole(usuarioEditando.id, dadosUsuario.cargo);
+        setIsLoading(true);
+        try {
+            if (modoModal === 'criacao') {
+                // A lógica de criação permanece a mesma, pois envolve Auth + DB
+                const response = await fetch('/api/create-user', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: dadosUsuario.email,
+                        password: dadosUsuario.senha,
+                        name: dadosUsuario.nome, // Passando o nome para a API
+                        role: dadosUsuario.cargo
+                    })
+                });
+    
+                const result = await response.json();
+                if (!response.ok) {
+                    throw new Error(result.error || 'Falha ao criar usuário.');
+                }
+                toast.success('Usuário criado com sucesso! Um email de confirmação foi enviado.');
+    
+            } else { // Modo de edição
+                if (!usuarioEditando) throw new Error("Nenhum usuário selecionado para edição.");
+    
+                // Mapeamento CORRETO dos campos do formulário para as colunas do banco
+                const updates: Partial<AuthorizedUser> = {
+                    full_name: dadosUsuario.nome, // 'nome' do form -> 'full_name' no DB
+                    phone: dadosUsuario.telefone,
+                    department: dadosUsuario.departamento,
+                    role: dadosUsuario.cargo,
+                    status: dadosUsuario.status,
+                    permissions: dadosUsuario.permissoes,
+                };
+                
+                await UserService.updateAuthorizedUser(usuarioEditando.id, updates);
+    
+                // 2. Se uma nova senha foi fornecida, chama a API de atualização de senha
+                if (dadosUsuario.senha) {
+                    if (dadosUsuario.senha !== dadosUsuario.confirmarSenha) {
+                        throw new Error("As senhas não coincidem.");
+                    }
+                    if (dadosUsuario.senha.length < 6) {
+                        throw new Error("A nova senha deve ter no mínimo 6 caracteres.");
+                    }
+                    const userToEdit = usuarios.find(u => u.id === usuarioEditando.id);
+                    if (!userToEdit) throw new Error("Não foi possível encontrar o ID de autenticação do usuário.");
+    
+                    await UserService.updateUserPassword(userToEdit.user_id, dadosUsuario.senha);
+                }
                 toast.success('Usuário atualizado com sucesso!');
             }
+            
+            await loadAuthorizedUsers();
+            setModalAberto(false);
+            calcularProgressoUsuarios();
+    
+        } catch (error: any) {
+            console.error('Erro ao salvar usuário:', error);
+            toast.error(error.message || 'Ocorreu um erro inesperado ao salvar o usuário.');
+        } finally {
+            setIsLoading(false);
         }
-        
-        // Recarregar lista de usuários e fechar o modal em caso de sucesso
-        await loadAuthorizedUsers();
-        setModalAberto(false);
-        calcularProgressoUsuarios();
-    } catch (error: any) {
-        console.error('Erro ao salvar usuário:', error);
-        if (error.message) {
-            toast.error(error.message);
-        } else {
-            toast.error('Ocorreu um erro inesperado ao salvar o usuário.');
-        }
-    } finally {
-        setIsLoading(false);
-    }
-    };
+        };
 
     return (
         <div className="flex flex-col h-full max-h-screen bg-zinc-50 text-zinc-900 font-sans overflow-hidden border border-zinc-300 rounded-lg shadow-2xl mx-auto">

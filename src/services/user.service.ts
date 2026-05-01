@@ -7,6 +7,10 @@ export interface AuthorizedUser {
   role: 'admin' | 'gerente' | 'colaborador';
   status: 'ativo' | 'inativo' | 'pendente';
   created_at: string;
+  full_name?: string;
+  phone?: string;
+  department?: string;
+  permissions?: string[];
 }
 
 export class UserService {
@@ -37,21 +41,10 @@ export class UserService {
     }
   }
 
-  static async updateUserRole(userId: string, role: AuthorizedUser['role']): Promise<void> {
+  static async updateAuthorizedUser(userId: string, updates: Partial<AuthorizedUser>): Promise<void> {
     const { error } = await supabase
       .from('authorized_users')
-      .update({ role })
-      .eq('id', userId);
-
-    if (error) {
-      throw error;
-    }
-  }
-
-  static async updateUserStatus(userId: string, status: AuthorizedUser['status']): Promise<void> {
-    const { error } = await supabase
-      .from('authorized_users')
-      .update({ status })
+      .update(updates)
       .eq('id', userId);
 
     if (error) {
@@ -83,5 +76,21 @@ export class UserService {
     }
 
     return data;
+  }
+
+  static async updateUserPassword(userId: string, password: string): Promise<void> {
+    const response = await fetch('/api/update-user-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ userId, password }),
+    });
+
+    if (!response.ok) {
+      const result = await response.json();
+      // Joga um erro com a mensagem vinda da API para ser capturada no toast
+      throw new Error(result.error || 'Falha ao atualizar a senha.');
+    }
   }
 }

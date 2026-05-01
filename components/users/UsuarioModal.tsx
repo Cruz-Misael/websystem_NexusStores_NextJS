@@ -8,20 +8,31 @@ import {
   Smartphone, Globe, Lock
 } from 'lucide-react';
 
+// A interface que o modal recebe (de fora)
 interface ModalUsuarioProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (usuario: UsuarioData) => void;
-  usuarioParaEditar?: UsuarioData | null;
+  onSave: (usuario: any) => void; // any para simplificar, já que a página faz o mapeamento
+  usuarioParaEditar?: {
+    id: string;
+    full_name: string;
+    email: string;
+    role: string;
+    status: 'ativo' | 'inativo' | 'pendente';
+    phone?: string;
+    department?: string;
+    permissions?: string[];
+  } | null;
   modo?: 'criacao' | 'edicao';
 }
 
-interface UsuarioData {
-  id?: string;
+// A interface que o formulário usa (internamente)
+interface FormData {
   nome: string;
   email: string;
   cargo: string;
   senha?: string;
+  confirmarSenha?: string;
   telefone?: string;
   departamento?: string;
   status?: 'ativo' | 'inativo' | 'pendente';
@@ -37,11 +48,12 @@ export default function UsuarioModal({
 }: ModalUsuarioProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState<UsuarioData>({
+  const [formData, setFormData] = useState<FormData>({
     nome: '',
     email: '',
     cargo: 'colaborador',
     senha: '',
+    confirmarSenha: '',
     telefone: '',
     departamento: '',
     status: 'ativo',
@@ -53,15 +65,17 @@ export default function UsuarioModal({
     if (isOpen) {
       if (modo === 'edicao' && usuarioParaEditar) {
         // Preenche o formulário com os dados do usuário para edição
+        // Mapeia os nomes do DB para os nomes do formulário
         setFormData({
-          nome: usuarioParaEditar.nome,
+          nome: usuarioParaEditar.full_name, // DB -> Form
           email: usuarioParaEditar.email,
-          cargo: usuarioParaEditar.cargo,
-          senha: '', // Senha em branco para edição
-          telefone: usuarioParaEditar.telefone || '',
-          departamento: usuarioParaEditar.departamento || '',
+          cargo: usuarioParaEditar.role, // DB -> Form
+          senha: '', 
+          confirmarSenha: '',
+          telefone: usuarioParaEditar.phone || '', // DB -> Form
+          departamento: usuarioParaEditar.department || '',
           status: usuarioParaEditar.status || 'ativo',
-          permissoes: usuarioParaEditar.permissoes || []
+          permissoes: usuarioParaEditar.permissions || []
         });
       } else {
         // Reseta o formulário para criação
@@ -70,6 +84,7 @@ export default function UsuarioModal({
           email: '',
           cargo: 'colaborador',
           senha: '',
+          confirmarSenha: '',
           telefone: '',
           departamento: '',
           status: 'ativo',
@@ -84,6 +99,21 @@ export default function UsuarioModal({
     setIsLoading(true);
 
     // Validações
+    if (modo === 'criacao' || formData.senha) {
+      if (formData.senha !== formData.confirmarSenha) {
+        // Idealmente, usaríamos um toast aqui, mas onSave já lida com isso.
+        // Por enquanto, podemos adicionar um feedback visual ou apenas contar com a lógica no onSave.
+        console.error("As senhas não coincidem");
+        setIsLoading(false);
+        return;
+      }
+      if (formData.senha && formData.senha.length < 6) {
+        console.error("A senha precisa de 6+ caracteres");
+        setIsLoading(false);
+        return;
+      }
+    }
+
     if (!formData.nome || !formData.email) {
       setIsLoading(false);
       return;
@@ -94,8 +124,8 @@ export default function UsuarioModal({
       return;
     }
 
-    // Prepara os dados para envio
-    const usuarioData: UsuarioData = {
+    // Prepara os dados para envio, garantindo que o tipo inclua o ID opcional
+    const usuarioData: Partial<FormData> & { id?: string } = {
       ...formData,
       id: modo === 'edicao' ? usuarioParaEditar?.id : undefined,
     };
@@ -327,6 +357,27 @@ export default function UsuarioModal({
                   </p>
                 )}
               </div>
+              
+              {/* CONFIRMAR SENHA (se senha estiver sendo digitada) */}
+              {(modo === 'criacao' || (modo === 'edicao' && formData.senha)) && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-zinc-400 uppercase tracking-tight ml-1">
+                    {modo === 'criacao' ? 'Confirmar Senha *' : 'Confirmar Nova Senha'}
+                  </label>
+                  <div className="relative group">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-300 group-focus-within:text-indigo-500 transition-colors">
+                      <Lock size={16} />
+                    </span>
+                    <input 
+                      type={showPassword ? "text" : "password"}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl pl-11 pr-12 py-3 text-xs font-semibold focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all"
+                      placeholder="Repita a senha"
+                      value={formData.confirmarSenha || ''}
+                      onChange={(e) => setFormData({...formData, confirmarSenha: e.target.value})}
+                    />
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* STATUS (APENAS PARA EDIÇÃO) */}
