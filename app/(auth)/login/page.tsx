@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Image from "next/image";
 import { 
   Mail, 
@@ -12,10 +12,9 @@ import {
   ShieldCheck
 } from "lucide-react";
 import { toast, Toaster } from 'react-hot-toast';
-import { useSearchParams } from 'next/navigation';
-import { useEffect } from 'react';
 import { supabase } from '@/lib/supabase/client';
 import { UserService } from '@/services/user.service';
+import { LoginClientLogic } from './LoginClientLogic';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,14 +23,6 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const searchParams = useSearchParams();
-
-  useEffect(() => {
-    const error = searchParams.get('error');
-    if (error === 'access_denied') {
-      toast.error('Acesso negado. Faça login para continuar.');
-    }
-  }, [searchParams]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -72,6 +63,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen grid grid-cols-1 lg:grid-cols-2 bg-white">
+      <Suspense fallback={null}>
+        <LoginClientLogic />
+      </Suspense>
       <Toaster position="top-right" />
       
       {/* COLUNA ESQUERDA: FORMULÁRIO */}
