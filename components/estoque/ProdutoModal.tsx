@@ -20,6 +20,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import EtiquetaProduto from "./EtiquetaProduto";
+import { CompanyService } from "@/services/company.service";
 
 interface ProdutoForm {
   nome: string;
@@ -137,6 +138,17 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
   const [preview, setPreview] = useState<string | null>(null);
   const [erros, setErros] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [empresa, setEmpresa] = useState({ nome: "Minha Empresa", logoUrl: "" });
+
+  useEffect(() => {
+    CompanyService.getCompany().then((company) => {
+      if (!company) return;
+      setEmpresa({
+        nome: company.fantasy_name || company.name || "Minha Empresa",
+        logoUrl: company.logo_url || "",
+      });
+    }).catch(() => {});
+  }, []);
   
   // Funções de geração
   const gerarSKU = () => {
@@ -477,7 +489,8 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                         sku={form.sku}
                         codigo={form.codigoBarras}
                         preco={form.preco}
-                        empresa="Minha Empresa"
+                        empresa={empresa.nome}
+                        logoUrl={empresa.logoUrl}
                       />
                     </div>
                   </div>

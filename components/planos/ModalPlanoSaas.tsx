@@ -9,10 +9,18 @@ interface Props {
 }
 
 export default function PlansModal({ planoAtual = "starter", onClose }: Props) {
-  
+
+  const WA_NUMBER = "5551982049463";
+
+  const WA_MESSAGES: Record<string, string> = {
+    starter:    "Olá! Tenho interesse em contratar o plano *Starter* do Nexus Store (R$199,90/mês). Pode me ajudar com a contratação?",
+    pro:        "Olá! Tenho interesse em contratar o plano *Pro* do Nexus Store (R$349,90/mês). Pode me ajudar com a contratação?",
+    enterprise: "Olá! Tenho interesse no plano *Enterprise* do Nexus Store e gostaria de saber mais sobre preços e funcionalidades. Pode me ajudar?",
+  };
+
   const selecionarPlano = (planoId: string) => {
-    console.log("Upgrade para:", planoId);
-    // Lógica de Checkout/Stripe aqui
+    const msg = encodeURIComponent(WA_MESSAGES[planoId] ?? `Olá! Tenho interesse em um plano do Nexus Store.`);
+    window.open(`https://wa.me/${WA_NUMBER}?text=${msg}`, "_blank", "noopener,noreferrer");
   };
 
   // Hook para fechar com ESC e bloquear scroll do body
@@ -35,7 +43,7 @@ export default function PlansModal({ planoAtual = "starter", onClose }: Props) {
       id: "starter",
       nome: "Starter",
       icon: Zap,
-      preco: "49,90",
+      preco: "199,90",
       periodo: "/mês",
       descricao: "Ideal para validar seu negócio.",
       destaque: false,
@@ -51,7 +59,7 @@ export default function PlansModal({ planoAtual = "starter", onClose }: Props) {
       id: "pro",
       nome: "Pro",
       icon: Sparkles,
-      preco: "99,90",
+      preco: "349,90",
       periodo: "/mês",
       descricao: "Para operações em crescimento.",
       destaque: true,
@@ -117,8 +125,8 @@ export default function PlansModal({ planoAtual = "starter", onClose }: Props) {
                 <div
                   key={plano.id}
                   className={`relative flex flex-col p-6 rounded-xl border transition-all duration-200 
-                    ${isPopular 
-                      ? "border-indigo-600 shadow-lg shadow-indigo-50 ring-1 ring-indigo-600 bg-white" 
+                    ${isPopular
+                      ? "border-indigo-600 shadow-lg shadow-indigo-50 ring-1 ring-indigo-600 bg-white"
                       : "border-zinc-200 hover:border-zinc-300 hover:shadow-md bg-white"
                     }
                     ${isCurrent ? "bg-zinc-50/50 border-zinc-200 opacity-80" : ""}
@@ -182,9 +190,9 @@ export default function PlansModal({ planoAtual = "starter", onClose }: Props) {
 
         {/* Footer Seguro */}
         <div className="bg-zinc-50 px-8 py-4 border-t border-zinc-100 flex flex-wrap justify-center items-center gap-x-6 gap-y-2 text-xs text-zinc-400 shrink-0">
-           <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500"/> Pagamento 100% Seguro</span>
-           <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500"/> Cancele quando quiser</span>
-           <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500"/> Nota Fiscal automática</span>
+          <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500" /> Pagamento 100% Seguro</span>
+          <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500" /> Cancele quando quiser</span>
+          <span className="flex items-center gap-1.5"><Check size={12} className="text-emerald-500" /> Nota Fiscal automática</span>
         </div>
       </div>
     </div>

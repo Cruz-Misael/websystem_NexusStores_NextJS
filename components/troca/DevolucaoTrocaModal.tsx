@@ -10,7 +10,15 @@ import {
   Info,
   CheckCircle2,
   ShoppingBag,
+  PlusCircle,
+  ArrowRight,
+  Plus,
+  Minus,
+  Briefcase,
+  Zap,
+  AlertCircle
 } from "lucide-react";
+import { buscarProdutoPorBarcodeOuSKU } from "@/src/services/product.service";
 
 interface ItemVenda {
   id: number;
@@ -21,8 +29,17 @@ interface ItemVenda {
   codigoBarras: string;
 }
 
+interface NovoItem {
+  sku: number;
+  nome: string;
+  quantidade: number;
+  precoUnitario: number;
+  codigoBarras: string;
+}
+
 interface Venda {
   id: number;
+  customer?: { id: number; name: string };
   itens: ItemVenda[];
 }
 
@@ -35,19 +52,28 @@ interface Props {
       itemId: number;
       quantidade: number;
     }[];
+    itensAdicionados?: {
+      sku: number;
+      quantidade: number;
+    }[];
     motivo: string;
     tipo: 'devolucao' | 'troca';
+    valorFinal?: number;
   }) => void;
+  isConsignado?: boolean;
 }
 
-export default function DevolucaoTrocaModal({ venda, onClose, onConfirm }: Props) {
-  const [barcode, setBarcode] = useState("");
+export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsignado = false }: Props) {
   const [itensDevolvidos, setItensDevolvidos] = useState<Record<number, number>>({});
+  const [itensNovos, setItensNovos] = useState<NovoItem[]>([]);
   const [motivo, setMotivo] = useState("");
-  const [tipo, setTipo] = useState<'devolucao' | 'troca'>('devolucao');
+  const [barcodeDevolucao, setBarcodeDevolucao] = useState("");
+  const [barcodeAdicao, setBarcodeAdicao] = useState("");
   const [mensagemErro, setMensagemErro] = useState("");
   const [mensagemSucesso, setMensagemSucesso] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
+  const lockBip = useRef(false);
+  const inputDevolucaoRef = useRef<HTMLInputElement>(null);
+  const inputAdicaoRef = useRef<HTMLInputElement>(null);
 
   // Log para debug
   useEffect(() => {
@@ -56,7 +82,7 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm }: Props
   }, [venda]);
 
   useEffect(() => {
-    inputRef.current?.focus();
+    inputDevolucaoRef.current?.focus();
   }, []);
 
   // Limpar mensagens após 3 segundos
@@ -74,94 +100,121 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm }: Props
     }
   }, [mensagemSucesso]);
 
-  function handleBarcode(code: string) {
-    // Verificar se venda e itens existem
-    if (!venda || !venda.itens || !Array.isArray(venda.itens)) {
-      console.error("❌ Venda ou itens não disponíveis:", venda);
-      setMensagemErro("Erro: Dados da venda não carregados corretamente");
-      return;
-    }
-
-    // Limpar o código (remover espaços)
+  async function handleBipDevolucao(code: string) {
+    if (!venda || !venda.itens || lockBip.current) return;
     const codigoLimpo = code.trim();
+    if (!codigoLimpo) return;
+
+    lockBip.current = true;
+    setBarcodeDevolucao(""); 
+
+    const itemExistente = venda.itens.find(i =>
+      i.codigoBarras?.toString().toLowerCase() === codigoLimpo.toLowerCase()
+    );
+
+    if (itemExistente) {
+      setItensDevolvidos((prev) => {
+        const atual = prev[itemExistente.id] ?? 0;
+        if (atual >= itemExistente.quantidade) {
+          setMensagemErro(`Limite atingido (${itemExistente.quantidade} un)`);
+          return prev;
+        }
+        setMensagemSucesso(`${itemExistente.nome} marcado`);
+        return { ...prev, [itemExistente.id]: atual + 1 };
+      });
+    } else {
+      setMensagemErro("Item não consta nesta venda.");
+    }
     
-    if (!codigoLimpo) {
-      setMensagemErro("Código de barras vazio");
-      return;
-    }
-
-    console.log("🔍 Buscando código de barras:", codigoLimpo);
-    console.log("📦 Itens disponíveis:", venda.itens.map(i => ({ 
-      id: i.id, 
-      nome: i.nome, 
-      codigoBarras: i.codigoBarras,
-      tipo: typeof i.codigoBarras
-    })));
-
-    // Buscar por código de barras (convertendo para string e comparando)
-    const item = venda.itens.find(i => {
-      // Garantir que codigoBarras seja string
-      const codigoItem = i.codigoBarras?.toString() || "";
-      const codigoBusca = codigoLimpo;
-      
-      // Comparação case insensitive
-      return codigoItem.toLowerCase() === codigoBusca.toLowerCase();
-    });
-
-    if (!item) {
-      console.log("❌ Item não encontrado para o código de barras:", codigoLimpo);
-      setMensagemErro(`Código de barras "${codigoLimpo}" não encontrado nesta venda`);
-      setBarcode("");
-      return;
-    }
-
-    console.log("✅ Item encontrado:", item.nome);
-
-    setItensDevolvidos((prev) => {
-      const atual = prev[item.id] ?? 0;
-      
-      // Verificar se já atingiu a quantidade máxima
-      if (atual >= item.quantidade) {
-        setMensagemErro(`Quantidade máxima (${item.quantidade}) já atingida para ${item.nome}`);
-        return prev;
-      }
-      
-      const novo = { ...prev, [item.id]: atual + 1 };
-      console.log("📊 Itens devolvidos atualizados:", novo);
-      
-      // Mostrar mensagem de sucesso
-      setMensagemSucesso(`${item.nome} adicionado à devolução`);
-      
-      // Limpar o campo após sucesso
-      setBarcode("");
-      
-      return novo;
-    });
+    setTimeout(() => { lockBip.current = false; }, 400);
   }
 
-  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      if (barcode.trim()) {
-        handleBarcode(barcode.trim());
+  async function handleBipAdicao(code: string) {
+    if (lockBip.current) return;
+    const codigoLimpo = code.trim();
+    if (!codigoLimpo) return;
+
+    lockBip.current = true;
+    setBarcodeAdicao("");
+
+    try {
+      const produtoNoBanco = await buscarProdutoPorBarcodeOuSKU(codigoLimpo);
+
+      if (produtoNoBanco) {
+        setItensNovos(prev => {
+          const index = prev.findIndex(p => p.sku === produtoNoBanco.sku);
+          if (index >= 0) {
+            const novos = [...prev];
+            novos[index] = { ...novos[index], quantidade: novos[index].quantidade + 1 };
+            return novos;
+          }
+          return [...prev, {
+            sku: produtoNoBanco.sku,
+            nome: produtoNoBanco.name,
+            quantidade: 1,
+            precoUnitario: produtoNoBanco.price,
+            codigoBarras: produtoNoBanco.barcode || produtoNoBanco.sku.toString()
+          }];
+        });
+        setMensagemSucesso(`${produtoNoBanco.name} adicionado.`);
       } else {
-        setMensagemErro("Digite ou bipe um código de barras");
+        setMensagemErro("Produto não encontrado.");
       }
+    } catch (err) {
+      setMensagemErro("Erro na busca.");
+    } finally {
+      setTimeout(() => { lockBip.current = false; }, 400);
     }
   }
 
-  function removerItem(itemId: number) {
+  function handleRemoverUnidade(itemId: number) {
     setItensDevolvidos((prev) => {
       const novo = { ...prev };
-      delete novo[itemId];
-      
-      // Encontrar o nome do item para mensagem
-      const item = venda.itens?.find(i => i.id === itemId);
-      if (item) {
-        setMensagemSucesso(`${item.nome} removido da devolução`);
+      if (novo[itemId] > 1) {
+        novo[itemId] -= 1;
+      } else {
+        delete novo[itemId];
       }
-      
       return novo;
+    });
+  }
+
+  function handleAdicionarUnidade(itemId: number) {
+    const item = venda.itens.find(i => i.id === itemId);
+    if (!item) return;
+
+    setItensDevolvidos((prev) => {
+      const atual = prev[itemId] ?? 0;
+      if (atual >= item.quantidade) {
+        setMensagemErro(`Limite da venda atingido (${item.quantidade} un)`);
+        return prev;
+      }
+      return { ...prev, [itemId]: atual + 1 };
+    });
+  }
+
+  function handleRemoverNovoItem(sku: number) {
+    setItensNovos(prev => {
+      const index = prev.findIndex(p => p.sku === sku);
+      if (index === -1) return prev;
+
+      const novos = [...prev];
+      if (novos[index].quantidade > 1) {
+        novos[index] = { ...novos[index], quantidade: novos[index].quantidade - 1 };
+        return novos;
+      }
+      return novos.filter(p => p.sku !== sku);
+    });
+  }
+
+  function handleAdicionarNovoItem(sku: number) {
+    setItensNovos(prev => {
+      const index = prev.findIndex(p => p.sku === sku);
+      if (index === -1) return prev;
+
+      const novos = [...prev];
+      novos[index] = { ...novos[index], quantidade: novos[index].quantidade + 1 };
+      return novos;
     });
   }
 
@@ -183,18 +236,18 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm }: Props
     0
   );
 
-  const valorBaseFinal = valorTotalCompra - valorTotalRemovido;
-  const valorJuros = valorBaseFinal * 0.3;
+  const valorAdicionado = itensNovos.reduce(
+    (total, item) => total + item.quantidade * item.precoUnitario,
+    0
+  );
+
+  const valorBaseFinal = valorTotalCompra - valorTotalRemovido + valorAdicionado;
+  const valorJuros = isConsignado ? (valorBaseFinal * 0.3) : 0;
   const valorFinalComJuros = valorBaseFinal + valorJuros;
 
   const handleConfirm = () => {
-    if (quantidadeRemovida === 0) {
-      alert("Selecione pelo menos um item para devolução");
-      return;
-    }
-    
-    if (!motivo.trim()) {
-      alert("Por favor, informe o motivo da devolução/troca");
+    if (quantidadeRemovida === 0 && itensNovos.length === 0) {
+      alert("Selecione pelo menos uma peça para devolver ou adicionar na troca");
       return;
     }
 
@@ -204,8 +257,13 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm }: Props
         itemId: Number(itemId),
         quantidade,
       })),
-      motivo: motivo,
-      tipo: tipo
+      itensAdicionados: itensNovos.map(i => ({
+        sku: i.sku,
+        quantidade: i.quantidade
+      })),
+      motivo: "Ajuste manual de troca/devolução",
+      tipo: isConsignado ? 'devolucao' : (itensNovos.length > 0 ? 'troca' : 'devolucao'),
+      valorFinal: isConsignado ? valorFinalComJuros : valorBaseFinal
     });
   };
 
@@ -222,9 +280,9 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm }: Props
             </p>
             <button
               onClick={onClose}
-              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+              className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 font-bold"
             >
-              Fechar
+              FECHAR
             </button>
           </div>
         </div>
@@ -233,213 +291,256 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm }: Props
   }
 
   return (
-    <div className="fixed inset-0 bg-zinc-900/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4">
-      <div className="bg-white w-full max-w-5xl h-[85vh] rounded-2xl shadow-2xl flex overflow-hidden border border-zinc-200">
-        
-        {/* COLUNA ESQUERDA: OPERAÇÃO */}
-        <div className="flex-[2] flex flex-col min-w-0 bg-white border-r border-zinc-100">
-          
-          {/* Header Padronizado */}
-          <div className="px-6 py-5 border-b border-zinc-100 flex justify-between items-center shrink-0">
-            <div className="flex flex-col gap-1">
-              <div className="flex items-center gap-2">
-                <RotateCcw size={22} className="text-indigo-600" strokeWidth={2.5} />
-                <h2 className="text-xl font-extrabold text-zinc-900 tracking-tight leading-none">
-                  Devolução & Troca
-                </h2>
-              </div>
-              <p className="text-[11px] font-medium text-zinc-500 uppercase tracking-wider ml-7">
-                Venda #{venda.id} • {venda.itens.length} {venda.itens.length === 1 ? 'item' : 'itens'}
+    <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 lg:p-8 animate-in fade-in duration-200">
+      <div className="bg-zinc-50 w-full max-w-6xl h-[88vh] rounded-[2rem] shadow-2xl flex overflow-hidden border border-white/20 relative">
+
+        {/* Lado Esquerdo: Centro de Operações */}
+        <div className="flex-1 flex flex-col min-w-0 bg-white shadow-xl z-20">
+
+          {/* Header Minimalista Nexus */}
+          <div className="px-8 py-6 flex justify-between items-center bg-white border-b border-zinc-100">
+            <div>
+              <h2 className="text-xl font-bold text-zinc-900 tracking-tight flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <RotateCcw size={20} strokeWidth={2.5} />
+                </div>
+                Gestão de Troca e Devolução
+              </h2>
+              <p className="text-xs text-zinc-500 font-medium mt-1 ml-12">
+                Venda <span className="font-bold text-indigo-600">#{venda.id}</span> • {venda.customer?.name || 'Cliente Geral'}
               </p>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-zinc-100 rounded-full text-zinc-400 transition-colors">
+            <button onClick={onClose} className="w-10 h-10 flex items-center justify-center hover:bg-zinc-100 rounded-full transition-all text-zinc-400">
               <X size={20} />
             </button>
           </div>
 
-          {/* Campo Leitor Moderno */}
-          <div className="p-6 shrink-0">
-            <div className="relative group">
-              <Barcode className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-indigo-500 transition-colors" size={20} />
-              <input
-                ref={inputRef}
-                type="text"
-                placeholder="Bipar código de barras..."
-                value={barcode}
-                onChange={(e) => setBarcode(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="w-full bg-zinc-50 border border-zinc-200 rounded-xl pl-12 pr-4 py-4 text-sm font-medium focus:outline-none focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 transition-all"
-                autoFocus
-              />
-            </div>
-            
-            {/* Mensagens de feedback */}
-            {mensagemErro && (
-              <div className="mt-2 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-600 flex items-center gap-2">
-                <X size={14} className="shrink-0" />
-                {mensagemErro}
-              </div>
-            )}
-            
-            {mensagemSucesso && (
-              <div className="mt-2 p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-600 flex items-center gap-2">
-                <CheckCircle2 size={14} className="shrink-0" />
-                {mensagemSucesso}
-              </div>
-            )}
-          </div>
+          <div className="flex-1 flex overflow-hidden">
 
-          {/* Seletor de Tipo e Motivo */}
-          <div className="px-6 pb-4 flex gap-4">
-            <div className="flex-1">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase mb-1 block">Tipo</label>
-              <select
-                value={tipo}
-                onChange={(e) => setTipo(e.target.value as 'devolucao' | 'troca')}
-                className="w-full p-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-              >
-                <option value="devolucao">Devolução</option>
-                <option value="troca">Troca</option>
-              </select>
-            </div>
-            <div className="flex-[2]">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase mb-1 block">Motivo</label>
-              <input
-                type="text"
-                value={motivo}
-                onChange={(e) => setMotivo(e.target.value)}
-                placeholder="Ex: Produto com defeito, arrependimento..."
-                className="w-full p-2 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
-              />
-            </div>
-          </div>
-
-          {/* Lista de Itens com Código de Barras em Destaque */}
-          <div className="flex-1 overflow-y-auto px-6 pb-6 space-y-3 min-h-0">
-            {venda.itens.map((item) => {
-              const qtdDevolvida = itensDevolvidos[item.id] ?? 0;
-              const isSelected = qtdDevolvida > 0;
-
-              return (
-                <div
-                  key={item.id}
-                  className={`relative border-2 rounded-xl p-4 flex justify-between items-center transition-all ${
-                    isSelected 
-                      ? "border-indigo-600 bg-indigo-50/30 shadow-sm" 
-                      : "border-zinc-100 bg-white hover:border-zinc-200"
-                  }`}
-                >
-                  <div className="flex items-center gap-4 flex-1">
-                    <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${isSelected ? 'bg-indigo-600 text-white' : 'bg-zinc-100 text-zinc-400'}`}>
-                      <ShoppingBag size={20} />
-                    </div>
-                    <div className="flex-1">
-                      <p className="font-bold text-zinc-900 text-sm uppercase">{item.nome}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="text-[10px] font-mono bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded">
-                          {item.codigoBarras}
-                        </span>
-                        {item.variante && (
-                          <span className="text-[10px] text-zinc-400">
-                            SKU: {item.variante}
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 mt-2">
-                        <span className="text-xs text-zinc-500">
-                          Qtd: <b>{item.quantidade}</b>
-                        </span>
-                        <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
-                        <span className="text-xs font-medium text-zinc-700">
-                          R$ {item.precoUnitario.toFixed(2)}
-                        </span>
-                        {isSelected && (
-                          <>
-                            <span className="w-1 h-1 bg-zinc-300 rounded-full"></span>
-                            <span className="text-xs text-indigo-600 font-bold">
-                              Devolvendo: {qtdDevolvida}
-                            </span>
-                          </>
-                        )}
-                      </div>
-                    </div>
+            {/* Coluna 1: Devolução (O que volta) */}
+            <div className="flex-1 flex flex-col border-r border-zinc-100 bg-zinc-50/50">
+              <div className="p-6 pb-2">
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-5 bg-amber-500 rounded-full" />
+                    <h3 className="font-bold text-zinc-800 text-sm">Entrada no Estoque</h3>
                   </div>
+                  <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-100 text-center uppercase tracking-widest">
+                    {quantidadeRemovida} devoluções
+                  </span>
+                </div>
+                <div className="relative group">
+                  <Barcode className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-amber-500 transition-colors" size={18} strokeWidth={2} />
+                  <input
+                    ref={inputDevolucaoRef}
+                    type="text"
+                    placeholder="Bipar devolução..."
+                    value={barcodeDevolucao}
+                    onChange={(e) => setBarcodeDevolucao(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleBipDevolucao(barcodeDevolucao);
+                      }
+                    }}
+                    className="w-full bg-white border-2 border-zinc-100 rounded-2xl pl-12 pr-4 py-3 text-sm focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all outline-none font-mono placeholder:text-zinc-400 shadow-sm"
+                  />
+                </div>
+              </div>
 
-                  {isSelected && (
-                    <button
-                      onClick={() => removerItem(item.id)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-[10px] font-black uppercase text-red-500 hover:bg-red-50 rounded-md transition-colors ml-2"
-                    >
-                      <Trash2 size={14} /> Remover
-                    </button>
+              <div className="flex-1 overflow-y-auto p-6 space-y-3 pt-2">
+                {venda.itens.filter(i => i.quantidade > 0).map(item => {
+                  const qtdDevolvida = itensDevolvidos[item.id] ?? 0;
+                  const isSelected = qtdDevolvida > 0;
+                  return (
+                    <div key={item.id} className={`group relative p-4 rounded-2xl border bg-white transition-all ${isSelected ? 'border-amber-200 shadow-md ring-4 ring-amber-50' : 'border-zinc-100 shadow-sm opacity-60 hover:opacity-100'}`}>
+                      <div className="flex justify-between items-center">
+                        <div>
+                          <p className={`font-bold text-sm ${isSelected ? 'text-zinc-900' : 'text-zinc-600'}`}>{item.nome}</p>
+                          <p className="text-[10px] text-zinc-400 font-mono mt-0.5">{item.codigoBarras || item.id}</p>
+                        </div>
+                        <div className="text-right">
+                          <p className={`text-sm font-bold ${isSelected ? 'text-amber-600' : 'text-zinc-900'}`}>R$ {item.precoUnitario.toFixed(2)}</p>
+                        </div>
+                      </div>
+
+                      {isSelected && (
+                        <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest bg-amber-50 px-2 py-1 rounded">Devolvendo</span>
+                          <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200 rounded-lg p-1 shadow-inner">
+                            <button onClick={() => handleRemoverUnidade(item.id)} className="w-7 h-7 flex items-center justify-center hover:bg-white text-zinc-600 rounded-md transition-colors shadow-sm">
+                              <Minus size={14} strokeWidth={2.5} />
+                            </button>
+                            <span className="w-8 text-center font-bold text-sm text-zinc-800">{qtdDevolvida}</span>
+                            <button onClick={() => handleAdicionarUnidade(item.id)} className="w-7 h-7 flex items-center justify-center hover:bg-white text-zinc-600 rounded-md transition-colors shadow-sm">
+                              <Plus size={14} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Coluna 2: Troca (O que entra) */}
+            {!isConsignado && (
+              <div className="flex-1 flex flex-col bg-zinc-50/50">
+                <div className="p-6 pb-2">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-5 bg-emerald-500 rounded-full" />
+                      <h3 className="font-bold text-zinc-800 text-sm">Saída da Loja</h3>
+                    </div>
+                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100 text-center uppercase tracking-widest">
+                      {itensNovos.length} novos
+                    </span>
+                  </div>
+                  <div className="relative group">
+                    <PlusCircle className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-emerald-500 transition-colors" size={18} strokeWidth={2} />
+                    <input
+                      ref={inputAdicaoRef}
+                      type="text"
+                      placeholder="Bipar nova peça..."
+                      value={barcodeAdicao}
+                      onChange={(e) => setBarcodeAdicao(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          handleBipAdicao(barcodeAdicao);
+                        }
+                      }}
+                      className="w-full bg-white border-2 border-zinc-100 rounded-2xl pl-12 pr-4 py-3 text-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none font-mono placeholder:text-zinc-400 shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-6 space-y-3 pt-2">
+                  {itensNovos.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center opacity-40 px-8 text-center text-zinc-400">
+                      <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mb-4">
+                        <ShoppingBag size={28} strokeWidth={1.5} className="text-zinc-400" />
+                      </div>
+                      <p className="text-xs font-bold uppercase tracking-widest">Bipe as peças novas<br/>para a troca</p>
+                    </div>
+                  ) : (
+                    itensNovos.map(item => (
+                      <div key={item.sku} className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/30 shadow-md ring-4 ring-emerald-50 animate-in slide-in-from-right-2 duration-200">
+                        <div className="flex justify-between items-center">
+                          <div>
+                            <p className="font-bold text-sm text-zinc-900">{item.nome}</p>
+                            <p className="text-[10px] text-zinc-400 font-mono mt-0.5">SKU: {item.sku}</p>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-sm font-bold text-emerald-600">R$ {item.precoUnitario.toFixed(2)}</p>
+                          </div>
+                        </div>
+                        <div className="mt-4 pt-4 border-t border-emerald-100 flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-50 px-2 py-1 rounded">Levando</span>
+                          <div className="flex items-center gap-1 bg-white border border-emerald-100 rounded-lg p-1 shadow-inner">
+                            <button onClick={() => handleRemoverNovoItem(item.sku)} className="w-7 h-7 flex items-center justify-center hover:bg-zinc-50 text-emerald-600 rounded-md transition-colors shadow-sm">
+                              <Minus size={14} strokeWidth={2.5} />
+                            </button>
+                            <span className="w-8 text-center font-bold text-sm text-zinc-900">{item.quantidade}</span>
+                            <button onClick={() => handleAdicionarNovoItem(item.sku)} className="w-7 h-7 flex items-center justify-center hover:bg-zinc-50 text-emerald-600 rounded-md transition-colors shadow-sm">
+                              <Plus size={14} strokeWidth={2.5} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
                   )}
                 </div>
-              );
-            })}
+              </div>
+            )}
+          </div>
+
+          {/* Rodapé Alertas */}
+          <div className="h-10 flex items-center justify-center gap-3">
+            {mensagemErro && <span className="text-xs text-red-500">{mensagemErro}</span>}
+            {mensagemSucesso && <span className="text-xs text-emerald-600">{mensagemSucesso}</span>}
           </div>
         </div>
 
-        {/* COLUNA DIREITA: RESUMO FINANCEIRO */}
-        <div className="w-[380px] bg-zinc-50 p-8 flex flex-col">
-          <h3 className="text-[11px] font-black uppercase text-zinc-400 mb-6 tracking-widest">
-            Resumo do Acerto
-          </h3>
+        {/* Lado Direito: Resumo */}
+        <div className="w-[320px] bg-white pt-6 pb-6 px-8 flex flex-col relative z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.02)]">
+          <div className="flex-1">
+            <h3 className="text-sm font-bold uppercase tracking-widest mb-8 text-zinc-400">
+              Resumo Final
+            </h3>
 
-          <div className="flex-1 overflow-y-auto min-h-0 space-y-4">
-            <div className="space-y-3 text-sm border-b border-zinc-200 pb-6">
-              <div className="flex justify-between text-zinc-500">
-                <span>Total da compra</span>
-                <span className="font-mono">R$ {valorTotalCompra.toFixed(2)}</span>
+            <div className="space-y-6">
+              {/* Card de Crédito */}
+              <div>
+                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">Total Devolvido</p>
+                <div className="text-zinc-800">
+                  <span className="text-sm font-bold text-zinc-400">R$</span>
+                  <span className="text-3xl font-black ml-1 tracking-tight">{valorTotalRemovido.toFixed(2)}</span>
+                </div>
               </div>
 
-              <div className="flex justify-between text-red-600 font-medium">
-                <span>Devolução ({quantidadeRemovida} {quantidadeRemovida === 1 ? 'item' : 'itens'})</span>
-                <span className="font-mono">- R$ {valorTotalRemovido.toFixed(2)}</span>
-              </div>
+              {/* Card de Débito */}
+              {!isConsignado && (
+                <div>
+                  <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">Total Acrescentado</p>
+                  <div className="text-zinc-800">
+                    <span className="text-sm font-bold text-zinc-400">R$</span>
+                    <span className="text-3xl font-black ml-1 tracking-tight">{valorAdicionado.toFixed(2)}</span>
+                  </div>
+                </div>
+              )}
 
-              <div className="flex justify-between text-zinc-900 font-bold pt-2 border-t border-zinc-100">
-                <span>Valor Base</span>
-                <span className="font-mono text-lg">R$ {valorBaseFinal.toFixed(2)}</span>
+              {/* Detalhes */}
+              <div className="pt-6 space-y-4">
+                <div className="flex justify-between text-xs text-zinc-500 font-medium">
+                  <span>Valor Original</span>
+                  <span>R$ {valorTotalCompra.toFixed(2)}</span>
+                </div>
+                {isConsignado && (
+                  <div className="flex justify-between text-xs text-zinc-500 font-medium">
+                    <span>Taxa Consignado</span>
+                    <span>+ R$ {valorJuros.toFixed(2)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between text-xs font-bold text-zinc-800 pt-4 border-t border-zinc-100">
+                  <span>Saldo diferença</span>
+                  <span className="font-mono">{valorAdicionado - valorTotalRemovido >= 0 ? '+' : ''} R$ {(valorAdicionado - valorTotalRemovido).toFixed(2)}</span>
+                </div>
               </div>
-
-              <div className="flex justify-between text-orange-600 font-medium italic">
-                <span>Ajuste de Prazo (30%)</span>
-                <span className="font-mono">+ R$ {valorJuros.toFixed(2)}</span>
-              </div>
-            </div>
-
-            <div className="pt-2">
-              <p className="text-[10px] font-black text-zinc-400 uppercase tracking-wider mb-1">Total Final a Pagar</p>
-              <div className="text-4xl font-black text-zinc-900 tracking-tighter font-mono">
-                R$ {valorFinalComJuros.toFixed(2)}
-              </div>
-            </div>
-
-            <div className="p-4 bg-orange-50 border border-orange-100 rounded-xl flex gap-3 shadow-sm">
-              <Info className="text-orange-600 shrink-0" size={18} />
-              <p className="text-[11px] text-orange-800 leading-relaxed">
-                Este valor inclui a <b>taxa de 30%</b> referente ao período de permanência dos produtos.
-              </p>
             </div>
           </div>
 
-          <div className="mt-6 pt-6 border-t border-zinc-200 space-y-3">
+          {/* Total FInal */}
+          <div className="mt-8 space-y-4">
+            <div className="bg-zinc-50 rounded-2xl p-6 border border-zinc-100">
+              <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest mb-2">Cobrança Final</p>
+              <div className="text-indigo-600 flex items-baseline">
+                <span className="text-xl font-bold">R$</span>
+                <span className="text-5xl font-black tracking-tighter ml-1">
+                  {isConsignado ? valorFinalComJuros.toFixed(2) : valorBaseFinal.toFixed(2)}
+                </span>
+              </div>
+            </div>
+
             <button
               onClick={handleConfirm}
-              disabled={quantidadeRemovida === 0}
-              className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-300 text-white py-4 rounded-xl font-bold flex items-center justify-center gap-2 uppercase tracking-widest text-xs transition-all shadow-lg shadow-indigo-100 disabled:cursor-not-allowed"
+              disabled={isConsignado ? false : (quantidadeRemovida === 0 && itensNovos.length === 0)}
+              className="w-full h-14 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 rounded-xl text-xs uppercase tracking-widest font-black hover:bg-indigo-700 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none disabled:cursor-not-allowed disabled:hover:scale-100"
             >
-              <CheckCircle2 size={18} /> Confirmar {tipo === 'devolucao' ? 'Devolução' : 'Troca'}
+              Confirmar Operação
             </button>
 
-            <button
-              onClick={onClose}
-              className="w-full text-[10px] font-black uppercase text-zinc-400 hover:text-zinc-600 transition-colors tracking-widest py-2"
-            >
-              Cancelar Operação
+            <button onClick={onClose} className="w-full text-[10px] flex items-center justify-center font-bold text-zinc-400 hover:text-zinc-800 transition-colors uppercase tracking-widest h-8">
+              Cancelar
             </button>
           </div>
         </div>
+
+        {/* Gradiente de Decoração */}
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/5 blur-[120px] rounded-full -mr-32 -mt-32 pointer-events-none" />
       </div>
     </div>
   );

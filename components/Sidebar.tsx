@@ -2,21 +2,73 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { 
-  LayoutDashboard, 
-  Package, 
-  ShoppingCart, 
-  Users, 
-  CreditCard, 
-  Settings, 
+import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { supabase } from "@/lib/supabase/client";
+import {
+  LayoutDashboard,
+  Package,
+  ShoppingCart,
+  Users,
+  CreditCard,
+  Settings,
   LogOut,
-  Store
+  Store,
 } from "lucide-react";
+
+const ROLE_LABELS: Record<string, string> = {
+  admin:       "Administrador",
+  gerente:     "Gerente",
+  colaborador: "Colaborador",
+};
+
+interface CurrentUser {
+  name:     string;
+  email:    string;
+  role:     string;
+  initials: string;
+}
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const [user, setUser] = useState<CurrentUser | null>(null);
 
-  // Organizando os links em um array facilita a manutenção e limpeza do JSX
+  useEffect(() => {
+    async function loadUser() {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+
+      const { data: profile } = await supabase
+        .from("authorized_users")
+        .select("full_name, role")
+        .eq("user_id", authUser.id)
+        .single();
+
+      const name = profile?.full_name || authUser.email?.split("@")[0] || "Usuário";
+      const initials = name
+        .split(" ")
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((n: string) => n[0])
+        .join("")
+        .toUpperCase();
+
+      setUser({ name, email: authUser.email ?? "", role: profile?.role ?? "colaborador", initials });
+    }
+    loadUser();
+  }, []);
+
+  const handleLogout = async () => {
+    const { error } = await supabase.auth.signOut();
+    if (!error) {
+      // Redireciona para a página de login após o logout
+      router.push('/login');
+    } else {
+      console.error('Erro ao fazer logout:', error);
+    }
+  };
+
   const menuItems = [
     { name: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
     { name: "Caixa / PDV", icon: CreditCard, href: "/caixa" },
@@ -73,23 +125,38 @@ export default function Sidebar() {
       {/* --- Rodapé da Sidebar (Configurações / Perfil) --- */}
       <div className="p-4 border-t border-zinc-800">
         <nav className="space-y-1">
-          <Link href="/configuracoes" className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium hover:bg-zinc-900 hover:text-white transition-colors">
-             <Settings size={18} /> Configurações
+          <Link
+            href="/configuracoes"
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
+              pathname === "/configuracoes"
+                ? "bg-indigo-600 text-white shadow-md shadow-indigo-900/20"
+                : "hover:bg-zinc-900 hover:text-white"
+            }`}
+          >
+            <Settings size={18} className={pathname === "/configuracoes" ? "text-white" : "text-zinc-400"} />
+            Configurações
           </Link>
-          <button className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-950/30 hover:text-red-300 transition-colors">
-             <LogOut size={18} /> Sair
+          <button
+            onClick={handleLogout}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-red-400 hover:bg-red-950/30 hover:text-red-300 transition-colors"
+          >
+            <LogOut size={18} /> Sair
           </button>
         </nav>
 
-        {/* Mini Perfil do Usuário */}
-        <div className="mt-6 flex items-center gap-3 px-2">
-            <div className="w-8 h-8 rounded-full bg-zinc-700 flex items-center justify-center text-xs text-white font-bold">
-                AD
-            </div>
-            <div className="flex flex-col">
-                <span className="text-xs font-medium text-white">Misael Cruz</span>
-                <span className="text-[10px] text-zinc-500">admin@nexus.com</span>
-            </div>
+        {/* Mini Perfil dinâmico */}
+        <div className="mt-4 flex items-center gap-3 px-2 py-2 rounded-lg bg-zinc-900/50">
+          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center text-xs text-white font-bold shrink-0">
+            {user?.initials ?? ".."}
+          </div>
+          <div className="flex flex-col min-w-0">
+            <span className="text-xs font-medium text-white truncate">
+              {user?.name ?? "Carregando..."}
+            </span>
+            <span className="text-[10px] text-zinc-500 truncate">
+              {ROLE_LABELS[user?.role ?? ""] ?? user?.role ?? ""}
+            </span>
+          </div>
         </div>
       </div>
     </aside>

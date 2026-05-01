@@ -106,13 +106,9 @@ export async function criarDevolucao(data: CreateDevolucaoDTO) {
       });
     });
 
-    // Se todos os itens foram devolvidos, cancelar a venda
-    if (itensVenda.length === itensDevolvidos.size) {
-      await supabase
-        .from("sales")
-        .update({ payment_status: 'cancelled' })
-        .eq("id", data.vendaId);
-    }
+    // 4. Verificação de cancelamento automático removida a pedido do usuário.
+    // A venda agora deve ser cancelada apenas manualmente se necessário.
+
 
     console.log("✅ Devolução criada com sucesso:", devolucao);
     return devolucao;
