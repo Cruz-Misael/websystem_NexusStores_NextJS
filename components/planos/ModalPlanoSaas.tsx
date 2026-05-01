@@ -10,9 +10,17 @@ interface Props {
 
 export default function PlansModal({ planoAtual = "starter", onClose }: Props) {
 
+  const WA_NUMBER = "5551982049463";
+
+  const WA_MESSAGES: Record<string, string> = {
+    starter:    "Olá! Tenho interesse em contratar o plano *Starter* do Nexus Store (R$199,90/mês). Pode me ajudar com a contratação?",
+    pro:        "Olá! Tenho interesse em contratar o plano *Pro* do Nexus Store (R$349,90/mês). Pode me ajudar com a contratação?",
+    enterprise: "Olá! Tenho interesse no plano *Enterprise* do Nexus Store e gostaria de saber mais sobre preços e funcionalidades. Pode me ajudar?",
+  };
+
   const selecionarPlano = (planoId: string) => {
-    console.log("Upgrade para:", planoId);
-    // Lógica de Checkout/Stripe aqui
+    const msg = encodeURIComponent(WA_MESSAGES[planoId] ?? `Olá! Tenho interesse em um plano do Nexus Store.`);
+    window.open(`https://wa.me/${WA_NUMBER}?text=${msg}`, "_blank", "noopener,noreferrer");
   };
 
   // Hook para fechar com ESC e bloquear scroll do body

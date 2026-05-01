@@ -656,6 +656,28 @@ export async function getTopPerformingProducts(periodo: { inicio: string; fim: s
 }
 
 /* =========================
+   DASHBOARD STOCK RUPTURE KPI
+========================= */
+export async function getStockRuptureKPI() {
+  const { data, error } = await supabase
+    .from("products")
+    .select("stock_quantity, minimum_stock")
+    .eq("is_active", true);
+
+  if (error) throw new Error(error.message);
+
+  const products = data || [];
+  const rupturas = products.filter(p => (p.stock_quantity ?? 0) <= 0).length;
+  const criticos = products.filter(p => {
+    const stock = p.stock_quantity ?? 0;
+    const min = p.minimum_stock ?? 5;
+    return stock > 0 && stock <= min;
+  }).length;
+
+  return { rupturas, criticos };
+}
+
+/* =========================
    BUSCAR VENDAS POR CLIENTE
 ========================= */
 export async function getSalesByCustomerId(customerId: number) {

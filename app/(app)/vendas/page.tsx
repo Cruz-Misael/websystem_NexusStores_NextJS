@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import DevolucaoTrocaModal from "@/components/troca/DevolucaoTrocaModal";
 import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
@@ -29,6 +29,22 @@ import {
 } from "lucide-react";
 
 type StatusVenda = "Concluída" | "Pendente" | "Cancelada";
+
+const getStatusFromVenda = (venda: Sale): StatusVenda => {
+  if (venda.payment_status === 'cancelled') return 'Cancelada';
+  if (venda.payment_status === 'pending') return 'Pendente';
+  return 'Concluída';
+};
+
+const getStatusColor = (venda: Sale) => {
+  const status = getStatusFromVenda(venda);
+  switch (status) {
+    case "Concluída": return "bg-emerald-100 text-emerald-700 border-emerald-200";
+    case "Pendente":  return "bg-amber-100 text-amber-700 border-amber-200";
+    case "Cancelada": return "bg-rose-100 text-rose-700 border-rose-200";
+    default:          return "bg-gray-100 text-gray-700";
+  }
+};
 
 export default function HistoricoVendasCompacto() {
   const [selecionada, setSelecionada] = useState<Sale | null>(null); // <-- Mudou de Venda para Sale
@@ -344,53 +360,99 @@ export default function HistoricoVendasCompacto() {
     currency: "BRL"
   }).format(val);
 
-  // Obter status baseado no payment_status
-  const getStatusFromVenda = (venda: Sale): StatusVenda => { // <-- Mudou de Venda para Sale
-    if (venda.payment_status === 'cancelled') return 'Cancelada';
-    if (venda.payment_status === 'pending') return 'Pendente';
-    return 'Concluída';
-  };
-
-  const getStatusColor = (venda: Sale) => { // <-- Mudou de Venda para Sale
-    const status = getStatusFromVenda(venda);
-    switch (status) {
-      case "Concluída": return "bg-emerald-100 text-emerald-700 border-emerald-200";
-      case "Pendente": return "bg-amber-100 text-amber-700 border-amber-200";
-      case "Cancelada": return "bg-rose-100 text-rose-700 border-rose-200";
-      default: return "bg-gray-100 text-gray-700";
-    }
-  };
-
-  // Filtrar vendas
-  const filtrarVendas = () => {
-    return vendas.filter(v => {
-      // Filtro de busca
-      const buscaMatch = v.customer?.name?.toLowerCase().includes(busca.toLowerCase()) ||
+  const vendasFiltradas = useMemo(() =>
+    vendas.filter(v => {
+      const buscaMatch =
+        v.customer?.name?.toLowerCase().includes(busca.toLowerCase()) ||
         v.id.toString().includes(busca);
-
-      // Filtro de status
       const statusMatch = filtroStatus === "todos" || getStatusFromVenda(v) === filtroStatus;
-
-      // Filtro de data (simplificado)
-      let dataMatch = true;
-      if (filtroData) {
-        const dataVenda = new Date(v.sale_date).toISOString().split('T')[0];
-        dataMatch = dataVenda === filtroData;
-      }
-
+      const dataMatch = filtroData
+        ? new Date(v.sale_date).toISOString().split('T')[0] === filtroData
+        : true;
       return buscaMatch && statusMatch && dataMatch;
-    });
-  };
+    }),
+    [vendas, busca, filtroStatus, filtroData]
+  );
 
-  const vendasFiltradas = filtrarVendas();
-
-  // Loading state
   if (carregando && vendas.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center bg-zinc-50">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-zinc-600">Carregando histórico de vendas...</p>
+      <div className="flex h-full max-h-screen bg-zinc-50 overflow-hidden text-sm font-sans border border-zinc-300 rounded-lg shadow-2xl mx-auto">
+        <div className="w-80 flex flex-col border-r border-gray-200 bg-white shrink-0">
+          <div className="p-3 border-b border-gray-100 space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="h-7 w-24 bg-zinc-200 rounded animate-pulse" />
+              <div className="h-8 w-20 bg-zinc-100 rounded animate-pulse" />
+            </div>
+            <div className="h-8 w-full bg-zinc-100 rounded-md animate-pulse" />
+            <div className="flex gap-2">
+              <div className="flex-1 h-7 bg-zinc-100 rounded-md animate-pulse" />
+              <div className="h-7 w-28 bg-zinc-100 rounded-md animate-pulse" />
+            </div>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="p-3 border-b border-gray-50 space-y-1.5">
+                <div className="flex justify-between">
+                  <div className="h-3 w-12 bg-zinc-200 rounded animate-pulse" />
+                  <div className="h-4 w-16 bg-zinc-100 rounded-full animate-pulse" />
+                </div>
+                <div className="flex justify-between items-baseline">
+                  <div className="h-5 w-24 bg-zinc-200 rounded animate-pulse" />
+                  <div className="h-3 w-14 bg-zinc-100 rounded animate-pulse" />
+                </div>
+                <div className="h-3 w-32 bg-zinc-100 rounded animate-pulse" />
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col bg-gray-50">
+          <div className="bg-white border-b border-gray-200 px-6 py-4 shadow-sm">
+            <div className="flex justify-between items-center">
+              <div className="space-y-2">
+                <div className="h-6 w-36 bg-zinc-200 rounded animate-pulse" />
+                <div className="h-3 w-64 bg-zinc-100 rounded animate-pulse" />
+              </div>
+              <div className="flex gap-2">
+                <div className="h-8 w-36 bg-emerald-100 rounded-lg animate-pulse" />
+                <div className="h-8 w-28 bg-zinc-100 rounded-lg animate-pulse" />
+                <div className="h-8 w-20 bg-red-50 rounded-lg animate-pulse" />
+              </div>
+            </div>
+          </div>
+          <div className="flex-1 p-6">
+            <div className="max-w-3xl mx-auto space-y-6">
+              <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+                <div className="bg-gray-50 px-4 py-2.5 border-b border-gray-200">
+                  <div className="h-3 w-24 bg-zinc-200 rounded animate-pulse" />
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {Array.from({ length: 4 }).map((_, i) => (
+                    <div key={i} className="flex gap-4 px-4 py-3.5">
+                      <div className="flex-1 space-y-1.5">
+                        <div className="h-4 w-40 bg-zinc-200 rounded animate-pulse" />
+                        <div className="h-3 w-20 bg-zinc-100 rounded animate-pulse" />
+                      </div>
+                      <div className="h-4 w-8 bg-zinc-100 rounded animate-pulse" />
+                      <div className="h-4 w-16 bg-zinc-100 rounded animate-pulse" />
+                      <div className="h-4 w-16 bg-zinc-200 rounded animate-pulse" />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <div className="w-72 bg-white rounded-lg border border-gray-200 p-4 space-y-3">
+                  <div className="flex justify-between">
+                    <div className="h-3 w-16 bg-zinc-100 rounded animate-pulse" />
+                    <div className="h-3 w-20 bg-zinc-100 rounded animate-pulse" />
+                  </div>
+                  <div className="border-t border-gray-100 pt-3 flex justify-between">
+                    <div className="h-5 w-12 bg-zinc-200 rounded animate-pulse" />
+                    <div className="h-6 w-24 bg-zinc-200 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );

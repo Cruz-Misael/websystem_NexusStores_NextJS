@@ -33,12 +33,13 @@ import {
   Pie,
   Legend
 } from "recharts";
-import { 
-  getDashboardKPIs, 
-  getFinancialPerformance, 
-  getSalesByCategory, 
+import {
+  getDashboardKPIs,
+  getFinancialPerformance,
+  getSalesByCategory,
   getTopPerformingProducts,
-  getSalesByHour 
+  getSalesByHour,
+  getStockRuptureKPI
 } from "@/src/services/sales.service";
 
 // --- TIPOS DE DADOS ---
@@ -68,6 +69,10 @@ interface SalesByHourData {
   hora: string;
   vendas: number;
 }
+interface StockRuptureData {
+  rupturas: number;
+  criticos: number;
+}
 
 export default function DashboardExecutive() {
   
@@ -76,7 +81,8 @@ export default function DashboardExecutive() {
   const [financialData, setFinancialData] = useState<FinancialData[]>([]);
   const [categoryData, setCategoryData] = useState<CategoryData[]>([]);
   const [topProducts, setTopProducts] = useState<TopProductData[]>([]);
-  const [salesByHour, setSalesByHour] = useState<SalesByHourData[]>([]); // <-- Novo estado
+  const [salesByHour, setSalesByHour] = useState<SalesByHourData[]>([]);
+  const [stockRupture, setStockRupture] = useState<StockRuptureData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -100,26 +106,28 @@ export default function DashboardExecutive() {
           fim: endDate.toISOString(),
         };
 
-        // Busca todos os dados em paralelo
         const [
-          kpiResult, 
-          financialResult, 
-          categoryResult, 
+          kpiResult,
+          financialResult,
+          categoryResult,
           topProductsResult,
-          salesByHourResult // <-- Chamada da nova função
+          salesByHourResult,
+          stockRuptureResult
         ] = await Promise.all([
           getDashboardKPIs(periodo),
           getFinancialPerformance(periodo),
           getSalesByCategory(periodo),
           getTopPerformingProducts(periodo),
-          getSalesByHour(periodo) // <-- Chamada da nova função
+          getSalesByHour(periodo),
+          getStockRuptureKPI()
         ]);
-        
+
         setKpiData(kpiResult);
         setFinancialData(financialResult);
         setCategoryData(categoryResult);
         setTopProducts(topProductsResult);
-        setSalesByHour(salesByHourResult); // <-- Atualizando o novo estado
+        setSalesByHour(salesByHourResult);
+        setStockRupture(stockRuptureResult);
 
       } catch (err: any) {
         setError(err.message || "Erro ao buscar dados do dashboard.");
@@ -181,7 +189,9 @@ export default function DashboardExecutive() {
             <LayoutDashboard size={20} className="text-indigo-600" strokeWidth={2.5} />
             <h1 className="text-lg font-extrabold text-zinc-900 tracking-tight">Visão Geral da Loja</h1>
           </div>
-          <p className="text-xs text-zinc-500 mt-0.5">Última atualização: Hoje, 14:30</p>
+          <p className="text-xs text-zinc-500 mt-0.5">
+            {loading ? "Carregando..." : `Última atualização: Hoje, ${new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+          </p>
         </div>
 
         <div className="flex items-center gap-3">
@@ -230,12 +240,16 @@ export default function DashboardExecutive() {
             colorClass="bg-amber-100 text-amber-700"
             isLoading={loading}
           />
-          <KpiCard 
-            title="Ruptura de Estoque" 
-            value="N/D" // Dado ainda não implementado
-            subtext="Produtos com estoque crítico"
-            icon={AlertTriangle} 
-            colorClass="bg-rose-100 text-rose-700"
+          <KpiCard
+            title="Ruptura de Estoque"
+            value={stockRupture ? stockRupture.rupturas.toString() : "0"}
+            subtext={stockRupture && stockRupture.criticos > 0
+              ? `+${stockRupture.criticos} produto${stockRupture.criticos > 1 ? 's' : ''} em estoque crítico`
+              : "Nenhum produto em estoque crítico"}
+            icon={AlertTriangle}
+            colorClass={stockRupture && stockRupture.rupturas > 0
+              ? "bg-rose-100 text-rose-700"
+              : "bg-emerald-100 text-emerald-700"}
             isLoading={loading}
           />
         </div>

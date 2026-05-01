@@ -10,7 +10,7 @@ export async function POST(req: Request) {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true, // O usuário precisará confirmar o email
+      email_confirm: true, // Pré-confirma o e-mail — acesso imediato sem confirmação
       user_metadata: { name }
     });
 
@@ -30,6 +30,7 @@ export async function POST(req: Request) {
       .insert({
         user_id: user.id,
         email: user.email,
+        full_name: name,
         role: role,
         status: 'ativo'
       });

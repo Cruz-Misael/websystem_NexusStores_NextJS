@@ -4,7 +4,7 @@ import ProdutoModal from "@/components/estoque/ProdutoModal";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { listarProdutos, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { 
   Search, 
   Plus, 
@@ -211,41 +211,33 @@ export default function GestaoEstoqueCompacto() {
 
   // Carrega produtos do Supabase
 // Função para carregar produtos do Supabase
-const carregarProdutos = async () => {
+const carregarProdutos = async (isManualRefresh = false) => {
   try {
     setCarregando(true);
     setErro(null);
-    
-    console.log("🔄 Buscando produtos no Supabase...");
+
     const produtosDB = await listarProdutos();
-    console.log("📦 Dados brutos do banco:", produtosDB);
-    
-    // Converte para o formato da aplicação
     const produtosConvertidos = produtosDB.map(converterParaProduto);
-    console.log("✅ Produtos convertidos:", produtosConvertidos);
-    
+
     setListaProdutos(produtosConvertidos);
-    
-    // Mantém o produto selecionado se ele ainda existir na lista
+
     if (selecionado) {
       const produtoAindaExiste = produtosConvertidos.find(p => p.id === selecionado.id);
       if (produtoAindaExiste) {
         setSelecionado(produtoAindaExiste);
       } else if (produtosConvertidos.length > 0) {
-        // Se o produto selecionado não existe mais, seleciona o primeiro
         setSelecionado(produtosConvertidos[0]);
       } else {
         setSelecionado(null);
       }
     } else if (produtosConvertidos.length > 0) {
-      // Se não tem produto selecionado, seleciona o primeiro
       setSelecionado(produtosConvertidos[0]);
     }
-    
-    mostrarToast("Produtos atualizados com sucesso!", "sucesso");
-    
+
+    if (isManualRefresh) mostrarToast("Produtos atualizados!", "sucesso");
+
   } catch (error: any) {
-    console.error("❌ Erro ao carregar produtos:", error);
+    console.error("Erro ao carregar produtos:", error);
     setErro(error.message || "Erro ao carregar produtos");
     mostrarPopup(
       "Erro ao carregar produtos",
@@ -448,17 +440,15 @@ const carregarProdutos = async () => {
     }
   };
 
-  // Filtra produtos
-  const produtosFiltrados = listaProdutos.filter(p => {
-    const buscaMatch = p.nome.toLowerCase().includes(busca.toLowerCase()) || 
-                      p.sku.toLowerCase().includes(busca.toLowerCase());
-    
-    if (mostrarInativos) {
-      return buscaMatch;
-    } else {
-      return buscaMatch && p.is_active !== false;
-    }
-  });
+  const produtosFiltrados = useMemo(() =>
+    listaProdutos.filter(p => {
+      const buscaMatch =
+        p.nome.toLowerCase().includes(busca.toLowerCase()) ||
+        p.sku.toLowerCase().includes(busca.toLowerCase());
+      return mostrarInativos ? buscaMatch : buscaMatch && p.is_active !== false;
+    }),
+    [listaProdutos, busca, mostrarInativos]
+  );
 
   // Cálculos de Status
   const getStatusEstoque = (qtd: number, min: number) => {
@@ -472,13 +462,86 @@ const carregarProdutos = async () => {
     currency: "BRL" 
   }).format(val);
 
-  // Se não há produtos
   if (carregando && listaProdutos.length === 0) {
     return (
-      <div className="h-screen flex items-center justify-center bg-zinc-50">
-        <div className="text-center">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-600 mx-auto mb-4" />
-          <p className="text-zinc-600">Carregando produtos...</p>
+      <div className="flex h-full max-h-screen bg-zinc-50 overflow-hidden text-sm font-sans border border-zinc-300 rounded-lg shadow-2xl mx-auto">
+        <div className="w-96 flex flex-col border-r border-zinc-200 bg-white shrink-0">
+          <div className="p-3 border-b border-zinc-100 space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="h-7 w-36 bg-zinc-200 rounded animate-pulse" />
+              <div className="flex gap-2">
+                <div className="h-9 w-9 bg-zinc-100 rounded-lg animate-pulse" />
+                <div className="h-9 w-9 bg-indigo-200 rounded-lg animate-pulse" />
+              </div>
+            </div>
+            <div className="h-8 w-full bg-zinc-100 rounded-md animate-pulse" />
+            <div className="flex justify-between px-1">
+              <div className="h-3 w-20 bg-zinc-100 rounded animate-pulse" />
+              <div className="h-3 w-32 bg-zinc-100 rounded animate-pulse" />
+            </div>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div key={i} className="p-3 border-b border-zinc-50">
+                <div className="flex justify-between mb-2">
+                  <div className="h-4 w-44 bg-zinc-200 rounded animate-pulse" />
+                  <div className="h-4 w-12 bg-zinc-100 rounded-full animate-pulse" />
+                </div>
+                <div className="flex justify-between">
+                  <div className="space-y-1">
+                    <div className="h-3 w-20 bg-zinc-100 rounded animate-pulse" />
+                    <div className="h-3 w-16 bg-zinc-100 rounded animate-pulse" />
+                  </div>
+                  <div className="text-right space-y-1">
+                    <div className="h-4 w-12 bg-zinc-200 rounded animate-pulse" />
+                    <div className="h-3 w-10 bg-zinc-100 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col bg-zinc-50">
+          <div className="bg-white border-b border-zinc-200 px-6 py-4 flex justify-between items-start shadow-sm">
+            <div className="space-y-2">
+              <div className="h-3 w-48 bg-zinc-100 rounded animate-pulse" />
+              <div className="h-7 w-72 bg-zinc-200 rounded animate-pulse" />
+            </div>
+            <div className="flex gap-2">
+              <div className="h-8 w-20 bg-indigo-200 rounded-lg animate-pulse" />
+              <div className="h-8 w-8 bg-zinc-100 rounded animate-pulse" />
+            </div>
+          </div>
+          <div className="flex-1 p-6 space-y-6">
+            <div className="grid grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-white p-4 rounded-xl border border-zinc-200 space-y-3">
+                  <div className="h-3 w-24 bg-zinc-100 rounded animate-pulse" />
+                  <div className="h-8 w-20 bg-zinc-200 rounded animate-pulse" />
+                  <div className="h-2 w-full bg-zinc-100 rounded animate-pulse" />
+                </div>
+              ))}
+            </div>
+            <div className="bg-white rounded-2xl border border-zinc-200 p-4">
+              <div className="flex gap-4 items-center">
+                <div className="h-10 w-32 bg-zinc-100 rounded-xl animate-pulse" />
+                <div className="h-10 w-36 bg-zinc-100 rounded-xl animate-pulse" />
+                <div className="flex-1 h-10 bg-zinc-100 rounded-xl animate-pulse" />
+                <div className="h-10 w-28 bg-indigo-100 rounded-xl animate-pulse" />
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-zinc-200 p-6">
+              <div className="h-5 w-36 bg-zinc-200 rounded animate-pulse mb-6" />
+              <div className="grid grid-cols-2 gap-6">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <div className="h-3 w-20 bg-zinc-100 rounded animate-pulse" />
+                    <div className="h-4 w-full bg-zinc-200 rounded animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     );
@@ -502,8 +565,8 @@ const carregarProdutos = async () => {
               </div>
             </div>
             <div className="flex gap-2">
-              <button 
-                onClick={carregarProdutos}
+              <button
+                onClick={() => carregarProdutos(true)}
                 className="p-2 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors relative"
                 title="Recarregar produtos do banco"
                 disabled={carregando}
@@ -562,7 +625,7 @@ const carregarProdutos = async () => {
               <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
               <p className="text-red-600 text-sm">{erro}</p>
               <button
-                onClick={carregarProdutos}
+                onClick={() => carregarProdutos(true)}
                 className="mt-2 text-indigo-600 hover:text-indigo-700 text-sm font-medium"
               >
                 Tentar novamente

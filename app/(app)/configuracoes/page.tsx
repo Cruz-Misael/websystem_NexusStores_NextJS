@@ -6,29 +6,19 @@ import Image from 'next/image';
 import { Toaster, toast } from 'react-hot-toast';
 import { CompanyService, CompanyData } from '@/services/company.service';
 import { UserService, AuthorizedUser } from '@/services/user.service';
-import { supabase } from '@/lib/supabase/client';
 import {
   Building,
   Users,
   Settings,
   Upload,
-  Shield,
-  CheckCircle,
   Loader2,
-  X,
   FileText,
-  Globe,
   Phone,
   Mail,
   UserPlus,
   Edit,
   Trash2,
-  Eye,
-  EyeOff,
-  ChevronRight,
   Save,
-  Calendar,
-  Key
 } from 'lucide-react';
 
 // Tipos
@@ -60,21 +50,12 @@ interface FormLojaData {
   logoPreview: string;
 }
 
-interface NovoUsuarioData {
-  nome: string;
-  email: string;
-  cargo: UsuarioCargo;
-  senha: string;
-  confirmarSenha: string;
-}
 
 export default function ConfiguracoesPage() {
     // Estado principal
     const [activeTab, setActiveTab] = useState<TabType>('loja');
     const [isLoading, setIsLoading] = useState(false);
     const [progresso, setProgresso] = useState({ loja: 0, usuarios: 0 });
-    const [mostrarSenha, setMostrarSenha] = useState(false);
-    const [isAddingUsuario, setIsAddingUsuario] = useState(false);
     const [modalAberto, setModalAberto] = useState(false);
     const [usuarioEditando, setUsuarioEditando] = useState<UsuarioParaEdicao | null>(null);
     const [modoModal, setModoModal] = useState<'criacao' | 'edicao'>('criacao');
@@ -94,60 +75,8 @@ export default function ConfiguracoesPage() {
         logoPreview: ''
     });
 
-    // Dados do novo usuário
-    const [novoUsuario, setNovoUsuario] = useState<NovoUsuarioData>({
-        nome: '',
-        email: '',
-        cargo: 'colaborador',
-        senha: '',
-        confirmarSenha: ''
-    });
-
     // Lista de usuários autorizados
     const [usuarios, setUsuarios] = useState<AuthorizedUser[]>([]);
-
-    // Configurações das tabs
-    const tabs = [
-        {
-        id: 'loja' as TabType,
-        label: 'Configurações da Loja',
-        icon: Building,
-        description: 'Dados cadastrais e informações',
-        color: 'indigo'
-        },
-        {
-        id: 'usuarios' as TabType,
-        label: 'Gerenciamento de Usuários',
-        icon: Users,
-        description: 'Permissões e acessos',
-        color: 'green'
-        }
-    ];
-
-    // Opções de cargo
-    const cargos = [
-        { 
-        value: 'admin', 
-        label: 'Administrador', 
-        desc: 'Acesso completo ao sistema', 
-        icon: Shield,
-        color: 'purple'
-        },
-        { 
-        value: 'gerente', 
-        label: 'Gerente', 
-        desc: 'Acesso a relatórios e gestão', 
-        icon: Users,
-        color: 'blue'
-        },
-        { 
-        value: 'colaborador', 
-        label: 'Colaborador', 
-        desc: 'Acesso básico operacional', 
-        icon: CheckCircle,
-        color: 'gray'
-        }
-    ];
 
     // Função para abrir modal de edição
     const abrirModalEdicao = (usuario: AuthorizedUser) => {
@@ -198,28 +127,6 @@ export default function ConfiguracoesPage() {
         }
 
         setFormLoja(prev => ({ ...prev, [name]: formattedValue }));
-        calcularProgressoLoja();
-    };
-
-    const calcularProgressoLoja = () => {
-        let total = 0;
-        const campos = [
-        formLoja.nomeCompleto,
-        formLoja.cnpj,
-        formLoja.telefone,
-        formLoja.email,
-        formLoja.descricao,
-        formLoja.logoPreview
-        ];
-        
-        campos.forEach((campo, index) => {
-        if (campo && campo.toString().trim() !== '') {
-            total += index === 4 ? 20 : 10; // Descrição vale mais
-        }
-        });
-
-        setProgresso(prev => ({ ...prev, loja: Math.min(total, 100) }));
-        return total;
     };
 
     const salvarConfiguracoesLoja = async () => {
@@ -294,73 +201,11 @@ export default function ConfiguracoesPage() {
 
     // ========== FUNÇÕES DE USUÁRIOS ==========
 
-    const handleAddUsuario = async () => {
-        if (!novoUsuario.nome || !novoUsuario.email || !novoUsuario.senha) {
-        toast.error('Preencha todos os campos obrigatórios');
-        return;
-        }
-
-        if (novoUsuario.senha !== novoUsuario.confirmarSenha) {
-        toast.error('As senhas não coincidem');
-        return;
-        }
-
-        if (novoUsuario.senha.length < 6) {
-        toast.error('A senha deve ter pelo menos 6 caracteres');
-        return;
-        }
-
-        setIsLoading(true);
-        try {
-            // Primeiro, criar usuário no Supabase Auth
-            const { data, error } = await supabase.auth.signUp({
-                email: novoUsuario.email,
-                password: novoUsuario.senha,
-                options: {
-                    data: {
-                        name: novoUsuario.nome
-                    }
-                }
-            });
-
-            if (error) {
-              toast.error(error.message);
-              throw error;
-            }
-
-            if (!data.user) {
-              throw new Error("Usuário não foi criado no Supabase Auth.");
-            }
-
-            // Adicionar à tabela de usuários autorizados
-            await UserService.addAuthorizedUser(data.user.id, novoUsuario.email, novoUsuario.cargo);
-
-            setNovoUsuario({
-                nome: '',
-                email: '',
-                cargo: 'colaborador',
-                senha: '',
-                confirmarSenha: ''
-            });
-            setIsAddingUsuario(false);
-            await loadAuthorizedUsers();
-            calcularProgressoUsuarios();
-            
-            toast.success('Usuário criado com sucesso! Um email de confirmação foi enviado.');
-        } catch (error) {
-            console.error('Erro ao criar usuário:', error);
-            toast.error('Erro ao criar usuário');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
     const handleDeleteUsuario = async (id: string) => {
         try {
             await UserService.removeAuthorizedUser(id);
             await loadAuthorizedUsers();
             toast.success('Usuário removido com sucesso');
-            calcularProgressoUsuarios();
         } catch (error) {
             console.error('Erro ao remover usuário:', error);
             toast.error('Erro ao remover usuário');
@@ -372,18 +217,10 @@ export default function ConfiguracoesPage() {
             await UserService.updateAuthorizedUser(id, { status });
             await loadAuthorizedUsers();
             toast.success(`Status atualizado para ${status}`);
-            calcularProgressoUsuarios();
         } catch (error) {
             console.error('Erro ao atualizar status:', error);
             toast.error('Erro ao atualizar status');
         }
-    };
-
-    const calcularProgressoUsuarios = () => {
-        const usuariosAtivos = usuarios.filter(u => u.status === 'ativo').length;
-        const progress = Math.min(100, (usuariosAtivos / Math.max(usuarios.length, 1)) * 100);
-        setProgresso(prev => ({ ...prev, usuarios: progress }));
-        return progress;
     };
 
     // ========== FUNÇÕES GERAIS ==========
@@ -435,12 +272,32 @@ export default function ConfiguracoesPage() {
         return colors[index];
     };
 
+    // Recalcula progresso da loja sempre que formLoja mudar (inclui após loadCompanyData)
+    useEffect(() => {
+        const campos = [
+            { value: formLoja.nomeCompleto, peso: 25 },
+            { value: formLoja.cnpj,         peso: 15 },
+            { value: formLoja.telefone,      peso: 15 },
+            { value: formLoja.email,         peso: 20 },
+            { value: formLoja.descricao,     peso: 10 },
+            { value: formLoja.logoPreview,   peso: 15 },
+        ];
+        const total = campos.reduce((acc, { value, peso }) =>
+            acc + (value?.trim() ? peso : 0), 0);
+        setProgresso(prev => ({ ...prev, loja: total }));
+    }, [formLoja]);
+
+    // Recalcula progresso de usuários sempre que a lista mudar
+    useEffect(() => {
+        const ativos = usuarios.filter(u => u.status === 'ativo').length;
+        const total = Math.min(100, (ativos / Math.max(usuarios.length, 1)) * 100);
+        setProgresso(prev => ({ ...prev, usuarios: total }));
+    }, [usuarios]);
+
     // Efeitos
     useEffect(() => {
         loadCompanyData();
         loadAuthorizedUsers();
-        calcularProgressoLoja();
-        calcularProgressoUsuarios();
     }, []);
 
     const loadCompanyData = async () => {
@@ -477,70 +334,40 @@ export default function ConfiguracoesPage() {
 
     const currentProgress = activeTab === 'loja' ? progresso.loja : progresso.usuarios;
 
+    // Não usa try/catch: erros propagam para o modal, que gerencia loading e toast de erro
     const handleSalvarUsuario = async (dadosUsuario: any) => {
-        setIsLoading(true);
-        try {
-            if (modoModal === 'criacao') {
-                // A lógica de criação permanece a mesma, pois envolve Auth + DB
-                const response = await fetch('/api/create-user', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email: dadosUsuario.email,
-                        password: dadosUsuario.senha,
-                        name: dadosUsuario.nome, // Passando o nome para a API
-                        role: dadosUsuario.cargo
-                    })
-                });
-    
-                const result = await response.json();
-                if (!response.ok) {
-                    throw new Error(result.error || 'Falha ao criar usuário.');
-                }
-                toast.success('Usuário criado com sucesso! Um email de confirmação foi enviado.');
-    
-            } else { // Modo de edição
-                if (!usuarioEditando) throw new Error("Nenhum usuário selecionado para edição.");
-    
-                // Mapeamento CORRETO dos campos do formulário para as colunas do banco
-                const updates: Partial<AuthorizedUser> = {
-                    full_name: dadosUsuario.nome, // 'nome' do form -> 'full_name' no DB
-                    phone: dadosUsuario.telefone,
-                    department: dadosUsuario.departamento,
+        if (modoModal === 'criacao') {
+            const response = await fetch('/api/create-user', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    email: dadosUsuario.email,
+                    password: dadosUsuario.senha,
+                    name: dadosUsuario.nome,
                     role: dadosUsuario.cargo,
-                    status: dadosUsuario.status,
-                    permissions: dadosUsuario.permissoes,
-                };
-                
-                await UserService.updateAuthorizedUser(usuarioEditando.id, updates);
-    
-                // 2. Se uma nova senha foi fornecida, chama a API de atualização de senha
-                if (dadosUsuario.senha) {
-                    if (dadosUsuario.senha !== dadosUsuario.confirmarSenha) {
-                        throw new Error("As senhas não coincidem.");
-                    }
-                    if (dadosUsuario.senha.length < 6) {
-                        throw new Error("A nova senha deve ter no mínimo 6 caracteres.");
-                    }
-                    const userToEdit = usuarios.find(u => u.id === usuarioEditando.id);
-                    if (!userToEdit) throw new Error("Não foi possível encontrar o ID de autenticação do usuário.");
-    
-                    await UserService.updateUserPassword(userToEdit.user_id, dadosUsuario.senha);
-                }
-                toast.success('Usuário atualizado com sucesso!');
+                }),
+            });
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || 'Falha ao criar usuário.');
+            toast.success('Usuário criado! Acesso disponível imediatamente.');
+        } else {
+            if (!usuarioEditando) throw new Error('Nenhum usuário selecionado para edição.');
+            await UserService.updateAuthorizedUser(usuarioEditando.id, {
+                full_name: dadosUsuario.nome,
+                phone: dadosUsuario.telefone,
+                role: dadosUsuario.cargo,
+                status: dadosUsuario.status,
+            });
+            if (dadosUsuario.senha) {
+                const userToEdit = usuarios.find(u => u.id === usuarioEditando.id);
+                if (!userToEdit) throw new Error('ID de autenticação não encontrado.');
+                await UserService.updateUserPassword(userToEdit.user_id, dadosUsuario.senha);
             }
-            
-            await loadAuthorizedUsers();
-            setModalAberto(false);
-            calcularProgressoUsuarios();
-    
-        } catch (error: any) {
-            console.error('Erro ao salvar usuário:', error);
-            toast.error(error.message || 'Ocorreu um erro inesperado ao salvar o usuário.');
-        } finally {
-            setIsLoading(false);
+            toast.success('Usuário atualizado com sucesso!');
         }
-        };
+        await loadAuthorizedUsers();
+        setModalAberto(false);
+    };
 
     return (
         <div className="flex flex-col h-full max-h-screen bg-zinc-50 text-zinc-900 font-sans overflow-hidden border border-zinc-300 rounded-lg shadow-2xl mx-auto">
@@ -701,14 +528,14 @@ export default function ConfiguracoesPage() {
                         </thead>
                         <tbody className="divide-y divide-zinc-50 text-xs">
                         {usuarios.map(u => {
-                            const nome = u.email || 'Usuário';
-                            const avatar = nome.split('@')[0].substring(0, 2).toUpperCase();
+                            const displayName = u.full_name || u.email.split('@')[0];
+                            const avatar = displayName.substring(0, 2).toUpperCase();
                             return (
                             <tr key={u.id} className="hover:bg-indigo-50/20 transition-colors group">
                             <td className="px-6 py-4 flex items-center gap-3">
-                                <div className={`w-9 h-9 rounded-xl ${getAvatarColor(nome)} text-white flex items-center justify-center font-black text-[10px] shadow-md`}>{avatar}</div>
+                                <div className={`w-9 h-9 rounded-xl ${getAvatarColor(displayName)} text-white flex items-center justify-center font-black text-[10px] shadow-md`}>{avatar}</div>
                                 <div>
-                                <p className="font-bold text-zinc-800 leading-none">{nome}</p>
+                                <p className="font-bold text-zinc-800 leading-none">{displayName}</p>
                                 <p className="text-[10px] text-zinc-400 mt-1 font-medium">{u.email}</p>
                                 </div>
                             </td>
