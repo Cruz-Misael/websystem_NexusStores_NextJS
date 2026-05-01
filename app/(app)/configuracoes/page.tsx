@@ -260,6 +260,40 @@ export default function ConfiguracoesPage() {
         }
     };
 
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (file.size > 2 * 1024 * 1024) { // Limite de 2MB
+            toast.error('A imagem deve ter no máximo 2MB.');
+            return;
+        }
+
+        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+            toast.error('Formato de imagem inválido. Use JPG, PNG ou WebP.');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            setFormLoja(prev => ({
+                ...prev,
+                logo: file,
+                logoPreview: reader.result as string
+            }));
+            toast.success('Logo pronto para o upload!');
+        };
+        reader.readAsDataURL(file);
+    };
+
+    const handleRemoveLogo = () => {
+        setFormLoja(prev => ({ ...prev, logo: null, logoPreview: '' }));
+        if(fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+        toast.success('Logo removida.');
+    };
+
     // ========== FUNÇÕES DE USUÁRIOS ==========
 
     const handleAddUsuario = async () => {
@@ -576,7 +610,7 @@ export default function ConfiguracoesPage() {
                     <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm flex items-center gap-8">
                     <div className="relative w-24 h-24 shrink-0">
                         {formLoja.logoPreview ? (
-                        <Image src={formLoja.logoPreview} alt="Pré-visualização do Logo" fill className="rounded-2xl object-cover border-4 border-white shadow-md" />
+                        <Image priority src={formLoja.logoPreview} alt="Pré-visualização do Logo" fill className="rounded-2xl object-cover border-4 border-white shadow-md" />
                         ) : (
                         <div className="w-full h-full bg-zinc-50 rounded-2xl border-2 border-dashed border-zinc-200 flex flex-col items-center justify-center text-zinc-300">
                             <Upload size={24} />
@@ -716,39 +750,3 @@ export default function ConfiguracoesPage() {
         </div>
     );
 }
-
-// ========== FUNÇÕES DA LOJA ==========
-
-    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-
-        if (file.size > 2 * 1024 * 1024) { // Limite de 2MB
-            toast.error('A imagem deve ter no máximo 2MB.');
-            return;
-        }
-
-        if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-            toast.error('Formato de imagem inválido. Use JPG, PNG ou WebP.');
-            return;
-        }
-
-        const reader = new FileReader();
-        reader.onloadend = () => {
-            setFormLoja(prev => ({
-                ...prev,
-                logo: file,
-                logoPreview: reader.result as string
-            }));
-            toast.success('Logo pronto para o upload!');
-        };
-        reader.readAsDataURL(file);
-    };
-
-    const handleRemoveLogo = () => {
-        setFormLoja(prev => ({ ...prev, logo: null, logoPreview: '' }));
-        if(fileInputRef.current) {
-            fileInputRef.current.value = '';
-        }
-        toast.success('Logo removida.');
-    };

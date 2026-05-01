@@ -26,13 +26,16 @@ export class CompanyService {
     return data;
   }
 
-  static async saveCompany(companyData: CompanyData): Promise<CompanyData> {
+  static async saveCompany(companyData: Partial<CompanyData>): Promise<CompanyData> {
     const { data, error } = await supabase
       .from('companies')
-      .upsert({
-        ...companyData,
-        updated_at: new Date().toISOString()
-      })
+      .upsert(
+        {
+          ...companyData,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: 'cnpj' }
+      )
       .select()
       .single();
 

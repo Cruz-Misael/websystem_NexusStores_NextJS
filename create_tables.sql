@@ -1,5 +1,0 @@
--- Para o bucket de storage (execute no Supabase Dashboard ou via SQL se suportado)
--- 1. Vá para a seção Storage no seu projeto Supabase.
--- 2. Crie um novo bucket chamado 'logos'.
--- 3. Marque-o como 'Public'.
--- 4. Opcional: Adicione políticas de segurança para restringir o upload (ex: apenas para usuários autenticados).
