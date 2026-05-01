@@ -1,0 +1,1017 @@
+"use client";
+
+import ProdutoModal from "@/components/estoque/ProdutoModal";
+import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
+import ToastNotificacao from "@/components/estoque/ToastNotificacao";
+import { listarProdutos, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
+import { useState, useEffect, useMemo } from "react";
+import { 
+  Search, 
+  Plus, 
+  Minus,
+  Package, 
+  AlertCircle, 
+  History,
+  Edit2,
+  Trash2,
+  ArrowUp,
+  ArrowDown,
+  Loader2,
+  RefreshCw,
+  Eye,
+  EyeOff
+} from "lucide-react";
+
+// TIPO PARA USO NA APLICAÇÃO (substituindo o mock)
+export interface Produto {
+  id: number;
+  nome: string;
+  categoria: string;
+  fornecedor: string;
+  localizacao: string;
+  preco: number;
+  custo: number;
+  estoque: number;
+  estoqueMinimo: number;
+  estoqueMaximo: number;
+  sku: string;
+  codigoBarras: string;
+  imagem: string;
+  ultimaMovimentacao: string;
+  description: string;
+  color: string;
+  size: string;
+  units_type: string;
+  is_active: boolean;
+}
+
+// Interface para o produto do banco
+interface ProdutoDB {
+  sku: number;
+  created_at: string;
+  name: string;
+  description: string | null;
+  color: string | null;
+  size: string | null;
+  barcode: number | null;
+  category: string | null;
+  stock_quantity: number | null;
+  is_active: boolean | null;
+  price: number | null;
+  cost: number | null;
+  units_type: string | null;
+  minimum_stock: number | null;
+  supplier: string | null;
+  maximum_stock: number | null;
+  localizacao: string | null;
+  imagem: string | null;
+}
+
+// Função para converter do banco para seu tipo Produto
+const converterParaProduto = (produtoDB: ProdutoDB): Produto => {
+  return {
+    id: produtoDB.sku,
+    nome: produtoDB.name || "",
+    categoria: produtoDB.category || "",
+    fornecedor: produtoDB.supplier || "",
+    localizacao: produtoDB.localizacao || "",
+    preco: produtoDB.price || 0,
+    custo: produtoDB.cost || 0,
+    estoque: produtoDB.stock_quantity || 0,
+    estoqueMinimo: produtoDB.minimum_stock || 0,
+    estoqueMaximo: produtoDB.maximum_stock || 0,
+    sku: `SKU-${produtoDB.sku}`,
+    codigoBarras: produtoDB.barcode?.toString() || "",
+    imagem: produtoDB.imagem || "",
+    ultimaMovimentacao: produtoDB.created_at,
+    description: produtoDB.description || "",
+    color: produtoDB.color || "",
+    size: produtoDB.size || "",
+    units_type: produtoDB.units_type || "un",
+    is_active: produtoDB.is_active ?? true,
+  };
+};
+
+// Função para converter do seu Produto para o formato do modal
+const converterParaFormModal = (produto: Produto) => {
+  return {
+    nome: produto.nome,
+    categoria: produto.categoria,
+    fornecedor: produto.fornecedor,
+    localizacao: produto.localizacao,
+    preco: produto.preco,
+    custo: produto.custo,
+    estoque: produto.estoque,
+    estoqueMinimo: produto.estoqueMinimo,
+    estoqueMaximo: produto.estoqueMaximo,
+    sku: produto.sku,
+    codigoBarras: produto.codigoBarras,
+    imagem: produto.imagem,
+    description: produto.description || "",
+    color: produto.color || "",
+    size: produto.size || "",
+    units_type: produto.units_type || "un",
+    is_active: produto.is_active ?? true,
+  };
+};
+
+// Função para converter do modal para o formato do banco
+const converterParaBanco = (produtoForm: any) => {
+  return {
+    name: produtoForm.nome,
+    description: produtoForm.description || "",
+    color: produtoForm.color || "",
+    size: produtoForm.size || "",
+    category: produtoForm.categoria,
+    supplier: produtoForm.fornecedor,
+    localizacao: produtoForm.localizacao,
+    price: Number(produtoForm.preco) || 0,
+    cost: Number(produtoForm.custo) || 0,
+    stock_quantity: Number(produtoForm.estoque) || 0,
+    minimum_stock: Number(produtoForm.estoqueMinimo) || 0,
+    maximum_stock: Number(produtoForm.estoqueMaximo) || 0,
+    sku: produtoForm.sku ? parseInt(produtoForm.sku.replace('SKU-', '')) : undefined,
+    barcode: produtoForm.codigoBarras ? parseInt(produtoForm.codigoBarras) : null,
+    imagem: produtoForm.imagem || null,
+    units_type: produtoForm.units_type || "un",
+    is_active: produtoForm.is_active ?? true,
+  };
+};
+
+export default function GestaoEstoqueCompacto() {
+  const [selecionado, setSelecionado] = useState<Produto | null>(null);
+  const [listaProdutos, setListaProdutos] = useState<Produto[]>([]);
+  const [busca, setBusca] = useState("");
+  const [ajusteEstoque, setAjusteEstoque] = useState(1);
+  const [ajusteTipo, setAjusteTipo] = useState<"entrada" | "saida">("entrada");
+  const [ajusteObservacao, setAjusteObservacao] = useState("");
+  const [modalAberto, setModalAberto] = useState(false);
+  const [modoModal, setModoModal] = useState<"create" | "edit">("create");
+  const [produtoParaEditar, setProdutoParaEditar] = useState<Produto | null>(null);
+  const [carregando, setCarregando] = useState(true);
+  const [carregandoAcao, setCarregandoAcao] = useState(false);
+  const [erro, setErro] = useState<string | null>(null);
+  const [mostrarInativos, setMostrarInativos] = useState(false);
+  
+  // Estados para popup e toast
+  const [popupAberto, setPopupAberto] = useState(false);
+  const [popupConfig, setPopupConfig] = useState({
+    titulo: "",
+    mensagem: "",
+    tipo: "info" as "sucesso" | "erro" | "aviso" | "info",
+    onConfirmar: undefined as (() => void) | undefined,
+    textoConfirmar: "Confirmar",
+    textoCancelar: "Cancelar",
+  });
+
+  const [toastAberto, setToastAberto] = useState(false);
+  const [toastConfig, setToastConfig] = useState({
+    mensagem: "",
+    tipo: "sucesso" as "sucesso" | "erro" | "info",
+  });
+
+  // Funções auxiliares para mostrar popups e toasts
+  const mostrarPopup = (
+    titulo: string,
+    mensagem: string,
+    tipo: "sucesso" | "erro" | "aviso" | "info" = "info",
+    onConfirmar?: () => void,
+    textoConfirmar = "Confirmar",
+    textoCancelar = "Cancelar"
+  ) => {
+    setPopupConfig({
+      titulo,
+      mensagem,
+      tipo,
+      onConfirmar,
+      textoConfirmar,
+      textoCancelar,
+    });
+    setPopupAberto(true);
+  };
+
+  const mostrarToast = (mensagem: string, tipo: "sucesso" | "erro" | "info" = "sucesso") => {
+    setToastConfig({ mensagem, tipo });
+    setToastAberto(true);
+  };
+
+  const fecharPopup = () => {
+    setPopupAberto(false);
+    setTimeout(() => {
+      setPopupConfig({
+        titulo: "",
+        mensagem: "",
+        tipo: "info",
+        onConfirmar: undefined,
+        textoConfirmar: "Confirmar",
+        textoCancelar: "Cancelar",
+      });
+    }, 300);
+  };
+
+  // Carrega produtos do Supabase
+// Função para carregar produtos do Supabase
+const carregarProdutos = async (isManualRefresh = false) => {
+  try {
+    setCarregando(true);
+    setErro(null);
+
+    const produtosDB = await listarProdutos();
+    const produtosConvertidos = produtosDB.map(converterParaProduto);
+
+    setListaProdutos(produtosConvertidos);
+
+    if (selecionado) {
+      const produtoAindaExiste = produtosConvertidos.find(p => p.id === selecionado.id);
+      if (produtoAindaExiste) {
+        setSelecionado(produtoAindaExiste);
+      } else if (produtosConvertidos.length > 0) {
+        setSelecionado(produtosConvertidos[0]);
+      } else {
+        setSelecionado(null);
+      }
+    } else if (produtosConvertidos.length > 0) {
+      setSelecionado(produtosConvertidos[0]);
+    }
+
+    if (isManualRefresh) mostrarToast("Produtos atualizados!", "sucesso");
+
+  } catch (error: any) {
+    console.error("Erro ao carregar produtos:", error);
+    setErro(error.message || "Erro ao carregar produtos");
+    mostrarPopup(
+      "Erro ao carregar produtos",
+      error.message || "Ocorreu um erro ao tentar carregar os produtos. Tente novamente.",
+      "erro",
+      undefined,
+      "OK"
+    );
+  } finally {
+    setCarregando(false);
+  }
+};
+
+  // Carrega produtos na inicialização
+  useEffect(() => {
+    carregarProdutos();
+  }, []);
+
+  // Atualiza estoque
+  const atualizarEstoque = async (quantidade: number) => {
+    if (!selecionado) return;
+    
+    try {
+      setCarregandoAcao(true);
+      
+      const novoEstoque = Math.max(0, selecionado.estoque + quantidade);
+      
+      // Atualiza no Supabase
+      const skuNumber = parseInt(selecionado.sku.replace('SKU-', ''));
+      await atualizarProduto(skuNumber, { stock_quantity: novoEstoque });
+      
+      // Atualiza localmente
+      const produtoAtualizado = {
+        ...selecionado,
+        estoque: novoEstoque
+      };
+      
+      setSelecionado(produtoAtualizado);
+      setListaProdutos(prev => 
+        prev.map(p => 
+          p.id === produtoAtualizado.id ? produtoAtualizado : p
+        )
+      );
+      
+      const tipoMovimento = quantidade > 0 ? 'entrada' : 'saída';
+      const mensagem = quantidade > 0 
+        ? `✅ Entrada de ${quantidade} ${selecionado.units_type || 'un'} registrada com sucesso!`
+        : `✅ Saída de ${Math.abs(quantidade)} ${selecionado.units_type || 'un'} registrada com sucesso!`;
+      
+      mostrarToast(mensagem, "sucesso");
+      
+      // Fecha popup se estiver aberto
+      fecharPopup();
+      
+    } catch (error: any) {
+      console.error("❌ Erro ao atualizar estoque:", error);
+      mostrarPopup(
+        "Erro ao atualizar estoque",
+        error.message || "Ocorreu um erro ao tentar atualizar o estoque. Tente novamente.",
+        "erro",
+        undefined,
+        "OK"
+      );
+    } finally {
+      setCarregandoAcao(false);
+    }
+  };
+
+  // Função para entrada de estoque
+  const handleEntrada = () => {
+    if (!selecionado || ajusteEstoque <= 0) return;
+    
+    const novoEstoque = selecionado.estoque + ajusteEstoque;
+    
+    // Verificar se ultrapassa máximo
+    if (selecionado.estoqueMaximo > 0 && novoEstoque > selecionado.estoqueMaximo) {
+      mostrarPopup(
+        "Atenção",
+        `A quantidade (${novoEstoque} ${selecionado.units_type}) ultrapassa o estoque máximo (${selecionado.estoqueMaximo}). Deseja continuar mesmo assim?`,
+        "aviso",
+        () => atualizarEstoque(ajusteEstoque),
+        "Sim, continuar",
+        "Cancelar"
+      );
+    } else {
+      atualizarEstoque(ajusteEstoque);
+    }
+  };
+
+  // Função para saída de estoque
+  const handleSaida = () => {
+    if (!selecionado || ajusteEstoque <= 0) return;
+    
+    // Verificar se tem estoque suficiente
+    if (selecionado.estoque < ajusteEstoque) {
+      mostrarPopup(
+        "Atenção",
+        `Estoque atual: ${selecionado.estoque} ${selecionado.units_type}. A saída de ${ajusteEstoque} unidades deixará o estoque negativo. Deseja continuar?`,
+        "aviso",
+        () => atualizarEstoque(-ajusteEstoque),
+        "Sim, continuar",
+        "Cancelar"
+      );
+    } else {
+      atualizarEstoque(-ajusteEstoque);
+    }
+  };
+
+  // Função para abrir modal de NOVO produto
+  const abrirNovoProduto = () => {
+    setModoModal("create");
+    setProdutoParaEditar(null);
+    setModalAberto(true);
+  };
+
+  // Função para abrir modal de EDIÇÃO
+  const abrirEdicao = (produto: Produto) => {
+    setModoModal("edit");
+    setProdutoParaEditar(produto);
+    setModalAberto(true);
+  };
+
+  // Função para deletar produto
+  const handleExcluirProduto = async (produto: Produto) => {
+    mostrarPopup(
+      "Confirmar EXCLUSÃO DEFINITIVA",
+      `Tem certeza que deseja EXCLUIR o produto "${produto.nome}"? \n\n⚠️ ATENÇÃO: Esta ação é irreversível. Se este produto já foi vendido anteriormente, o sistema não permitirá a exclusão para preservar o histórico de vendas.`,
+      "erro",
+      async () => {
+        try {
+          setCarregandoAcao(true);
+          
+          const skuNumber = parseInt(produto.sku.replace('SKU-', ''));
+          await deletarProduto(skuNumber);
+          
+          // Se chegou aqui, deletou com sucesso no banco
+          setListaProdutos(prev => prev.filter(p => p.id !== produto.id));
+          
+          if (selecionado?.id === produto.id) {
+            setSelecionado(null);
+          }
+          
+          mostrarToast(`Produto "${produto.nome}" excluído definitivamente!`, "sucesso");
+          fecharPopup();
+        } catch (error: any) {
+          console.error("❌ Erro ao deletar produto:", error);
+          
+          let mensagemErro = error.message || "Erro desconhecido";
+          if (mensagemErro.includes("foreign key")) {
+            mensagemErro = "Não é possível excluir este produto pois ele já possui histórico de vendas ou movimentações. Considere apenas inativar o produto clicando em editar.";
+          }
+
+          mostrarPopup(
+            "Não foi possível excluir",
+            mensagemErro,
+            "erro",
+            undefined,
+            "Entendido"
+          );
+        } finally {
+          setCarregandoAcao(false);
+        }
+      },
+      "Sim, Excluir",
+      "Cancelar"
+    );
+  };
+
+  // Função que é chamada quando salva no modal
+  const handleSalvarProduto = async (produtoForm: any) => {
+    try {
+      setCarregandoAcao(true);
+      
+      const produtoBanco = converterParaBanco(produtoForm);
+      
+      if (modoModal === "edit" && produtoParaEditar) {
+        const skuNumber = parseInt(produtoParaEditar.sku.replace('SKU-', ''));
+        await atualizarProduto(skuNumber, produtoBanco);
+        mostrarToast(`Produto "${produtoForm.nome}" atualizado com sucesso!`, "sucesso");
+      } else {
+        await criarProduto(produtoBanco);
+        mostrarToast(`Produto "${produtoForm.nome}" criado com sucesso!`, "sucesso");
+      }
+      
+      await carregarProdutos();
+      setModalAberto(false);
+      setProdutoParaEditar(null);
+      
+    } catch (error: any) {
+      console.error("❌ Erro ao salvar produto:", error);
+      mostrarPopup(
+        "Erro ao salvar produto",
+        error.message || "Ocorreu um erro ao tentar salvar o produto. Tente novamente.",
+        "erro",
+        undefined,
+        "OK"
+      );
+    } finally {
+      setCarregandoAcao(false);
+    }
+  };
+
+  const produtosFiltrados = useMemo(() =>
+    listaProdutos.filter(p => {
+      const buscaMatch =
+        p.nome.toLowerCase().includes(busca.toLowerCase()) ||
+        p.sku.toLowerCase().includes(busca.toLowerCase());
+      return mostrarInativos ? buscaMatch : buscaMatch && p.is_active !== false;
+    }),
+    [listaProdutos, busca, mostrarInativos]
+  );
+
+  // Cálculos de Status
+  const getStatusEstoque = (qtd: number, min: number) => {
+    if (qtd <= min) return { label: "Crítico", color: "text-red-600 bg-red-50 border-red-200", dot: "bg-red-500" };
+    if (qtd <= min * 1.5) return { label: "Baixo", color: "text-amber-600 bg-amber-50 border-amber-200", dot: "bg-amber-500" };
+    return { label: "OK", color: "text-emerald-600 bg-emerald-50 border-emerald-200", dot: "bg-emerald-500" };
+  };
+
+  const formatarMoeda = (val: number) => new Intl.NumberFormat("pt-BR", { 
+    style: "currency", 
+    currency: "BRL" 
+  }).format(val);
+
+  if (carregando && listaProdutos.length === 0) {
+    return (
+      <div className="flex h-full max-h-screen bg-zinc-50 overflow-hidden text-sm font-sans border border-zinc-300 rounded-lg shadow-2xl mx-auto">
+        <div className="w-96 flex flex-col border-r border-zinc-200 bg-white shrink-0">
+          <div className="p-3 border-b border-zinc-100 space-y-3">
+            <div className="flex justify-between items-center">
+              <div className="h-7 w-36 bg-zinc-200 rounded animate-pulse" />
+              <div className="flex gap-2">
+                <div className="h-9 w-9 bg-zinc-100 rounded-lg animate-pulse" />
+                <div className="h-9 w-9 bg-indigo-200 rounded-lg animate-pulse" />
+              </div>
+            </div>
+            <div className="h-8 w-full bg-zinc-100 rounded-md animate-pulse" />
+            <div className="flex justify-between px-1">
+              <div className="h-3 w-20 bg-zinc-100 rounded animate-pulse" />
+              <div className="h-3 w-32 bg-zinc-100 rounded animate-pulse" />
+            </div>
+          </div>
+          <div className="flex-1 overflow-hidden">
+            {Array.from({ length: 9 }).map((_, i) => (
+              <div key={i} className="p-3 border-b border-zinc-50">
+                <div className="flex justify-between mb-2">
+                  <div className="h-4 w-44 bg-zinc-200 rounded animate-pulse" />
+                  <div className="h-4 w-12 bg-zinc-100 rounded-full animate-pulse" />
+                </div>
+                <div className="flex justify-between">
+                  <div className="space-y-1">
+                    <div className="h-3 w-20 bg-zinc-100 rounded animate-pulse" />
+                    <div className="h-3 w-16 bg-zinc-100 rounded animate-pulse" />
+                  </div>
+                  <div className="text-right space-y-1">
+                    <div className="h-4 w-12 bg-zinc-200 rounded animate-pulse" />
+                    <div className="h-3 w-10 bg-zinc-100 rounded animate-pulse" />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1 flex flex-col bg-zinc-50">
+          <div className="bg-white border-b border-zinc-200 px-6 py-4 flex justify-between items-start shadow-sm">
+            <div className="space-y-2">
+              <div className="h-3 w-48 bg-zinc-100 rounded animate-pulse" />
+              <div className="h-7 w-72 bg-zinc-200 rounded animate-pulse" />
+            </div>
+            <div className="flex gap-2">
+              <div className="h-8 w-20 bg-indigo-200 rounded-lg animate-pulse" />
+              <div className="h-8 w-8 bg-zinc-100 rounded animate-pulse" />
+            </div>
+          </div>
+          <div className="flex-1 p-6 space-y-6">
+            <div className="grid grid-cols-4 gap-4">
+              {Array.from({ length: 4 }).map((_, i) => (
+                <div key={i} className="bg-white p-4 rounded-xl border border-zinc-200 space-y-3">
+                  <div className="h-3 w-24 bg-zinc-100 rounded animate-pulse" />
+                  <div className="h-8 w-20 bg-zinc-200 rounded animate-pulse" />
+                  <div className="h-2 w-full bg-zinc-100 rounded animate-pulse" />
+                </div>
+              ))}
+            </div>
+            <div className="bg-white rounded-2xl border border-zinc-200 p-4">
+              <div className="flex gap-4 items-center">
+                <div className="h-10 w-32 bg-zinc-100 rounded-xl animate-pulse" />
+                <div className="h-10 w-36 bg-zinc-100 rounded-xl animate-pulse" />
+                <div className="flex-1 h-10 bg-zinc-100 rounded-xl animate-pulse" />
+                <div className="h-10 w-28 bg-indigo-100 rounded-xl animate-pulse" />
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-zinc-200 p-6">
+              <div className="h-5 w-36 bg-zinc-200 rounded animate-pulse mb-6" />
+              <div className="grid grid-cols-2 gap-6">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <div key={i} className="space-y-2">
+                    <div className="h-3 w-20 bg-zinc-100 rounded animate-pulse" />
+                    <div className="h-4 w-full bg-zinc-200 rounded animate-pulse" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-full max-h-screen bg-zinc-50 overflow-hidden text-sm font-sans text-zinc-900 border border-zinc-300 rounded-lg shadow-2xl mx-auto">
+      
+      {/* COLUNA ESQUERDA: LISTAGEM */}
+      <div className="w-96 flex flex-col border-r border-zinc-200 bg-white shrink-0">
+        
+        {/* Header da Lista */}
+        <div className="p-3 border-b border-zinc-100 flex flex-col gap-3">
+          <div className="flex justify-between items-center">
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center gap-2">
+                <Package size={22} className="text-indigo-600" strokeWidth={2.5} />
+                <h1 className="text-xl font-extrabold text-zinc-900 tracking-tight leading-none">
+                  Estoque
+                </h1>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button
+                onClick={() => carregarProdutos(true)}
+                className="p-2 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors relative"
+                title="Recarregar produtos do banco"
+                disabled={carregando}
+              >
+                <RefreshCw 
+                  size={18} 
+                  className={`${carregando ? 'animate-spin' : ''}`} 
+                />
+                {carregando && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-600 rounded-full animate-ping"></span>
+                )}
+              </button>
+              <button 
+                onClick={abrirNovoProduto}
+                className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-all active:scale-95"
+                title="Cadastrar Novo Produto"
+              >
+                <Plus size={18} strokeWidth={2.5} />
+              </button>
+            </div>
+          </div>
+          
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" size={14} />
+              <input 
+                type="text" 
+                placeholder="Buscar SKU ou Nome..." 
+                value={busca}
+                onChange={(e) => setBusca(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            <button 
+              onClick={() => setMostrarInativos(!mostrarInativos)}
+              className="p-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 flex items-center gap-1"
+              title={mostrarInativos ? "Mostrar apenas ativos" : "Mostrar inativos"}
+            >
+              {mostrarInativos ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          </div>
+          
+          {/* Quick Stats na Lista */}
+          <div className="flex justify-between text-[10px] text-zinc-400 px-1">
+            <span>{produtosFiltrados.length} {produtosFiltrados.length === 1 ? 'produto' : 'produtos'}</span>
+            <span>Valor Total: {formatarMoeda(
+              produtosFiltrados.reduce((acc, p) => acc + (p.preco * p.estoque), 0)
+            )}</span>
+          </div>
+        </div>
+
+        {/* Lista Scrollavel */}
+        <div className="flex-1 overflow-y-auto">
+          {erro ? (
+            <div className="p-4 text-center">
+              <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
+              <p className="text-red-600 text-sm">{erro}</p>
+              <button
+                onClick={() => carregarProdutos(true)}
+                className="mt-2 text-indigo-600 hover:text-indigo-700 text-sm font-medium"
+              >
+                Tentar novamente
+              </button>
+            </div>
+          ) : produtosFiltrados.length === 0 ? (
+            <div className="p-8 text-center">
+              <Package className="h-12 w-12 text-zinc-300 mx-auto mb-3" />
+              <p className="text-zinc-500 text-sm mb-4">
+                {busca ? "Nenhum produto encontrado" : "Nenhum produto cadastrado"}
+              </p>
+              {!busca && (
+                <button
+                  onClick={abrirNovoProduto}
+                  className="text-indigo-600 hover:text-indigo-700 font-medium text-sm"
+                >
+                  Cadastre seu primeiro produto
+                </button>
+              )}
+            </div>
+          ) : (
+            produtosFiltrados.map((produto) => {
+              const status = getStatusEstoque(produto.estoque, produto.estoqueMinimo);
+              const estaSelecionado = selecionado?.id === produto.id;
+              
+              return (
+                <div 
+                  key={produto.id}
+                  onClick={() => setSelecionado(produto)}
+                  className={`group p-3 border-b border-zinc-50 cursor-pointer hover:bg-zinc-50 transition-all ${
+                    estaSelecionado ? 'bg-indigo-50/60 border-l-2 border-l-indigo-600' : 'border-l-2 border-l-transparent'
+                  } ${!produto.is_active ? 'opacity-60' : ''}`}
+                >
+                  <div className="flex justify-between items-start mb-1">
+                    <span className="font-semibold text-gray-800 truncate flex items-center gap-2">
+                      {produto.nome}
+                      {!produto.is_active && (
+                        <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded">
+                          Inativo
+                        </span>
+                      )}
+                    </span>
+                    <span className={`text-[10px] px-1.5 rounded-full border font-medium ${status.color}`}>
+                      {status.label}
+                    </span>
+                  </div>
+                  
+                  <div className="flex justify-between items-center">
+                    <div className="flex flex-col">
+                      <span className="font-mono text-[10px] text-zinc-400">{produto.sku}</span>
+                      <span className="text-[10px] text-zinc-500">{produto.categoria}</span>
+                    </div>
+                    <div className="text-right">
+                      <div className="font-bold text-sm text-zinc-800">{produto.estoque} {produto.units_type || 'un'}</div>
+                      <div className="text-[10px] text-zinc-400">Min: {produto.estoqueMinimo}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
+      {/* COLUNA DIREITA: DETALHES E EDIÇÃO */}
+      <div className="flex-1 flex flex-col bg-zinc-50 h-full overflow-hidden">
+        
+        {/* Se não tem produto selecionado */}
+        {!selecionado ? (
+          <div className="flex-1 flex flex-col items-center justify-center p-8">
+            <Package className="h-16 w-16 text-zinc-300 mb-4" />
+            <h3 className="text-lg font-semibold text-zinc-700 mb-2">Nenhum produto selecionado</h3>
+            <p className="text-zinc-500 text-sm mb-6 text-center max-w-md">
+              Selecione um produto da lista ao lado para ver os detalhes ou crie um novo produto.
+            </p>
+            <button
+              onClick={abrirNovoProduto}
+              className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors"
+            >
+              <Plus size={18} />
+              Novo Produto
+            </button>
+          </div>
+        ) : (
+          <>
+            {/* Header do Detalhe */}
+            <header className="bg-white border-b border-zinc-200 px-6 py-4 flex justify-between items-start shrink-0 shadow-sm z-10">
+              <div>
+                <div className="flex items-center gap-2 text-[10px] text-zinc-400 uppercase tracking-wider mb-1">
+                  <span>{selecionado.categoria || "Sem categoria"}</span>
+                  <span>•</span>
+                  <span>SKU: {selecionado.sku}</span>
+                  <span>•</span>
+                  <span>Loc: {selecionado.localizacao || "Não definida"}</span>
+                  {!selecionado.is_active && (
+                    <>
+                      <span>•</span>
+                      <span className="text-amber-600">INATIVO</span>
+                    </>
+                  )}
+                </div>
+                <h2 className="text-2xl font-bold text-zinc-900">{selecionado.nome}</h2>
+              </div>
+              
+              <div className="flex gap-2">
+                <button 
+                  onClick={() => abrirEdicao(selecionado)}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-xs font-medium shadow-sm transition-colors"
+                >
+                  <Edit2 size={14}/> Editar
+                </button>
+                <button 
+                  onClick={() => handleExcluirProduto(selecionado)}
+                  disabled={carregandoAcao}
+                  className="p-1.5 text-zinc-400 hover:text-red-600 transition-colors disabled:opacity-50"
+                  title="Excluir produto"
+                >
+                  {carregandoAcao ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                </button>
+              </div>
+            </header>
+
+            {/* Conteúdo Principal */}
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="max-w-5xl mx-auto space-y-6">
+                
+                {/* KPIs do Produto */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm relative overflow-hidden">
+                    <div className={`absolute top-0 left-0 w-1 h-full ${getStatusEstoque(selecionado.estoque, selecionado.estoqueMinimo).dot}`}></div>
+                    <p className="text-zinc-500 text-xs font-medium uppercase mb-1">Estoque Atual</p>
+                    <p className="text-3xl font-bold text-zinc-900">{selecionado.estoque} {selecionado.units_type || 'un'}</p>
+                    <div className="flex items-center gap-1 mt-2 text-xs">
+                      <span className="text-zinc-400">Capacidade:</span>
+                      <div className="flex-1 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                        <div 
+                          className="h-full bg-zinc-800 rounded-full" 
+                          style={{ 
+                            width: selecionado.estoqueMaximo > 0 
+                              ? `${Math.min(100, (selecionado.estoque / selecionado.estoqueMaximo) * 100)}%` 
+                              : '0%' 
+                          }}
+                        ></div>
+                      </div>
+                      <span className="text-zinc-600">
+                        {selecionado.estoqueMaximo > 0 
+                          ? `${Math.round((selecionado.estoque / selecionado.estoqueMaximo) * 100)}%`
+                          : 'N/A'
+                        }
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
+                    <p className="text-zinc-500 text-xs font-medium uppercase mb-1">Preço Venda</p>
+                    <p className="text-2xl font-bold text-zinc-900">{formatarMoeda(selecionado.preco)}</p>
+                    {selecionado.custo > 0 && (
+                      <p className="text-xs text-emerald-600 mt-1 font-medium">
+                        +{Math.round(((selecionado.preco - selecionado.custo) / selecionado.custo) * 100)}% Markup
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
+                    <p className="text-zinc-500 text-xs font-medium uppercase mb-1">Custo Unit.</p>
+                    <p className="text-2xl font-bold text-zinc-700">{formatarMoeda(selecionado.custo)}</p>
+                    <p className="text-xs text-zinc-400 mt-1 truncate" title={selecionado.fornecedor}>
+                      Fornecedor: {selecionado.fornecedor || "Não informado"}
+                    </p>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-xl border border-zinc-200 shadow-sm">
+                    <p className="text-zinc-500 text-xs font-medium uppercase mb-1">Valor em Estoque</p>
+                    <p className="text-2xl font-bold text-zinc-700">{formatarMoeda(selecionado.estoque * selecionado.preco)}</p>
+                    <p className="text-xs text-zinc-400 mt-1">Estimativa de Venda</p>
+                  </div>
+                </div>
+
+                {/* Seção de Ajuste e Informação de Estoque */}
+                <div className="space-y-4">
+                  {/* Ações Rápidas de Movimentação - MINIMALISTA */}
+                  <div className="bg-white rounded-2xl border border-zinc-200 p-4 shadow-sm">
+                    <div className="flex flex-col lg:flex-row gap-4 items-center">
+                      
+                      {/* Toggle Tipo */}
+                      <div className="flex bg-zinc-100 p-1 rounded-xl shrink-0">
+                        <button 
+                          onClick={() => setAjusteTipo("entrada")}
+                          className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                            ajusteTipo === "entrada" 
+                              ? "bg-white text-emerald-600 shadow-sm" 
+                              : "text-zinc-500 hover:text-zinc-700"
+                          }`}
+                        >
+                          Entrada
+                        </button>
+                        <button 
+                          onClick={() => setAjusteTipo("saida")}
+                          className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${
+                            ajusteTipo === "saida" 
+                              ? "bg-white text-rose-600 shadow-sm" 
+                              : "text-zinc-500 hover:text-zinc-700"
+                          }`}
+                        >
+                          Saída
+                        </button>
+                      </div>
+
+                      {/* Quantidade */}
+                      <div className="flex items-center bg-zinc-50 border border-zinc-100 rounded-xl p-1 w-full lg:w-40">
+                        <button 
+                          onClick={() => setAjusteEstoque(Math.max(1, ajusteEstoque - 1))}
+                          className="w-10 h-9 flex items-center justify-center text-zinc-400 hover:text-zinc-900 transition-colors"
+                        >
+                          -
+                        </button>
+                        <input 
+                          type="number" 
+                          value={ajusteEstoque}
+                          onChange={(e) => setAjusteEstoque(Math.max(1, parseInt(e.target.value) || 1))}
+                          className="w-full bg-transparent text-center text-sm font-black text-zinc-900 focus:outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                        />
+                        <button 
+                          onClick={() => setAjusteEstoque(ajusteEstoque + 1)}
+                          className="w-10 h-9 flex items-center justify-center text-zinc-400 hover:text-zinc-900 transition-colors"
+                        >
+                          +
+                        </button>
+                      </div>
+
+                      {/* Observação */}
+                      <div className="w-full relative">
+                        <input 
+                          type="text" 
+                          placeholder="Observação (opcional)..." 
+                          value={ajusteObservacao}
+                          onChange={(e) => setAjusteObservacao(e.target.value)}
+                          className="w-full bg-zinc-50 border border-zinc-100 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-zinc-300 transition-all placeholder:text-zinc-400" 
+                        />
+                      </div>
+
+                      {/* Botão Ação */}
+                      <button 
+                        onClick={ajusteTipo === "entrada" ? handleEntrada : handleSaida}
+                        disabled={carregandoAcao || ajusteEstoque <= 0}
+                        className={`h-11 px-6 rounded-xl text-[10px] font-black uppercase tracking-[2px] shadow-sm transition-all active:scale-95 flex items-center justify-center gap-2 shrink-0 w-full lg:w-auto
+                          ${ajusteTipo === "entrada" 
+                            ? "bg-emerald-600/10 text-emerald-600 hover:bg-emerald-600 hover:text-white" 
+                            : "bg-rose-600/10 text-rose-600 hover:bg-rose-600 hover:text-white"}
+                        `}
+                      >
+                        {carregandoAcao ? (
+                          <Loader2 size={16} className="animate-spin" />
+                        ) : (
+                          <>
+                            {ajusteTipo === "entrada" ? <Plus size={14} /> : <Minus size={14} />}
+                            Confirmar
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Informação de Estoque Mínimo/Máximo */}
+                  <div className="flex items-center flex-wrap gap-x-6 gap-y-2 text-[11px] font-medium text-zinc-400 px-2 mt-1">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-amber-400"></div>
+                      <span>Estoque Mínimo: <b className="text-zinc-600">{selecionado.estoqueMinimo}</b></span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                      <span>Estoque Máximo: <b className="text-zinc-600">{selecionado.estoqueMaximo || "Ilimitado"}</b></span>
+                    </div>
+                    {selecionado.estoque <= selecionado.estoqueMinimo && (
+                      <div className="flex items-center gap-1.5 text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100 animate-pulse">
+                        <AlertCircle size={12} />
+                        <span className="font-bold uppercase text-[9px] tracking-tighter">Pedido Recomendado</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Informações Adicionais */}
+                <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
+                  <div className="px-6 py-4 border-b border-zinc-100">
+                    <h3 className="text-sm font-bold text-zinc-800">Detalhes do Produto</h3>
+                  </div>
+                  <div className="p-6">
+                    <div className="grid grid-cols-2 gap-6">
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-xs text-zinc-500 block mb-1">Descrição</label>
+                          <p className="text-sm text-zinc-800">{selecionado.description || "Sem descrição"}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-zinc-500 block mb-1">Código de Barras</label>
+                          <p className="text-sm font-mono text-zinc-800">{selecionado.codigoBarras || "Não informado"}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-zinc-500 block mb-1">Características</label>
+                          <div className="flex flex-wrap gap-2 mt-2">
+                            {selecionado.color && (
+                              <span className="px-2 py-1 bg-zinc-100 text-zinc-700 rounded text-xs">
+                                Cor: {selecionado.color}
+                              </span>
+                            )}
+                            {selecionado.size && (
+                              <span className="px-2 py-1 bg-zinc-100 text-zinc-700 rounded text-xs">
+                                Tamanho: {selecionado.size}
+                              </span>
+                            )}
+                            <span className="px-2 py-1 bg-zinc-100 text-zinc-700 rounded text-xs">
+                              Unidade: {selecionado.units_type || 'un'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="space-y-4">
+                        <div>
+                          <label className="text-xs text-zinc-500 block mb-1">Status</label>
+                          <div className="flex items-center gap-2">
+                            <div className={`w-3 h-3 rounded-full ${selecionado.is_active ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
+                            <span className="text-sm text-zinc-800">
+                              {selecionado.is_active ? 'Ativo' : 'Inativo'}
+                            </span>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="text-xs text-zinc-500 block mb-1">Localização</label>
+                          <p className="text-sm text-zinc-800">{selecionado.localizacao || "Não informada"}</p>
+                        </div>
+                        <div>
+                          <label className="text-xs text-zinc-500 block mb-1">Última Atualização</label>
+                          <p className="text-sm text-zinc-800">
+                            {selecionado.ultimaMovimentacao 
+                              ? new Date(selecionado.ultimaMovimentacao).toLocaleString('pt-BR')
+                              : 'Não disponível'
+                            }
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* MODAL de Produto */}
+      {modalAberto && (
+        <ProdutoModal
+          aberto={modalAberto}
+          mode={modoModal}
+          produto={produtoParaEditar ? converterParaFormModal(produtoParaEditar) : null}
+          onClose={() => {
+            setModalAberto(false);
+            setProdutoParaEditar(null);
+          }}
+          onSave={handleSalvarProduto}
+        />
+      )}
+
+      {/* POPUP DE CONFIRMAÇÃO */}
+      <PopupConfirmacao
+        aberto={popupAberto}
+        titulo={popupConfig.titulo}
+        mensagem={popupConfig.mensagem}
+        tipo={popupConfig.tipo}
+        onConfirmar={popupConfig.onConfirmar}
+        onCancelar={fecharPopup}
+        onFechar={fecharPopup}
+        confirmando={carregandoAcao}
+        textoConfirmar={popupConfig.textoConfirmar}
+        textoCancelar={popupConfig.textoCancelar}
+      />
+
+      {/* TOAST DE NOTIFICAÇÃO */}
+      <ToastNotificacao
+        aberto={toastAberto}
+        mensagem={toastConfig.mensagem}
+        tipo={toastConfig.tipo}
+        onFechar={() => setToastAberto(false)}
+        duracao={3000}
+      />
+    </div>
+  );
+}
