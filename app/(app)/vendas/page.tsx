@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useDebounce } from "@/src/hooks/useDebounce";
 import DevolucaoTrocaModal from "@/components/troca/DevolucaoTrocaModal";
+import Recibo from "@/components/vendas/Recibo";
 import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
@@ -50,6 +52,7 @@ export default function HistoricoVendasCompacto() {
   const [selecionada, setSelecionada] = useState<Sale | null>(null); // <-- Mudou de Venda para Sale
   const [vendas, setVendas] = useState<Sale[]>([]); // <-- Mudou de Venda[] para Sale[]
   const [busca, setBusca] = useState("");
+  const debouncedBusca = useDebounce(busca);
   const [modalRecibo, setModalRecibo] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [carregando, setCarregando] = useState(true);
@@ -363,16 +366,41 @@ export default function HistoricoVendasCompacto() {
   const vendasFiltradas = useMemo(() =>
     vendas.filter(v => {
       const buscaMatch =
-        v.customer?.name?.toLowerCase().includes(busca.toLowerCase()) ||
-        v.id.toString().includes(busca);
+        v.customer?.name?.toLowerCase().includes(debouncedBusca.toLowerCase()) ||
+        v.id.toString().includes(debouncedBusca);
       const statusMatch = filtroStatus === "todos" || getStatusFromVenda(v) === filtroStatus;
       const dataMatch = filtroData
         ? new Date(v.sale_date).toISOString().split('T')[0] === filtroData
         : true;
       return buscaMatch && statusMatch && dataMatch;
     }),
-    [vendas, busca, filtroStatus, filtroData]
+    [vendas, debouncedBusca, filtroStatus, filtroData]
   );
+
+  const exportarCSV = () => {
+    const cabecalho = ["ID", "Data", "Cliente", "Itens", "Pagamento", "Status", "Subtotal", "Desconto", "Total"];
+    const linhas = vendasFiltradas.map((v) => [
+      v.id,
+      new Date(v.sale_date).toLocaleString("pt-BR"),
+      v.customer?.name || "Consumidor Final",
+      v.items?.filter((i) => i.quantity > 0).map((i) => `${i.product?.name || i.product_name} (${i.quantity}x)`).join(" | ") || "",
+      v.payment_method || "",
+      getStatusFromVenda(v),
+      (v.total_amount || 0).toFixed(2).replace(".", ","),
+      (v.discount_amount || 0).toFixed(2).replace(".", ","),
+      (v.final_amount || 0).toFixed(2).replace(".", ","),
+    ]);
+    const csv = [cabecalho, ...linhas]
+      .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
+      .join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `vendas_${new Date().toISOString().split("T")[0]}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (carregando && vendas.length === 0) {
     return (
@@ -497,6 +525,7 @@ export default function HistoricoVendasCompacto() {
                 </button>
                 <div className="w-px h-4 bg-zinc-200 mx-1" />
                 <button
+                  onClick={exportarCSV}
                   className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors"
                   title="Exportar CSV"
                 >
@@ -770,67 +799,9 @@ export default function HistoricoVendasCompacto() {
         )}
       </div>
 
-      {/* MODAL: RECIBO TÉRMICO */}
+      {/* RECIBO */}
       {modalRecibo && selecionada && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-[#fffef0] w-full max-w-[320px] shadow-2xl overflow-hidden relative font-mono text-xs text-gray-800 leading-tight">
-            <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-gray-200 via-white to-gray-200 opacity-50"></div>
-
-            <div className="p-6 pb-8">
-              <div className="text-center mb-4">
-                <h3 className="font-bold text-lg uppercase tracking-widest border-b-2 border-dashed border-gray-300 pb-2 mb-2">Minha Loja</h3>
-                <p>CNPJ: 00.000.000/0001-00</p>
-                <p>{new Date(selecionada.sale_date).toLocaleString('pt-BR')}</p>
-                <p>Venda: #{selecionada.id}</p>
-              </div>
-
-              <div className="border-b border-dashed border-gray-300 pb-2 mb-2">
-                <div className="grid grid-cols-12 font-bold mb-1">
-                  <span className="col-span-6">ITEM</span>
-                  <span className="col-span-2 text-right">QTD</span>
-                  <span className="col-span-4 text-right">VALOR</span>
-                </div>
-                {selecionada.items?.filter(item => item.quantity > 0).map(item => (
-                  <div key={item.id} className="grid grid-cols-12 mb-1">
-                    <span className="col-span-6 truncate">{item.product?.name || item.product_name || "PRODUTO"}</span>
-                    <span className="col-span-2 text-right">{item.quantity}</span>
-                    <span className="col-span-4 text-right">{formatarMoeda(item.total_price)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex justify-between font-bold text-sm mt-2">
-                <span>TOTAL</span>
-                <span>{formatarMoeda(selecionada.final_amount)}</span>
-              </div>
-              <div className="flex justify-between mt-1 text-[10px]">
-                <span>Pagamento:</span>
-                <span>{selecionada.payment_method?.toUpperCase() || 'NÃO INFORMADO'}</span>
-              </div>
-
-              <div className="text-center mt-6 text-[10px] text-gray-500">
-                <p>*** NÃO É DOCUMENTO FISCAL ***</p>
-                <p>Obrigado pela preferência!</p>
-              </div>
-            </div>
-
-            {/* Botões do Modal */}
-            <div className="bg-gray-800 p-3 flex gap-2">
-              <button
-                onClick={() => window.print()}
-                className="flex-1 bg-white text-black py-2 rounded font-bold hover:bg-gray-200"
-              >
-                IMPRIMIR
-              </button>
-              <button
-                onClick={() => setModalRecibo(false)}
-                className="flex-1 bg-gray-700 text-white py-2 rounded font-bold hover:bg-gray-600"
-              >
-                FECHAR
-              </button>
-            </div>
-          </div>
-        </div>
+        <Recibo venda={selecionada} onClose={() => setModalRecibo(false)} />
       )}
 
       {/* MODAL: DEVOLUÇÃO/TROCA */}

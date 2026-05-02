@@ -27,6 +27,8 @@ import { CreateSaleDTO } from "@/types/sales";
 import { buscarPessoaPorId, listarPessoas } from "@/src/services/people.service";
 import { listarProdutos, buscarProdutoPorSKU } from "@/src/services/product.service";
 import { listarOperadores, Operator } from "@/src/services/operator.service";
+import Recibo from "@/components/vendas/Recibo";
+import { Sale } from "@/types/sales";
 
 // Tipos
 interface ItemCarrinho {
@@ -61,6 +63,7 @@ export default function CaixaPDVPro() {
   const [operadores, setOperadores] = useState<Operator[]>([]);
   const [buscaOperador, setBuscaOperador] = useState("");
   const [finalizando, setFinalizando] = useState(false);
+  const [vendaFinalizada, setVendaFinalizada] = useState<Sale | null>(null);
 
   // Estado para evitar hydration mismatch
   const [horaAtual, setHoraAtual] = useState("");
@@ -420,18 +423,13 @@ export default function CaixaPDVPro() {
       // Limpar carrinho após venda
       setCarrinho([]);
       setClienteSelecionado(null);
+      setOperadorSelecionado(null);
       setPagamentoAtivo('credito');
       setDataPrevistaPagamento("");
       setObservacaoConsignado("");
 
-
-      mostrarPopup(
-        "Venda Finalizada",
-        `Venda #${venda.id} processada com sucesso!\nValor total: ${money(totalFinal)}`,
-        "sucesso",
-        undefined,
-        "Continuar"
-      );
+      // Mostrar recibo da venda finalizada
+      setVendaFinalizada(venda as Sale);
 
     } catch (error: any) {
       console.error("Erro ao finalizar venda:", error);
@@ -825,6 +823,11 @@ export default function CaixaPDVPro() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* RECIBO PÓS-VENDA */}
+      {vendaFinalizada && (
+        <Recibo venda={vendaFinalizada} onClose={() => setVendaFinalizada(null)} />
       )}
 
       {/* Modal de Seleção de Operador */}
