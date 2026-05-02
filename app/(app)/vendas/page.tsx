@@ -288,7 +288,7 @@ export default function HistoricoVendasCompacto() {
       }
 
       // 3. Atualizar status e valor final com juros no banco
-      const novaObs = `${selecionada?.observation || ''}\n[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] - Total final com 30% de juros sobre vendidos.`;
+      const novaObs = `${selecionada?.observation || ''}\n[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] - Total final com 30% de taxa sobre o valor total do consignado.`;
 
       const { error } = await atualizarVendaConsignado(payload.vendaId, {
         payment_status: 'paid',

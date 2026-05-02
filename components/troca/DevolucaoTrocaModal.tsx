@@ -242,11 +242,11 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   );
 
   const valorBaseFinal = valorTotalCompra - valorTotalRemovido + valorAdicionado;
-  const valorJuros = isConsignado ? (valorBaseFinal * 0.3) : 0;
+  const valorJuros = isConsignado ? (valorTotalCompra * 0.3) : 0;
   const valorFinalComJuros = valorBaseFinal + valorJuros;
 
   const handleConfirm = () => {
-    if (quantidadeRemovida === 0 && itensNovos.length === 0) {
+    if (!isConsignado && quantidadeRemovida === 0 && itensNovos.length === 0) {
       alert("Selecione pelo menos uma peça para devolver ou adicionar na troca");
       return;
     }
@@ -301,10 +301,10 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
           <div className="px-8 py-6 flex justify-between items-center bg-white border-b border-zinc-100">
             <div>
               <h2 className="text-xl font-bold text-zinc-900 tracking-tight flex items-center gap-3">
-                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                  <RotateCcw size={20} strokeWidth={2.5} />
+                <div className={`p-2 rounded-xl ${isConsignado ? 'bg-violet-50 text-violet-600' : 'bg-indigo-50 text-indigo-600'}`}>
+                  {isConsignado ? <Briefcase size={20} strokeWidth={2.5} /> : <RotateCcw size={20} strokeWidth={2.5} />}
                 </div>
-                Gestão de Troca e Devolução
+                {isConsignado ? 'Fechamento de Consignado' : 'Gestão de Troca e Devolução'}
               </h2>
               <p className="text-xs text-zinc-500 font-medium mt-1 ml-12">
                 Venda <span className="font-bold text-indigo-600">#{venda.id}</span> • {venda.customer?.name || 'Cliente Geral'}
