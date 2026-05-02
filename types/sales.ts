@@ -53,6 +53,7 @@ export interface Sale {
 // DTO (Data Transfer Object) para criar uma nova venda
 export interface CreateSaleDTO {
   customer_id?: number | null;
+  operator_id?: string | null;
   payment_method?: string | null;
   payment_status?: 'pending' | 'paid' | 'cancelled';
   discount_amount?: number;

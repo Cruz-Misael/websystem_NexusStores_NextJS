@@ -26,6 +26,7 @@ import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { CreateSaleDTO } from "@/types/sales";
 import { buscarPessoaPorId, listarPessoas } from "@/src/services/people.service";
 import { listarProdutos, buscarProdutoPorSKU } from "@/src/services/product.service";
+import { listarOperadores, Operator } from "@/src/services/operator.service";
 
 // Tipos
 interface ItemCarrinho {
@@ -55,6 +56,10 @@ export default function CaixaPDVPro() {
   const [modalClienteAberto, setModalClienteAberto] = useState(false);
   const [clientes, setClientes] = useState<Cliente[]>([]);
   const [buscaCliente, setBuscaCliente] = useState("");
+  const [operadorSelecionado, setOperadorSelecionado] = useState<Operator | null>(null);
+  const [modalOperadorAberto, setModalOperadorAberto] = useState(false);
+  const [operadores, setOperadores] = useState<Operator[]>([]);
+  const [buscaOperador, setBuscaOperador] = useState("");
   const [finalizando, setFinalizando] = useState(false);
 
   // Estado para evitar hydration mismatch
@@ -127,16 +132,19 @@ export default function CaixaPDVPro() {
 
   // Carregar clientes para o modal de seleção
   useEffect(() => {
-    if (modalClienteAberto) {
-      carregarClientes();
-    }
+    if (modalClienteAberto) carregarClientes();
   }, [modalClienteAberto]);
+
+  // Carregar operadores para o modal de seleção
+  useEffect(() => {
+    if (modalOperadorAberto) carregarOperadores();
+  }, [modalOperadorAberto]);
 
   // Persistência de foco no input de bipar
   useEffect(() => {
     const focusInput = () => {
       // Registrar se alguma modal ou campo de busca de cliente está aberto
-      const modalAberta = modalClienteAberto || mostrarModalConsignado || popupAberto;
+      const modalAberta = modalClienteAberto || mostrarModalConsignado || popupAberto || modalOperadorAberto;
       
       if (!modalAberta && inputRef.current && document.activeElement?.tagName !== 'INPUT') {
         inputRef.current.focus();
@@ -169,7 +177,7 @@ export default function CaixaPDVPro() {
       window.removeEventListener("click", handleGlobalClick);
       window.removeEventListener("keydown", handleKeyDownGlobal);
     };
-  }, [modalClienteAberto, mostrarModalConsignado, popupAberto]);
+  }, [modalClienteAberto, mostrarModalConsignado, popupAberto, modalOperadorAberto]);
 
   const carregarClientes = async () => {
     try {
@@ -177,6 +185,15 @@ export default function CaixaPDVPro() {
       setClientes(pessoas.filter((p: any) => p.is_active !== false));
     } catch (error) {
       console.error("Erro ao carregar clientes:", error);
+    }
+  };
+
+  const carregarOperadores = async () => {
+    try {
+      const ops = await listarOperadores();
+      setOperadores(ops.filter(o => o.is_active));
+    } catch (error) {
+      console.error("Erro ao carregar operadores:", error);
     }
   };
 
@@ -384,6 +401,7 @@ export default function CaixaPDVPro() {
 
       const vendaData: CreateSaleDTO = {
         customer_id: clienteSelecionado?.id || null,
+        operator_id: operadorSelecionado?.id || null,
         payment_method: getPaymentMethod(),
         payment_status: pagamentoAtivo === 'consignado' ? 'pending' : 'paid',
         discount_amount: desconto,
@@ -453,14 +471,22 @@ export default function CaixaPDVPro() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-lg shadow-sm">
-            <div className="w-5 h-5 rounded-full bg-zinc-200 flex items-center justify-center">
-              <User size={12} className="text-zinc-600" />
+          <button
+            onClick={() => setModalOperadorAberto(true)}
+            className={`flex items-center gap-2 px-3 py-1.5 border rounded-lg shadow-sm transition-colors ${
+              operadorSelecionado
+                ? 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
+                : 'bg-zinc-50 border-zinc-200 hover:bg-zinc-100'
+            }`}
+            title="Selecionar operador"
+          >
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${operadorSelecionado ? 'bg-indigo-200' : 'bg-zinc-200'}`}>
+              <User size={12} className={operadorSelecionado ? 'text-indigo-700' : 'text-zinc-600'} />
             </div>
-            <span className="text-[10px] font-bold text-zinc-700 uppercase tracking-wide">
-              Operador
+            <span className={`text-[10px] font-bold uppercase tracking-wide ${operadorSelecionado ? 'text-indigo-700' : 'text-zinc-700'}`}>
+              {operadorSelecionado ? operadorSelecionado.name.split(' ')[0] : 'Operador'}
             </span>
-          </div>
+          </button>
 
           <button className="p-2 text-zinc-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-all">
             <Maximize2 size={16} />
@@ -795,6 +821,87 @@ export default function CaixaPDVPro() {
 
               {clientesFiltrados.length === 0 && (
                 <p className="text-center text-zinc-400 py-8">Nenhum cliente encontrado</p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de Seleção de Operador */}
+      {modalOperadorAberto && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-md rounded-xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-200 bg-indigo-50 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <User className="text-indigo-600" size={20} />
+                <h2 className="text-lg font-bold text-zinc-900">Selecionar Operador</h2>
+              </div>
+              <button
+                onClick={() => { setModalOperadorAberto(false); setBuscaOperador(""); }}
+                className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-200 rounded-full transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="p-4 border-b border-zinc-200">
+              <input
+                type="text"
+                placeholder="Buscar por nome ou código..."
+                value={buscaOperador}
+                onChange={(e) => setBuscaOperador(e.target.value)}
+                className="w-full h-10 px-3 bg-zinc-50 border border-zinc-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                autoFocus
+              />
+            </div>
+
+            <div className="max-h-80 overflow-y-auto p-2">
+              {operadorSelecionado && (
+                <button
+                  onClick={() => { setOperadorSelecionado(null); setModalOperadorAberto(false); setBuscaOperador(""); }}
+                  className="w-full text-left p-3 hover:bg-red-50 rounded-lg transition-colors border-b border-zinc-100 text-red-500 text-sm font-medium"
+                >
+                  Remover operador
+                </button>
+              )}
+
+              {operadores
+                .filter(op =>
+                  op.name.toLowerCase().includes(buscaOperador.toLowerCase()) ||
+                  (op.code?.toLowerCase() ?? '').includes(buscaOperador.toLowerCase())
+                )
+                .map(op => {
+                  const isSelected = operadorSelecionado?.id === op.id;
+                  return (
+                    <button
+                      key={op.id}
+                      onClick={() => { setOperadorSelecionado(op); setModalOperadorAberto(false); setBuscaOperador(""); }}
+                      className={`w-full text-left p-3 rounded-lg transition-colors border-b border-zinc-100 last:border-0 ${isSelected ? 'bg-indigo-50' : 'hover:bg-indigo-50'}`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="font-medium text-zinc-800">{op.name}</p>
+                          <p className="text-xs text-zinc-500">
+                            {op.code && <span className="font-mono mr-2">{op.code}</span>}
+                            {({ operator: 'Operador', supervisor: 'Supervisor', manager: 'Gerente' }[op.role])}
+                          </p>
+                        </div>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-indigo-600 bg-indigo-100 px-2 py-0.5 rounded-full">Atual</span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })
+              }
+
+              {operadores.filter(op =>
+                op.name.toLowerCase().includes(buscaOperador.toLowerCase()) ||
+                (op.code?.toLowerCase() ?? '').includes(buscaOperador.toLowerCase())
+              ).length === 0 && (
+                <p className="text-center text-zinc-400 py-8 text-sm">Nenhum operador encontrado</p>
               )}
             </div>
           </div>

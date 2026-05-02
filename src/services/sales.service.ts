@@ -66,6 +66,7 @@ export async function criarVenda(venda: CreateSaleDTO) {
     .from("sales")
     .insert([{
       customer_id: venda.customer_id || null,
+      operator_id: venda.operator_id || null,
       total_amount: totalAmount,
       discount_amount: discountAmount,
       final_amount: finalAmount,
@@ -675,6 +676,48 @@ export async function getStockRuptureKPI() {
   }).length;
 
   return { rupturas, criticos };
+}
+
+/* =========================
+   DASHBOARD SALES BY OPERATOR
+========================= */
+export async function getSalesByOperator(periodo: { inicio: string; fim: string }) {
+  const { data, error } = await supabase
+    .from("sales")
+    .select(`
+      final_amount,
+      operator_id,
+      operator:operators(id, name, role)
+    `)
+    .eq("payment_status", "paid")
+    .not("operator_id", "is", null)
+    .gte("sale_date", periodo.inicio)
+    .lte("sale_date", periodo.fim);
+
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return [];
+
+  const byOperator: Record<string, {
+    id: string;
+    nome: string;
+    cargo: string;
+    vendas: number;
+    faturamento: number;
+  }> = {};
+
+  data.forEach((sale: any) => {
+    const op = sale.operator;
+    if (!op) return;
+    if (!byOperator[op.id]) {
+      byOperator[op.id] = { id: op.id, nome: op.name, cargo: op.role, vendas: 0, faturamento: 0 };
+    }
+    byOperator[op.id].vendas++;
+    byOperator[op.id].faturamento += sale.final_amount || 0;
+  });
+
+  return Object.values(byOperator)
+    .map(op => ({ ...op, ticketMedio: op.vendas > 0 ? op.faturamento / op.vendas : 0 }))
+    .sort((a, b) => b.faturamento - a.faturamento);
 }
 
 /* =========================
