@@ -45,6 +45,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   RefreshCw,
+  Copy,
+  QrCode,
 } from 'lucide-react';
 import { BillingService, BillingConfig, calcularProximoVencimento, calcularStatus } from '@/src/services/billing.service';
 
@@ -132,7 +134,9 @@ export default function ConfiguracoesPage() {
     billing_start_date: new Date().toISOString().split('T')[0],
     due_day: 1,
     notes: '',
+    pix_code: '',
   });
+  const [pixCopiado, setPixCopiado] = useState(false);
   const [salvandoBilling, setSalvandoBilling] = useState(false);
   const [registrandoPagamento, setRegistrandoPagamento] = useState(false);
 
@@ -325,9 +329,20 @@ export default function ConfiguracoesPage() {
           billing_start_date: data.billing_start_date,
           due_day: data.due_day,
           notes: data.notes || '',
+          pix_code: data.pix_code || '',
         });
       }
     } catch { toast.error('Erro ao carregar configurações de pagamento'); }
+  };
+
+  const copiarPix = async () => {
+    const code = billing?.pix_code || formBilling.pix_code;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setPixCopiado(true);
+      setTimeout(() => setPixCopiado(false), 2500);
+    } catch { toast.error('Não foi possível copiar. Selecione manualmente.'); }
   };
 
   const handleSalvarBilling = async () => {
@@ -336,7 +351,11 @@ export default function ConfiguracoesPage() {
     setSalvandoBilling(true);
     try {
       const nextDue = calcularProximoVencimento(formBilling.plan_type, formBilling.due_day, formBilling.billing_start_date);
-      const saved = await BillingService.saveBilling({ ...formBilling, next_due_date: nextDue });
+      const saved = await BillingService.saveBilling({
+        ...formBilling,
+        next_due_date: nextDue,
+        pix_code: formBilling.pix_code || null,
+      });
       setBilling(saved);
       toast.success('Configuração de pagamento salva!');
     } catch (e: any) {
@@ -693,6 +712,69 @@ export default function ConfiguracoesPage() {
                     </button>
                   </section>
 
+                  {/* Card Como Pagar — aparece quando pix_code está salvo */}
+                  {billing?.pix_code && (
+                    <section className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                      <div className="px-6 pt-6 pb-4 border-b border-zinc-100 flex items-center gap-2">
+                        <div className="p-2 bg-green-50 rounded-xl">
+                          <QrCode size={18} className="text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px]">Como Pagar</h3>
+                          <p className="text-[10px] text-zinc-400 font-medium">Escaneie o QR Code ou copie o código PIX</p>
+                        </div>
+                      </div>
+
+                      <div className="p-6 flex flex-col md:flex-row gap-6 items-start">
+                        {/* QR Code gerado automaticamente */}
+                        {billing?.pix_code && (
+                          <div className="flex flex-col items-center gap-3 shrink-0">
+                            <div className="p-3 bg-white border-2 border-zinc-100 rounded-2xl shadow-sm">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(billing.pix_code)}&bgcolor=ffffff&color=000000&margin=4`}
+                                alt="QR Code PIX"
+                                width={180}
+                                height={180}
+                                className="rounded-lg"
+                              />
+                            </div>
+                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Escaneie com o banco</span>
+                          </div>
+                        )}
+
+                        {/* Código PIX + Link */}
+                        <div className="flex-1 space-y-4">
+                          {billing?.pix_code && (
+                            <div>
+                              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2">Código PIX (Copia e Cola)</p>
+                              <div className="flex items-stretch gap-2">
+                                <div className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 font-mono text-[10px] text-zinc-600 break-all leading-relaxed select-all">
+                                  {billing.pix_code}
+                                </div>
+                                <button
+                                  onClick={copiarPix}
+                                  className={`shrink-0 flex flex-col items-center justify-center gap-1 px-4 rounded-xl border-2 transition-all font-bold text-[10px] uppercase tracking-widest ${
+                                    pixCopiado
+                                      ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                                      : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600'
+                                  }`}
+                                >
+                                  {pixCopiado ? <CheckCircle2 size={18} /> : <Copy size={18} />}
+                                  {pixCopiado ? 'Copiado!' : 'Copiar'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          <p className="text-[10px] text-zinc-400 leading-relaxed">
+                            Após realizar o pagamento, clique em <span className="font-bold text-zinc-600">Registrar Pagamento</span> acima para atualizar o status da assinatura.
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
                   {/* Configuração da cobrança */}
                   <section className="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm">
                     <div className="flex items-center gap-2 mb-6">
@@ -759,13 +841,26 @@ export default function ConfiguracoesPage() {
                         </div>
                       </div>
 
+                      {/* Código PIX */}
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1 mb-1 block">Código PIX (Copia e Cola)</label>
+                        <textarea
+                          value={formBilling.pix_code}
+                          onChange={e => setFormBilling(p => ({ ...p, pix_code: e.target.value }))}
+                          rows={3}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-mono focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none"
+                          placeholder="Cole aqui o código PIX completo..."
+                        />
+                        <p className="text-[10px] text-zinc-400 mt-1 ml-1">O QR Code será gerado automaticamente a partir deste código.</p>
+                      </div>
+
                       {/* Observações */}
                       <div className="col-span-2">
                         <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1 mb-1 block">Observações</label>
                         <textarea
                           value={formBilling.notes}
                           onChange={e => setFormBilling(p => ({ ...p, notes: e.target.value }))}
-                          rows={3}
+                          rows={2}
                           className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none"
                           placeholder="Notas sobre o pagamento, forma de pagamento, etc..."
                         />
