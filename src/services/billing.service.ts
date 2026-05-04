@@ -9,6 +9,7 @@ export interface BillingConfig {
   last_payment_date?: string | null;
   status: 'active' | 'overdue' | 'locked';
   notes?: string | null;
+  pix_code?: string | null;
 }
 
 export type BillingStatus = 'active' | 'overdue' | 'locked';
