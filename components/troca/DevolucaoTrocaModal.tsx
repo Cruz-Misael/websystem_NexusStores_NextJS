@@ -48,17 +48,13 @@ interface Props {
   onClose: () => void;
   onConfirm: (payload: {
     vendaId: number;
-    itens: {
-      itemId: number;
-      quantidade: number;
-    }[];
-    itensAdicionados?: {
-      sku: number;
-      quantidade: number;
-    }[];
+    itens: { itemId: number; quantidade: number; }[];
+    itensAdicionados?: { sku: number; quantidade: number; }[];
     motivo: string;
     tipo: 'devolucao' | 'troca';
     valorFinal?: number;
+    percentualLucro?: number;
+    valorNetAnteComissao?: number;
   }) => void;
   isConsignado?: boolean;
 }
@@ -69,6 +65,7 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   const [motivo, setMotivo] = useState("");
   const [barcodeDevolucao, setBarcodeDevolucao] = useState("");
   const [barcodeAdicao, setBarcodeAdicao] = useState("");
+  const [percentualLucro, setPercentualLucro] = useState<string>("30");
   const [mensagemErro, setMensagemErro] = useState("");
   const [mensagemSucesso, setMensagemSucesso] = useState("");
   const lockBip = useRef(false);
@@ -241,9 +238,15 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
     0
   );
 
-  const valorBaseFinal = valorTotalCompra - valorTotalRemovido + valorAdicionado;
-  const valorJuros = isConsignado ? (valorTotalCompra * 0.3) : 0;
-  const valorFinalComJuros = valorBaseFinal + valorJuros;
+  // Saldo que o cliente deve antes de aplicar o desconto de lucro
+  const saldoDevedor = valorTotalCompra - valorTotalRemovido + valorAdicionado;
+
+  const pctLucro = Math.min(100, Math.max(0, parseFloat(percentualLucro) || 0));
+  const valorDescontoLucro = isConsignado ? saldoDevedor * (pctLucro / 100) : 0;
+  const valorFinalConsignado = saldoDevedor - valorDescontoLucro;
+
+  // Alias para manter compatibilidade com o restante do código (troca/devolução normal)
+  const valorBaseFinal = saldoDevedor;
 
   const handleConfirm = () => {
     if (!isConsignado && quantidadeRemovida === 0 && itensNovos.length === 0) {
@@ -263,7 +266,9 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
       })),
       motivo: "Ajuste manual de troca/devolução",
       tipo: isConsignado ? 'devolucao' : (itensNovos.length > 0 ? 'troca' : 'devolucao'),
-      valorFinal: isConsignado ? valorFinalComJuros : valorBaseFinal
+      valorFinal: isConsignado ? valorFinalConsignado : valorBaseFinal,
+      percentualLucro: isConsignado ? pctLucro : undefined,
+      valorNetAnteComissao: isConsignado ? saldoDevedor : undefined,
     });
   };
 
@@ -468,24 +473,24 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
         {/* Lado Direito: Resumo */}
         <div className="w-[320px] bg-white pt-6 pb-6 px-8 flex flex-col relative z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.02)]">
           <div className="flex-1">
-            <h3 className="text-sm font-bold uppercase tracking-widest mb-8 text-zinc-400">
+            <h3 className="text-sm font-bold uppercase tracking-widest mb-6 text-zinc-400">
               Resumo Final
             </h3>
 
-            <div className="space-y-6">
-              {/* Card de Crédito */}
+            <div className="space-y-5">
+              {/* Total devolvido */}
               <div>
-                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">Total Devolvido</p>
+                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mb-1">Total Devolvido</p>
                 <div className="text-zinc-800">
                   <span className="text-sm font-bold text-zinc-400">R$</span>
                   <span className="text-3xl font-black ml-1 tracking-tight">{valorTotalRemovido.toFixed(2)}</span>
                 </div>
               </div>
 
-              {/* Card de Débito */}
+              {/* Total acrescentado (apenas troca) */}
               {!isConsignado && (
                 <div>
-                  <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mb-1 flex items-center gap-1">Total Acrescentado</p>
+                  <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mb-1">Total Acrescentado</p>
                   <div className="text-zinc-800">
                     <span className="text-sm font-bold text-zinc-400">R$</span>
                     <span className="text-3xl font-black ml-1 tracking-tight">{valorAdicionado.toFixed(2)}</span>
@@ -493,36 +498,77 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                 </div>
               )}
 
-              {/* Detalhes */}
-              <div className="pt-6 space-y-4">
+              {/* Breakdown detalhado */}
+              <div className="pt-4 space-y-3 border-t border-zinc-100">
                 <div className="flex justify-between text-xs text-zinc-500 font-medium">
                   <span>Valor Original</span>
                   <span>R$ {valorTotalCompra.toFixed(2)}</span>
                 </div>
-                {isConsignado && (
+                <div className="flex justify-between text-xs text-zinc-500 font-medium">
+                  <span>(-) Devolvidos</span>
+                  <span className="text-amber-600">- R$ {valorTotalRemovido.toFixed(2)}</span>
+                </div>
+                {!isConsignado && valorAdicionado > 0 && (
                   <div className="flex justify-between text-xs text-zinc-500 font-medium">
-                    <span>Taxa Consignado</span>
-                    <span>+ R$ {valorJuros.toFixed(2)}</span>
+                    <span>(+) Acrescentados</span>
+                    <span className="text-emerald-600">+ R$ {valorAdicionado.toFixed(2)}</span>
                   </div>
                 )}
-                <div className="flex justify-between text-xs font-bold text-zinc-800 pt-4 border-t border-zinc-100">
-                  <span>Saldo diferença</span>
-                  <span className="font-mono">{valorAdicionado - valorTotalRemovido >= 0 ? '+' : ''} R$ {(valorAdicionado - valorTotalRemovido).toFixed(2)}</span>
+                <div className="flex justify-between text-xs font-bold text-zinc-800 pt-2 border-t border-zinc-100">
+                  <span>Saldo do cliente</span>
+                  <span className="font-mono">R$ {saldoDevedor.toFixed(2)}</span>
                 </div>
               </div>
+
+              {/* Campo dinâmico de % de desconto — apenas consignado */}
+              {isConsignado && (
+                <div className="pt-2 space-y-3">
+                  <div>
+                    <label className="text-[10px] text-violet-600 font-bold uppercase tracking-widest mb-2 block">
+                      % Desconto de Lucro do Vendedor
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={0}
+                        max={100}
+                        step={1}
+                        value={percentualLucro}
+                        onChange={(e) => setPercentualLucro(e.target.value)}
+                        className="w-full bg-violet-50 border-2 border-violet-200 rounded-xl px-4 py-2.5 text-sm font-bold text-violet-900 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 outline-none transition-all text-center"
+                        placeholder="0"
+                      />
+                      <span className="text-xl font-black text-violet-500 shrink-0">%</span>
+                    </div>
+                  </div>
+                  {pctLucro > 0 && (
+                    <div className="flex justify-between text-xs text-violet-600 font-bold bg-violet-50 px-3 py-2 rounded-lg">
+                      <span>(-) Desconto ({pctLucro}%)</span>
+                      <span>- R$ {valorDescontoLucro.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
 
-          {/* Total FInal */}
-          <div className="mt-8 space-y-4">
-            <div className="bg-zinc-50 rounded-2xl p-6 border border-zinc-100">
-              <p className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest mb-2">Cobrança Final</p>
-              <div className="text-indigo-600 flex items-baseline">
+          {/* Total Final */}
+          <div className="mt-6 space-y-4">
+            <div className={`rounded-2xl p-6 border ${isConsignado ? 'bg-violet-50 border-violet-200' : 'bg-zinc-50 border-zinc-100'}`}>
+              <p className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${isConsignado ? 'text-violet-500' : 'text-zinc-500'}`}>
+                Cobrança Final
+              </p>
+              <div className={`flex items-baseline ${isConsignado ? 'text-violet-700' : 'text-indigo-600'}`}>
                 <span className="text-xl font-bold">R$</span>
                 <span className="text-5xl font-black tracking-tighter ml-1">
-                  {isConsignado ? valorFinalComJuros.toFixed(2) : valorBaseFinal.toFixed(2)}
+                  {isConsignado ? valorFinalConsignado.toFixed(2) : valorBaseFinal.toFixed(2)}
                 </span>
               </div>
+              {isConsignado && pctLucro > 0 && (
+                <p className="text-[10px] text-violet-400 mt-2 font-medium">
+                  Saldo R$ {saldoDevedor.toFixed(2)} com {pctLucro}% de desconto de lucro
+                </p>
+              )}
             </div>
 
             <button

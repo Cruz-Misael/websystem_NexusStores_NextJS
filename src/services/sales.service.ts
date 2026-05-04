@@ -225,11 +225,13 @@ export async function atualizarStatusPagamento(saleId: number, status: 'paid' | 
 }
 
 export async function atualizarVendaConsignado(
-  saleId: number, 
-  dados: { 
-    payment_status: 'paid' | 'pending'; 
+  saleId: number,
+  dados: {
+    payment_status: 'paid' | 'pending';
     final_amount: number;
     observation?: string;
+    consignado_commission_percent?: number;
+    consignado_net_before_commission?: number;
   }
 ) {
   console.log(`Finalizando consignado da venda ${saleId}`, dados);
@@ -718,6 +720,42 @@ export async function getSalesByOperator(periodo: { inicio: string; fim: string 
   return Object.values(byOperator)
     .map(op => ({ ...op, ticketMedio: op.vendas > 0 ? op.faturamento / op.vendas : 0 }))
     .sort((a, b) => b.faturamento - a.faturamento);
+}
+
+/* =========================
+   DASHBOARD TOP CLIENTES DO MÊS
+========================= */
+export async function getTopCustomers(periodo: { inicio: string; fim: string }, limit: number = 5) {
+  const { data, error } = await supabase
+    .from("sales")
+    .select(`
+      final_amount,
+      customer_id,
+      customer:people(id, name)
+    `)
+    .eq("payment_status", "paid")
+    .not("customer_id", "is", null)
+    .gte("sale_date", periodo.inicio)
+    .lte("sale_date", periodo.fim);
+
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return [];
+
+  const byCustomer: Record<number, { id: number; nome: string; vendas: number; faturamento: number }> = {};
+
+  data.forEach((sale: any) => {
+    const customer = sale.customer;
+    if (!customer) return;
+    if (!byCustomer[customer.id]) {
+      byCustomer[customer.id] = { id: customer.id, nome: customer.name, vendas: 0, faturamento: 0 };
+    }
+    byCustomer[customer.id].vendas++;
+    byCustomer[customer.id].faturamento += sale.final_amount || 0;
+  });
+
+  return Object.values(byCustomer)
+    .sort((a, b) => b.faturamento - a.faturamento)
+    .slice(0, limit);
 }
 
 /* =========================

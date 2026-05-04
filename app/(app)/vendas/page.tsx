@@ -287,13 +287,20 @@ export default function HistoricoVendasCompacto() {
         }
       }
 
-      // 3. Atualizar status e valor final com juros no banco
-      const novaObs = `${selecionada?.observation || ''}\n[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] - Total final com 30% de taxa sobre o valor total do consignado.`;
+      // 3. Atualizar status e valor final no banco
+      const pct = payload.percentualLucro ?? 0;
+      const saldo = payload.valorNetAnteComissao ?? payload.valorFinal;
+      const novaObs = [
+        selecionada?.observation || '',
+        `[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] Saldo: ${formatarMoeda(saldo)} | Desconto de lucro: ${pct}% (${formatarMoeda(saldo * pct / 100)}) | Cobrado: ${formatarMoeda(payload.valorFinal)}`
+      ].filter(Boolean).join('\n');
 
       const { error } = await atualizarVendaConsignado(payload.vendaId, {
         payment_status: 'paid',
         final_amount: payload.valorFinal,
-        observation: novaObs
+        observation: novaObs,
+        consignado_commission_percent: pct,
+        consignado_net_before_commission: saldo,
       });
 
       if (error) throw new Error(error.message);
@@ -301,20 +308,15 @@ export default function HistoricoVendasCompacto() {
       // 4. Recarregar venda completa para atualizar a UI
       const vendaAtualizada = await buscarVendaPorId(payload.vendaId);
 
-      // Atualizar lista local
       setVendas(prev => prev.map(v =>
         v.id === vendaAtualizada.id ? vendaAtualizada : v
       ));
-
-      // Atualizar item selecionado
       setSelecionada(vendaAtualizada);
-
-      // Fechar modal antes do alerta para melhor UX
       setModalAberto(false);
 
       mostrarPopup(
         "Consignado Finalizado",
-        `O acerto do consignado foi realizado com sucesso!\n\nValor final (com juros): ${formatarMoeda(payload.valorFinal)}`,
+        `Acerto realizado com sucesso!\n\nSaldo: ${formatarMoeda(saldo)}\nDesconto (${pct}%): ${formatarMoeda(saldo * pct / 100)}\nCobrado: ${formatarMoeda(payload.valorFinal)}`,
         "sucesso",
         undefined,
         "Excelente"
