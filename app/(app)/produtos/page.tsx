@@ -5,6 +5,7 @@ import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { listarProdutos, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
 import { useState, useEffect, useMemo } from "react";
+import { useDebounce } from "@/src/hooks/useDebounce";
 import { 
   Search, 
   Plus, 
@@ -142,6 +143,7 @@ export default function GestaoEstoqueCompacto() {
   const [selecionado, setSelecionado] = useState<Produto | null>(null);
   const [listaProdutos, setListaProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState("");
+  const debouncedBusca = useDebounce(busca);
   const [ajusteEstoque, setAjusteEstoque] = useState(1);
   const [ajusteTipo, setAjusteTipo] = useState<"entrada" | "saida">("entrada");
   const [ajusteObservacao, setAjusteObservacao] = useState("");
@@ -443,11 +445,11 @@ const carregarProdutos = async (isManualRefresh = false) => {
   const produtosFiltrados = useMemo(() =>
     listaProdutos.filter(p => {
       const buscaMatch =
-        p.nome.toLowerCase().includes(busca.toLowerCase()) ||
-        p.sku.toLowerCase().includes(busca.toLowerCase());
+        p.nome.toLowerCase().includes(debouncedBusca.toLowerCase()) ||
+        p.sku.toLowerCase().includes(debouncedBusca.toLowerCase());
       return mostrarInativos ? buscaMatch : buscaMatch && p.is_active !== false;
     }),
-    [listaProdutos, busca, mostrarInativos]
+    [listaProdutos, debouncedBusca, mostrarInativos]
   );
 
   // Cálculos de Status

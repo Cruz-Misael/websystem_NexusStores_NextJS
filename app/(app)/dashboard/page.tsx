@@ -1,13 +1,13 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { 
-  TrendingUp, 
-  TrendingDown, 
-  DollarSign, 
-  ShoppingBag, 
-  Users, 
-  Package, 
+import {
+  TrendingUp,
+  TrendingDown,
+  DollarSign,
+  ShoppingBag,
+  Users,
+  Package,
   ArrowRight,
   MoreHorizontal,
   Calendar,
@@ -16,7 +16,8 @@ import {
   PieChart as PieIcon,
   AlertTriangle,
   Wallet,
-  Loader2
+  Loader2,
+  UserCog
 } from "lucide-react";
 import {
   AreaChart,
@@ -39,7 +40,9 @@ import {
   getSalesByCategory,
   getTopPerformingProducts,
   getSalesByHour,
-  getStockRuptureKPI
+  getStockRuptureKPI,
+  getSalesByOperator,
+  getTopCustomers
 } from "@/src/services/sales.service";
 
 // --- TIPOS DE DADOS ---
@@ -73,6 +76,20 @@ interface StockRuptureData {
   rupturas: number;
   criticos: number;
 }
+interface OperatorData {
+  id: string;
+  nome: string;
+  cargo: string;
+  vendas: number;
+  faturamento: number;
+  ticketMedio: number;
+}
+interface TopCustomerData {
+  id: number;
+  nome: string;
+  vendas: number;
+  faturamento: number;
+}
 
 export default function DashboardExecutive() {
   
@@ -83,6 +100,8 @@ export default function DashboardExecutive() {
   const [topProducts, setTopProducts] = useState<TopProductData[]>([]);
   const [salesByHour, setSalesByHour] = useState<SalesByHourData[]>([]);
   const [stockRupture, setStockRupture] = useState<StockRuptureData | null>(null);
+  const [operatorData, setOperatorData] = useState<OperatorData[]>([]);
+  const [topCustomers, setTopCustomers] = useState<TopCustomerData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -112,14 +131,18 @@ export default function DashboardExecutive() {
           categoryResult,
           topProductsResult,
           salesByHourResult,
-          stockRuptureResult
+          stockRuptureResult,
+          operatorResult,
+          topCustomersResult
         ] = await Promise.all([
           getDashboardKPIs(periodo),
           getFinancialPerformance(periodo),
           getSalesByCategory(periodo),
           getTopPerformingProducts(periodo),
           getSalesByHour(periodo),
-          getStockRuptureKPI()
+          getStockRuptureKPI(),
+          getSalesByOperator(periodo),
+          getTopCustomers(periodo)
         ]);
 
         setKpiData(kpiResult);
@@ -128,6 +151,8 @@ export default function DashboardExecutive() {
         setTopProducts(topProductsResult);
         setSalesByHour(salesByHourResult);
         setStockRupture(stockRuptureResult);
+        setOperatorData(operatorResult);
+        setTopCustomers(topCustomersResult);
 
       } catch (err: any) {
         setError(err.message || "Erro ao buscar dados do dashboard.");
@@ -460,6 +485,172 @@ export default function DashboardExecutive() {
             <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-indigo-600 rounded-full blur-[80px] opacity-20"></div>
           </div>
 
+        </div>
+
+        {/* 4. TOP CLIENTES DO MÊS */}
+        <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm">
+          <div className="flex justify-between items-center mb-5">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-emerald-50">
+                <Users size={18} className="text-emerald-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Top Clientes do Mês</h3>
+                <p className="text-xs text-zinc-500">Maiores compradores nos últimos 30 dias</p>
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-12 w-full bg-zinc-100 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          ) : topCustomers.length === 0 ? (
+            <div className="py-10 text-center">
+              <Users className="mx-auto mb-3 text-zinc-200" size={36} />
+              <p className="text-sm text-zinc-400 font-medium">Nenhuma venda com cliente identificado no período</p>
+            </div>
+          ) : (
+            <>
+              <div className="h-[220px] w-full mb-4">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={topCustomers} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
+                    <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="#f4f4f5" />
+                    <XAxis
+                      type="number"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
+                      tickFormatter={(v) => `R$${(v / 1000).toFixed(1)}k`}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="nome"
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fill: '#52525b', fontSize: 12, fontWeight: 600 }}
+                      width={110}
+                    />
+                    <Tooltip
+                      contentStyle={{ backgroundColor: '#18181b', borderRadius: '8px', border: 'none', color: '#fff', fontSize: '12px' }}
+                      formatter={(value) => [formatCurrency(value as number), 'Faturamento']}
+                    />
+                    <Bar dataKey="faturamento" radius={[0, 6, 6, 0]}>
+                      {topCustomers.map((_, index) => (
+                        <Cell
+                          key={`cell-${index}`}
+                          fill={index === 0 ? '#10b981' : index === 1 ? '#34d399' : index === 2 ? '#6ee7b7' : '#a7f3d0'}
+                        />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              <div className="space-y-2 border-t border-zinc-100 pt-4">
+                {topCustomers.map((c, index) => (
+                  <div key={c.id} className="flex items-center justify-between text-xs px-1">
+                    <div className="flex items-center gap-2">
+                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                        index === 0 ? 'bg-amber-100 text-amber-700' :
+                        index === 1 ? 'bg-zinc-200 text-zinc-600' :
+                        index === 2 ? 'bg-orange-100 text-orange-700' :
+                        'bg-zinc-100 text-zinc-500'
+                      }`}>{index + 1}</div>
+                      <span className="font-medium text-zinc-700 truncate max-w-[140px]">{c.nome}</span>
+                    </div>
+                    <div className="flex items-center gap-4 shrink-0">
+                      <span className="text-zinc-400">{c.vendas} venda{c.vendas !== 1 ? 's' : ''}</span>
+                      <span className="font-bold text-zinc-900 tabular-nums">{formatCurrency(c.faturamento)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* 6. DESEMPENHO POR OPERADOR */}
+        <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm">
+          <div className="flex justify-between items-center mb-5">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-indigo-50">
+                <UserCog size={18} className="text-indigo-600" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Desempenho por Operador</h3>
+                <p className="text-xs text-zinc-500">Vendas atribuídas nos últimos 30 dias</p>
+              </div>
+            </div>
+          </div>
+
+          {loading ? (
+            <div className="space-y-3">
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="h-12 w-full bg-zinc-100 rounded-lg animate-pulse" />
+              ))}
+            </div>
+          ) : operatorData.length === 0 ? (
+            <div className="py-10 text-center">
+              <UserCog className="mx-auto mb-3 text-zinc-200" size={36} />
+              <p className="text-sm text-zinc-400 font-medium">Nenhuma venda com operador atribuído no período</p>
+              <p className="text-xs text-zinc-300 mt-1">Selecione um operador no caixa ao realizar vendas</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {(() => {
+                const maxFaturamento = operatorData[0]?.faturamento || 1;
+                const roleLabel: Record<string, string> = { operator: 'Operador', supervisor: 'Supervisor', manager: 'Gerente' };
+                const roleColor: Record<string, string> = { operator: 'bg-zinc-100 text-zinc-600', supervisor: 'bg-blue-50 text-blue-700', manager: 'bg-purple-50 text-purple-700' };
+                return operatorData.map((op, index) => (
+                  <div key={op.id} className="flex items-center gap-4 p-3 rounded-lg hover:bg-zinc-50 transition-colors">
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-black shrink-0 ${
+                      index === 0 ? 'bg-amber-100 text-amber-700' :
+                      index === 1 ? 'bg-zinc-200 text-zinc-600' :
+                      index === 2 ? 'bg-orange-100 text-orange-700' :
+                      'bg-zinc-100 text-zinc-500'
+                    }`}>
+                      {index + 1}
+                    </div>
+
+                    <div className="w-32 shrink-0">
+                      <p className="text-sm font-bold text-zinc-800 truncate">{op.nome}</p>
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${roleColor[op.cargo] ?? 'bg-zinc-100 text-zinc-500'}`}>
+                        {roleLabel[op.cargo] ?? op.cargo}
+                      </span>
+                    </div>
+
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="flex-1 h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-indigo-500 rounded-full transition-all duration-700"
+                            style={{ width: `${(op.faturamento / maxFaturamento) * 100}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-bold text-zinc-900 tabular-nums w-24 text-right shrink-0">
+                          {formatCurrency(op.faturamento)}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex gap-4 shrink-0 text-right">
+                      <div>
+                        <p className="text-[10px] text-zinc-400 uppercase font-bold">Vendas</p>
+                        <p className="text-sm font-black text-zinc-800">{op.vendas}</p>
+                      </div>
+                      <div>
+                        <p className="text-[10px] text-zinc-400 uppercase font-bold">Ticket</p>
+                        <p className="text-sm font-black text-zinc-800">{formatCurrency(op.ticketMedio)}</p>
+                      </div>
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+          )}
         </div>
 
       </div>

@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
+import { useDebounce } from "@/src/hooks/useDebounce";
 import ClienteModal from "@/components/clientes/ClienteModal";
 import VisualizarDocumento from "@/components/clientes/VisualizarDocumento";
 import PopupConfirmacao from "@/components/clientes/PopupConfirmacao";
@@ -109,6 +110,7 @@ export default function CRMCompacto() {
   const [selecionado, setSelecionado] = useState<Cliente | null>(null);
   const [listaClientes, setListaClientes] = useState<Cliente[]>([]);
   const [busca, setBusca] = useState("");
+  const debouncedBusca = useDebounce(busca);
   const [modalAberto, setModalAberto] = useState(false);
   const [modoModal, setModoModal] = useState<"create" | "edit">("create");
   const [clienteIdEdit, setClienteIdEdit] = useState<number | null>(null);
@@ -301,9 +303,13 @@ export default function CRMCompacto() {
     await carregarClientes();
   };
 
-  const filtrarClientes = () => {
-    return listaClientes.filter(c => c.nome.toLowerCase().includes(busca.toLowerCase()) || c.email.toLowerCase().includes(busca.toLowerCase()));
-  };
+  const clientesFiltrados = useMemo(() =>
+    listaClientes.filter(c =>
+      c.nome.toLowerCase().includes(debouncedBusca.toLowerCase()) ||
+      c.email.toLowerCase().includes(debouncedBusca.toLowerCase())
+    ),
+    [listaClientes, debouncedBusca]
+  );
   
   const totalGasto = historicoVendas.reduce((acc, venda) => acc + (venda.final_amount || 0), 0);
   const ultimaCompra = historicoVendas.length > 0 ? new Date(historicoVendas[0].sale_date).toLocaleDateString('pt-BR') : "N/A";
@@ -423,7 +429,7 @@ export default function CRMCompacto() {
                 Tentar novamente
               </button>
             </div>
-          ) : filtrarClientes().length === 0 ? (
+          ) : clientesFiltrados.length === 0 ? (
             <div className="p-8 text-center">
               <Users className="h-12 w-12 text-zinc-300 mx-auto mb-3" />
               <p className="text-zinc-500 text-sm mb-4">
@@ -439,7 +445,7 @@ export default function CRMCompacto() {
               )}
             </div>
           ) : (
-            filtrarClientes().map((cliente) => (
+            clientesFiltrados.map((cliente) => (
               <div 
                 key={cliente.id}
                 className={`relative group p-3 border-b border-zinc-50 cursor-pointer hover:bg-zinc-50 transition-all ${
@@ -520,7 +526,7 @@ export default function CRMCompacto() {
         </div>
         
         <div className="p-3 border-t border-zinc-100 text-[10px] font-bold text-zinc-400 text-center bg-zinc-50 uppercase tracking-widest">
-          {filtrarClientes().length} registros encontrados
+          {clientesFiltrados.length} registros encontrados
         </div>
       </div>
 

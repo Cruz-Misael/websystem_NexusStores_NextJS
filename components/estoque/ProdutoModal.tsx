@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import EtiquetaProduto from "./EtiquetaProduto";
 import { CompanyService } from "@/services/company.service";
+import { listarCategorias, ProductCategory } from "@/src/services/category.service";
 
 interface ProdutoForm {
   nome: string;
@@ -139,8 +140,10 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
   const [erros, setErros] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(false);
   const [empresa, setEmpresa] = useState({ nome: "Minha Empresa", logoUrl: "" });
+  const [categorias, setCategorias] = useState<ProductCategory[]>([]);
 
   useEffect(() => {
+    listarCategorias().then(setCategorias).catch(() => {});
     CompanyService.getCompany().then((company) => {
       if (!company) return;
       setEmpresa({
@@ -557,16 +560,9 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                       onChange={(e) => handleInputChange("categoria", e.target.value)}
                     >
                       <option value="">Selecione uma categoria...</option>
-                      <option value="Roupas">Roupas</option>
-                      <option value="Calçados">Calçados</option>
-                      <option value="Acessórios">Acessórios</option>
-                      <option value="Eletrônicos">Eletrônicos</option>
-                      <option value="Móveis">Móveis</option>
-                      <option value="Esportes">Esportes</option>
-                      <option value="Beleza">Beleza</option>
-                      <option value="Alimentos">Alimentos</option>
-                      <option value="Bebidas">Bebidas</option>
-                      <option value="Outros">Outros</option>
+                      {categorias.map((cat) => (
+                        <option key={cat.id} value={cat.name}>{cat.name}</option>
+                      ))}
                     </select>
                   </div>
                   <div>
