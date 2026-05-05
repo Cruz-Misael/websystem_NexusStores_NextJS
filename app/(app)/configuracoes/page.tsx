@@ -39,9 +39,18 @@ import {
   X,
   Check,
   UserCog,
+  CreditCard,
+  Calendar,
+  Lock,
+  AlertTriangle,
+  CheckCircle2,
+  RefreshCw,
+  Copy,
+  QrCode,
 } from 'lucide-react';
+import { BillingService, BillingConfig, calcularProximoVencimento, calcularStatus } from '@/src/services/billing.service';
 
-type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores';
+type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento';
 type UsuarioCargo = 'admin' | 'gerente' | 'colaborador';
 type UsuarioStatus = 'ativo' | 'inativo' | 'pendente';
 
@@ -117,6 +126,19 @@ export default function ConfiguracoesPage() {
   const [modalOperadorAberto, setModalOperadorAberto] = useState(false);
   const [formOperador, setFormOperador] = useState<Omit<Operator, 'id' | 'created_at' | 'updated_at'>>(emptyOperator);
   const [salvandoOperador, setSalvandoOperador] = useState(false);
+
+  // --- Pagamento / Billing ---
+  const [billing, setBilling] = useState<BillingConfig | null>(null);
+  const [formBilling, setFormBilling] = useState({
+    plan_type: 'monthly' as 'monthly' | 'annual',
+    billing_start_date: new Date().toISOString().split('T')[0],
+    due_day: 1,
+    notes: '',
+    pix_code: '',
+  });
+  const [pixCopiado, setPixCopiado] = useState(false);
+  const [salvandoBilling, setSalvandoBilling] = useState(false);
+  const [registrandoPagamento, setRegistrandoPagamento] = useState(false);
 
   // ========== LOJA ==========
 
@@ -295,6 +317,75 @@ export default function ConfiguracoesPage() {
     try { await deletarOperador(id); await loadOperadores(); toast.success('Operador removido'); } catch (e: any) { toast.error(e.message || 'Erro ao remover operador'); }
   };
 
+  // ========== PAGAMENTO ==========
+
+  const loadBilling = async () => {
+    try {
+      const data = await BillingService.getBilling();
+      if (data) {
+        setBilling(data);
+        setFormBilling({
+          plan_type: data.plan_type,
+          billing_start_date: data.billing_start_date,
+          due_day: data.due_day,
+          notes: data.notes || '',
+          pix_code: data.pix_code || '',
+        });
+      }
+    } catch { toast.error('Erro ao carregar configurações de pagamento'); }
+  };
+
+  const copiarPix = async () => {
+    const code = billing?.pix_code || formBilling.pix_code;
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setPixCopiado(true);
+      setTimeout(() => setPixCopiado(false), 2500);
+    } catch { toast.error('Não foi possível copiar. Selecione manualmente.'); }
+  };
+
+  const handleSalvarBilling = async () => {
+    if (!formBilling.billing_start_date) { toast.error('Informe a data de início'); return; }
+    if (formBilling.due_day < 1 || formBilling.due_day > 28) { toast.error('Dia de cobrança deve ser entre 1 e 28'); return; }
+    setSalvandoBilling(true);
+    try {
+      const nextDue = calcularProximoVencimento(formBilling.plan_type, formBilling.due_day, formBilling.billing_start_date);
+      const saved = await BillingService.saveBilling({
+        ...formBilling,
+        next_due_date: nextDue,
+        pix_code: formBilling.pix_code || null,
+      });
+      setBilling(saved);
+      toast.success('Configuração de pagamento salva!');
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao salvar');
+    } finally {
+      setSalvandoBilling(false);
+    }
+  };
+
+  const handleRegistrarPagamento = async () => {
+    setRegistrandoPagamento(true);
+    try {
+      const updated = await BillingService.registrarPagamento();
+      setBilling(updated);
+      toast.success('Pagamento registrado! Próximo vencimento atualizado.');
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao registrar pagamento');
+    } finally {
+      setRegistrandoPagamento(false);
+    }
+  };
+
+  const billingStatusInfo = () => {
+    if (!billing) return { label: 'Não configurado', color: 'bg-zinc-100 text-zinc-500', icon: AlertTriangle };
+    const s = calcularStatus(billing.next_due_date);
+    if (s === 'active') return { label: 'Em dia', color: 'bg-emerald-100 text-emerald-700', icon: CheckCircle2 };
+    if (s === 'overdue') return { label: 'Em atraso', color: 'bg-amber-100 text-amber-700', icon: AlertTriangle };
+    return { label: 'Bloqueado', color: 'bg-red-100 text-red-700', icon: Lock };
+  };
+
   // ========== EFEITOS ==========
 
   useEffect(() => {
@@ -312,7 +403,7 @@ export default function ConfiguracoesPage() {
     setProgresso(prev => ({ ...prev, usuarios: Math.min(100, (ativos / Math.max(usuarios.length, 1)) * 100) }));
   }, [usuarios]);
 
-  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); }, []);
+  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); }, []);
 
   const loadCompanyData = async () => {
     try {
@@ -336,6 +427,7 @@ export default function ConfiguracoesPage() {
     { id: 'usuarios', label: 'Usuários', icon: Users, desc: 'Equipe e permissões' },
     { id: 'categorias', label: 'Categorias', icon: Layers, desc: 'Categorias de produtos' },
     { id: 'operadores', label: 'Operadores', icon: UserCog, desc: 'Operadores do caixa' },
+    { id: 'pagamento', label: 'Pagamento', icon: CreditCard, desc: 'Assinatura e vencimento' },
   ];
 
   return (
@@ -356,6 +448,12 @@ export default function ConfiguracoesPage() {
           <button onClick={salvarConfiguracoesLoja} disabled={isLoading} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
             {isLoading ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {isLoading ? 'Salvando' : 'Salvar Alterações'}
+          </button>
+        )}
+        {activeTab === 'pagamento' && (
+          <button onClick={handleSalvarBilling} disabled={salvandoBilling} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
+            {salvandoBilling ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {salvandoBilling ? 'Salvando' : 'Salvar Configuração'}
           </button>
         )}
       </header>
@@ -567,6 +665,227 @@ export default function ConfiguracoesPage() {
                 </div>
               </div>
             )}
+
+            {/* ===== ABA PAGAMENTO ===== */}
+            {activeTab === 'pagamento' && (() => {
+              const statusInfo = billingStatusInfo();
+              const StatusIcon = statusInfo.icon;
+              const nextDue = billing
+                ? new Date(billing.next_due_date + 'T12:00:00').toLocaleDateString('pt-BR')
+                : calcularProximoVencimento(formBilling.plan_type, formBilling.due_day, formBilling.billing_start_date)
+                    ? new Date(calcularProximoVencimento(formBilling.plan_type, formBilling.due_day, formBilling.billing_start_date) + 'T12:00:00').toLocaleDateString('pt-BR')
+                    : '—';
+
+              return (
+                <div className="space-y-6 animate-in fade-in duration-400">
+
+                  {/* Status Card */}
+                  <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm flex items-center justify-between gap-6">
+                    <div className="flex items-center gap-4">
+                      <div className={`p-3 rounded-2xl ${statusInfo.color.includes('emerald') ? 'bg-emerald-50' : statusInfo.color.includes('amber') ? 'bg-amber-50' : statusInfo.color.includes('red') ? 'bg-red-50' : 'bg-zinc-50'}`}>
+                        <StatusIcon size={24} className={statusInfo.color.split(' ')[1]} />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest">Status da Assinatura</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-xs font-black uppercase px-2 py-1 rounded-lg ${statusInfo.color}`}>{statusInfo.label}</span>
+                          {billing && (
+                            <span className="text-xs text-zinc-500">
+                              · Próximo vencimento: <span className="font-bold text-zinc-800">{nextDue}</span>
+                            </span>
+                          )}
+                        </div>
+                        {billing?.last_payment_date && (
+                          <p className="text-[11px] text-zinc-400 mt-1">
+                            Último pagamento: {new Date(billing.last_payment_date + 'T12:00:00').toLocaleDateString('pt-BR')}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                    <button
+                      onClick={handleRegistrarPagamento}
+                      disabled={registrandoPagamento || !billing}
+                      className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+                    >
+                      {registrandoPagamento ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
+                      Registrar Pagamento
+                    </button>
+                  </section>
+
+                  {/* Card Como Pagar — aparece quando pix_code está salvo */}
+                  {billing?.pix_code && (
+                    <section className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                      <div className="px-6 pt-6 pb-4 border-b border-zinc-100 flex items-center gap-2">
+                        <div className="p-2 bg-green-50 rounded-xl">
+                          <QrCode size={18} className="text-green-600" />
+                        </div>
+                        <div>
+                          <h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px]">Como Pagar</h3>
+                          <p className="text-[10px] text-zinc-400 font-medium">Escaneie o QR Code ou copie o código PIX</p>
+                        </div>
+                      </div>
+
+                      <div className="p-6 flex flex-col md:flex-row gap-6 items-start">
+                        {/* QR Code gerado automaticamente */}
+                        {billing?.pix_code && (
+                          <div className="flex flex-col items-center gap-3 shrink-0">
+                            <div className="p-3 bg-white border-2 border-zinc-100 rounded-2xl shadow-sm">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(billing.pix_code)}&bgcolor=ffffff&color=000000&margin=4`}
+                                alt="QR Code PIX"
+                                width={180}
+                                height={180}
+                                className="rounded-lg"
+                              />
+                            </div>
+                            <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest">Escaneie com o banco</span>
+                          </div>
+                        )}
+
+                        {/* Código PIX + Link */}
+                        <div className="flex-1 space-y-4">
+                          {billing?.pix_code && (
+                            <div>
+                              <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest mb-2">Código PIX (Copia e Cola)</p>
+                              <div className="flex items-stretch gap-2">
+                                <div className="flex-1 bg-zinc-50 border border-zinc-200 rounded-xl px-4 py-3 font-mono text-[10px] text-zinc-600 break-all leading-relaxed select-all">
+                                  {billing.pix_code}
+                                </div>
+                                <button
+                                  onClick={copiarPix}
+                                  className={`shrink-0 flex flex-col items-center justify-center gap-1 px-4 rounded-xl border-2 transition-all font-bold text-[10px] uppercase tracking-widest ${
+                                    pixCopiado
+                                      ? 'bg-emerald-50 border-emerald-200 text-emerald-600'
+                                      : 'bg-zinc-50 border-zinc-200 text-zinc-600 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-600'
+                                  }`}
+                                >
+                                  {pixCopiado ? <CheckCircle2 size={18} /> : <Copy size={18} />}
+                                  {pixCopiado ? 'Copiado!' : 'Copiar'}
+                                </button>
+                              </div>
+                            </div>
+                          )}
+
+                          <p className="text-[10px] text-zinc-400 leading-relaxed">
+                            Após realizar o pagamento, clique em <span className="font-bold text-zinc-600">Registrar Pagamento</span> acima para atualizar o status da assinatura.
+                          </p>
+                        </div>
+                      </div>
+                    </section>
+                  )}
+
+                  {/* Configuração da cobrança */}
+                  <section className="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm">
+                    <div className="flex items-center gap-2 mb-6">
+                      <div className="w-1 h-4 bg-indigo-500 rounded-full" />
+                      <h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px]">Configuração da Cobrança</h3>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-6">
+                      {/* Tipo de plano */}
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1 mb-2 block">Tipo de Plano</label>
+                        <div className="flex gap-3">
+                          {(['monthly', 'annual'] as const).map((type) => (
+                            <button
+                              key={type}
+                              onClick={() => setFormBilling(p => ({ ...p, plan_type: type }))}
+                              className={`flex-1 py-3 px-4 rounded-2xl border-2 text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                                formBilling.plan_type === type
+                                  ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
+                                  : 'border-zinc-100 bg-zinc-50 text-zinc-500 hover:border-zinc-200'
+                              }`}
+                            >
+                              <Calendar size={16} />
+                              {type === 'monthly' ? 'Mensal' : 'Anual'}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Data de início */}
+                      <div>
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1 mb-1 block">Data de Início da Cobrança</label>
+                        <input
+                          type="date"
+                          value={formBilling.billing_start_date}
+                          onChange={e => setFormBilling(p => ({ ...p, billing_start_date: e.target.value }))}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all"
+                        />
+                      </div>
+
+                      {/* Dia de cobrança (apenas mensal) */}
+                      {formBilling.plan_type === 'monthly' && (
+                        <div>
+                          <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1 mb-1 block">Dia de Cobrança (1–28)</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={28}
+                            value={formBilling.due_day}
+                            onChange={e => setFormBilling(p => ({ ...p, due_day: Number(e.target.value) }))}
+                            className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all"
+                          />
+                        </div>
+                      )}
+
+                      {/* Próximo vencimento (calculado) */}
+                      <div className={formBilling.plan_type === 'annual' ? '' : ''}>
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1 mb-1 block">Próximo Vencimento (calculado)</label>
+                        <div className="w-full bg-zinc-100 border border-zinc-200 rounded-2xl px-4 py-2.5 text-xs font-bold text-zinc-700 flex items-center gap-2">
+                          <Calendar size={13} className="text-zinc-400" />
+                          {formBilling.billing_start_date
+                            ? new Date(calcularProximoVencimento(formBilling.plan_type, formBilling.due_day, formBilling.billing_start_date) + 'T12:00:00').toLocaleDateString('pt-BR')
+                            : '—'}
+                        </div>
+                      </div>
+
+                      {/* Código PIX */}
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1 mb-1 block">Código PIX (Copia e Cola)</label>
+                        <textarea
+                          value={formBilling.pix_code}
+                          onChange={e => setFormBilling(p => ({ ...p, pix_code: e.target.value }))}
+                          rows={3}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-mono focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none"
+                          placeholder="Cole aqui o código PIX completo..."
+                        />
+                        <p className="text-[10px] text-zinc-400 mt-1 ml-1">O QR Code será gerado automaticamente a partir deste código.</p>
+                      </div>
+
+                      {/* Observações */}
+                      <div className="col-span-2">
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1 mb-1 block">Observações</label>
+                        <textarea
+                          value={formBilling.notes}
+                          onChange={e => setFormBilling(p => ({ ...p, notes: e.target.value }))}
+                          rows={2}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none"
+                          placeholder="Notas sobre o pagamento, forma de pagamento, etc..."
+                        />
+                      </div>
+                    </div>
+                  </section>
+
+                  {/* Regras de bloqueio */}
+                  <section className="bg-amber-50 border border-amber-100 p-6 rounded-2xl">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle size={16} className="text-amber-500 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="text-xs font-black text-amber-800 uppercase tracking-widest mb-1">Regras de Acesso</p>
+                        <ul className="text-xs text-amber-700 space-y-1">
+                          <li>· Pagamento <span className="font-bold">em atraso</span>: exibe alerta em todas as telas.</li>
+                          <li>· Pagamento <span className="font-bold">atrasado por mais de 10 dias</span>: sistema bloqueado para uso.</li>
+                          <li>· A tela de Configurações permanece acessível para regularização.</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </section>
+
+                </div>
+              );
+            })()}
 
           </div>
         </main>

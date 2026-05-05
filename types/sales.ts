@@ -41,10 +41,12 @@ export interface Sale {
   customer_id: number | null;
   total_amount: number;
   discount_amount: number;
-  final_amount: number; 
+  final_amount: number;
   payment_method: string | null;
   payment_status: 'pending' | 'paid' | 'cancelled';
   observation: string | null;
+  consignado_commission_percent: number | null;
+  consignado_net_before_commission: number | null;
   // Objetos aninhados
   customer: NestedCustomer | null;
   items: SaleItem[];
