@@ -61,6 +61,7 @@ export default function HistoricoVendasCompacto() {
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroData, setFiltroData] = useState<string>("");
   const [modoConsignado, setModoConsignado] = useState(false);
+  const [vendaConsignadoRecibo, setVendaConsignadoRecibo] = useState<Sale | null>(null);
 
   // Estados para popup e toast
   const [popupAberto, setPopupAberto] = useState(false);
@@ -313,14 +314,7 @@ export default function HistoricoVendasCompacto() {
       ));
       setSelecionada(vendaAtualizada);
       setModalAberto(false);
-
-      mostrarPopup(
-        "Consignado Finalizado",
-        `Acerto realizado com sucesso!\n\nSaldo: ${formatarMoeda(saldo)}\nDesconto (${pct}%): ${formatarMoeda(saldo * pct / 100)}\nCobrado: ${formatarMoeda(payload.valorFinal)}`,
-        "sucesso",
-        undefined,
-        "Excelente"
-      );
+      setVendaConsignadoRecibo(vendaAtualizada);
 
     } catch (error: any) {
       console.error("Erro ao fechar consignado:", error);
@@ -804,6 +798,11 @@ export default function HistoricoVendasCompacto() {
       {/* RECIBO */}
       {modalRecibo && selecionada && (
         <Recibo venda={selecionada} onClose={() => setModalRecibo(false)} />
+      )}
+
+      {/* RECIBO DE FECHAMENTO DE CONSIGNADO */}
+      {vendaConsignadoRecibo && (
+        <Recibo venda={vendaConsignadoRecibo} onClose={() => setVendaConsignadoRecibo(null)} />
       )}
 
       {/* MODAL: DEVOLUÇÃO/TROCA */}

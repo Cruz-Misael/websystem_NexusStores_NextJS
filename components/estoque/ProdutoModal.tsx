@@ -494,6 +494,7 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                         preco={form.preco}
                         empresa={empresa.nome}
                         logoUrl={empresa.logoUrl}
+                        tamanho={form.size || undefined}
                       />
                     </div>
                   </div>
