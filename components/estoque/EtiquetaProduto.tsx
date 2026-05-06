@@ -10,6 +10,7 @@ interface Props {
   preco?: number;
   logoUrl?: string;
   empresa?: string;
+  tamanho?: string;
 }
 
 export default function EtiquetaProduto({
@@ -19,6 +20,7 @@ export default function EtiquetaProduto({
   preco,
   empresa = "Minha Empresa",
   logoUrl,
+  tamanho,
 }: Props) {
   const barcodeRef = useRef<SVGSVGElement | null>(null);
 
@@ -181,7 +183,7 @@ export default function EtiquetaProduto({
         )}
       </div>
 
-      {/* ── LINHA 4: Número do código + preço ── */}
+      {/* ── LINHA 4: Número do código + tamanho + preço ── */}
       <div
         style={{
           display: "flex",
@@ -200,10 +202,27 @@ export default function EtiquetaProduto({
             fontFamily: "Courier New, monospace",
             color: "#444",
             letterSpacing: "0.5px",
+            flexShrink: 0,
           }}
         >
           {codigo || "—"}
         </span>
+
+        {tamanho && (
+          <span
+            style={{
+              fontSize: "6pt",
+              fontWeight: "bold",
+              border: "0.5pt solid #000",
+              padding: "0 1mm",
+              borderRadius: "0.8mm",
+              lineHeight: 1.2,
+              flexShrink: 0,
+            }}
+          >
+            {tamanho.toUpperCase()}
+          </span>
+        )}
 
         {precoFormatado && (
           <span
@@ -211,6 +230,7 @@ export default function EtiquetaProduto({
               fontSize: "8pt",
               fontWeight: "bold",
               letterSpacing: "-0.2px",
+              flexShrink: 0,
             }}
           >
             {precoFormatado}

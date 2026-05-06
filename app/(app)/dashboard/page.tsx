@@ -42,7 +42,6 @@ import {
   getSalesByHour,
   getStockRuptureKPI,
   getSalesByOperator,
-  getTopCustomers
 } from "@/src/services/sales.service";
 
 // --- TIPOS DE DADOS ---
@@ -84,12 +83,6 @@ interface OperatorData {
   faturamento: number;
   ticketMedio: number;
 }
-interface TopCustomerData {
-  id: number;
-  nome: string;
-  vendas: number;
-  faturamento: number;
-}
 
 export default function DashboardExecutive() {
   
@@ -101,7 +94,6 @@ export default function DashboardExecutive() {
   const [salesByHour, setSalesByHour] = useState<SalesByHourData[]>([]);
   const [stockRupture, setStockRupture] = useState<StockRuptureData | null>(null);
   const [operatorData, setOperatorData] = useState<OperatorData[]>([]);
-  const [topCustomers, setTopCustomers] = useState<TopCustomerData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,7 +125,6 @@ export default function DashboardExecutive() {
           salesByHourResult,
           stockRuptureResult,
           operatorResult,
-          topCustomersResult
         ] = await Promise.all([
           getDashboardKPIs(periodo),
           getFinancialPerformance(periodo),
@@ -142,7 +133,6 @@ export default function DashboardExecutive() {
           getSalesByHour(periodo),
           getStockRuptureKPI(),
           getSalesByOperator(periodo),
-          getTopCustomers(periodo)
         ]);
 
         setKpiData(kpiResult);
@@ -152,7 +142,6 @@ export default function DashboardExecutive() {
         setSalesByHour(salesByHourResult);
         setStockRupture(stockRuptureResult);
         setOperatorData(operatorResult);
-        setTopCustomers(topCustomersResult);
 
       } catch (err: any) {
         setError(err.message || "Erro ao buscar dados do dashboard.");
@@ -485,91 +474,6 @@ export default function DashboardExecutive() {
             <div className="absolute -bottom-10 -right-10 w-40 h-40 bg-indigo-600 rounded-full blur-[80px] opacity-20"></div>
           </div>
 
-        </div>
-
-        {/* 4. TOP CLIENTES DO MÊS */}
-        <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm">
-          <div className="flex justify-between items-center mb-5">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-emerald-50">
-                <Users size={18} className="text-emerald-600" />
-              </div>
-              <div>
-                <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Top Clientes do Mês</h3>
-                <p className="text-xs text-zinc-500">Maiores compradores nos últimos 30 dias</p>
-              </div>
-            </div>
-          </div>
-
-          {loading ? (
-            <div className="space-y-3">
-              {Array.from({ length: 5 }).map((_, i) => (
-                <div key={i} className="h-12 w-full bg-zinc-100 rounded-lg animate-pulse" />
-              ))}
-            </div>
-          ) : topCustomers.length === 0 ? (
-            <div className="py-10 text-center">
-              <Users className="mx-auto mb-3 text-zinc-200" size={36} />
-              <p className="text-sm text-zinc-400 font-medium">Nenhuma venda com cliente identificado no período</p>
-            </div>
-          ) : (
-            <>
-              <div className="h-[220px] w-full mb-4">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={topCustomers} layout="vertical" margin={{ top: 0, right: 16, left: 0, bottom: 0 }}>
-                    <CartesianGrid horizontal={false} strokeDasharray="3 3" stroke="#f4f4f5" />
-                    <XAxis
-                      type="number"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#a1a1aa', fontSize: 11 }}
-                      tickFormatter={(v) => `R$${(v / 1000).toFixed(1)}k`}
-                    />
-                    <YAxis
-                      type="category"
-                      dataKey="nome"
-                      axisLine={false}
-                      tickLine={false}
-                      tick={{ fill: '#52525b', fontSize: 12, fontWeight: 600 }}
-                      width={110}
-                    />
-                    <Tooltip
-                      contentStyle={{ backgroundColor: '#18181b', borderRadius: '8px', border: 'none', color: '#fff', fontSize: '12px' }}
-                      formatter={(value) => [formatCurrency(value as number), 'Faturamento']}
-                    />
-                    <Bar dataKey="faturamento" radius={[0, 6, 6, 0]}>
-                      {topCustomers.map((_, index) => (
-                        <Cell
-                          key={`cell-${index}`}
-                          fill={index === 0 ? '#10b981' : index === 1 ? '#34d399' : index === 2 ? '#6ee7b7' : '#a7f3d0'}
-                        />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="space-y-2 border-t border-zinc-100 pt-4">
-                {topCustomers.map((c, index) => (
-                  <div key={c.id} className="flex items-center justify-between text-xs px-1">
-                    <div className="flex items-center gap-2">
-                      <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
-                        index === 0 ? 'bg-amber-100 text-amber-700' :
-                        index === 1 ? 'bg-zinc-200 text-zinc-600' :
-                        index === 2 ? 'bg-orange-100 text-orange-700' :
-                        'bg-zinc-100 text-zinc-500'
-                      }`}>{index + 1}</div>
-                      <span className="font-medium text-zinc-700 truncate max-w-[140px]">{c.nome}</span>
-                    </div>
-                    <div className="flex items-center gap-4 shrink-0">
-                      <span className="text-zinc-400">{c.vendas} venda{c.vendas !== 1 ? 's' : ''}</span>
-                      <span className="font-bold text-zinc-900 tabular-nums">{formatCurrency(c.faturamento)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
         </div>
 
         {/* 6. DESEMPENHO POR OPERADOR */}

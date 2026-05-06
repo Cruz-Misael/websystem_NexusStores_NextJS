@@ -19,6 +19,7 @@ import {
   XCircle,
   ChevronDown,
   ChevronUp,
+  BarChart2,
 } from "lucide-react";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -80,6 +81,7 @@ export default function Sidebar() {
     { name: "Vendas", icon: ShoppingCart, href: "/vendas" },
     { name: "Estoque", icon: Package, href: "/produtos" },
     { name: "Clientes", icon: Users, href: "/clientes" },
+    { name: "Relatórios", icon: BarChart2, href: "/relatorios" },
   ];
 
   return (

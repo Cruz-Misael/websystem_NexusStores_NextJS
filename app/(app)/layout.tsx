@@ -6,6 +6,7 @@ import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import PlansModal from "@/components/planos/ModalPlanoSaas";
 import BillingGuard from "@/components/billing/BillingGuard";
+import NexusIA from "@/components/ia/NexusIA";
 
 export default function AppLayout({
   children,
@@ -41,6 +42,7 @@ export default function AppLayout({
           </main>
         </BillingGuard>
       </div>
+      <NexusIA />
     </div>
   );
 }

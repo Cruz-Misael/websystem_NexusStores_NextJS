@@ -197,7 +197,7 @@ export default function LoginPage() {
             <footer className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 border-2 border-white/10" />
               <div>
-                <p className="text-sm font-bold text-white uppercase tracking-wide">Ricardo Oliveira</p>
+                <p className="text-sm font-bold text-white uppercase tracking-wide">Misael Cruz</p>
                 <p className="text-xs text-zinc-500 font-medium">CEO & Fundador</p>
               </div>
             </footer>

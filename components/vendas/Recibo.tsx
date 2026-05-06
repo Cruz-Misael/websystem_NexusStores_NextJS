@@ -72,14 +72,17 @@ export default function Recibo({ venda, onClose }: Props) {
   };
 
   const itens = venda.items?.filter((i) => i.quantity > 0) ?? [];
+  const isConsignado = venda.consignado_net_before_commission !== null && venda.consignado_net_before_commission !== undefined;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
       <div className="bg-white w-full max-w-xs rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
 
         {/* Toolbar */}
-        <div className="px-4 py-3 bg-zinc-900 flex justify-between items-center shrink-0">
-          <span className="text-white font-bold text-sm">Recibo #{venda.id}</span>
+        <div className={`px-4 py-3 flex justify-between items-center shrink-0 ${isConsignado ? 'bg-violet-900' : 'bg-zinc-900'}`}>
+          <span className="text-white font-bold text-sm">
+            {isConsignado ? 'Acerto de Consignado' : 'Recibo'} #{venda.id}
+          </span>
           <button onClick={onClose} className="text-zinc-400 hover:text-white transition-colors">
             <X size={18} />
           </button>
@@ -114,6 +117,15 @@ export default function Recibo({ venda, onClose }: Props) {
                 <p className="small text-[10px] text-zinc-500">{empresa.email}</p>
               )}
             </div>
+
+            {/* Label consignado */}
+            {isConsignado && (
+              <div className="text-center mb-3">
+                <span className="text-[9px] font-black uppercase tracking-widest bg-violet-100 text-violet-700 px-3 py-0.5 rounded-full">
+                  Acerto de Consignado
+                </span>
+              </div>
+            )}
 
             {/* Dados da venda */}
             <div className="mb-3 pb-3 border-b border-dashed border-zinc-300 space-y-0.5">
@@ -164,20 +176,41 @@ export default function Recibo({ venda, onClose }: Props) {
 
             {/* Totais */}
             <div className="mb-4 pb-3 border-b border-dashed border-zinc-300 space-y-1">
-              <div className="row flex justify-between text-zinc-500">
-                <span>Subtotal</span>
-                <span>{money(venda.total_amount || 0)}</span>
-              </div>
-              {(venda.discount_amount ?? 0) > 0 && (
-                <div className="row flex justify-between text-emerald-600">
-                  <span>Desconto</span>
-                  <span>- {money(venda.discount_amount)}</span>
-                </div>
+              {isConsignado ? (
+                <>
+                  <div className="row flex justify-between text-zinc-500">
+                    <span>Saldo do consignado</span>
+                    <span>{money(venda.consignado_net_before_commission!)}</span>
+                  </div>
+                  {(venda.consignado_commission_percent ?? 0) > 0 && (
+                    <div className="row flex justify-between text-emerald-600">
+                      <span>Desconto ({venda.consignado_commission_percent}%)</span>
+                      <span>- {money(venda.consignado_net_before_commission! * ((venda.consignado_commission_percent ?? 0) / 100))}</span>
+                    </div>
+                  )}
+                  <div className="total-row flex justify-between font-bold text-sm mt-1">
+                    <span>COBRADO</span>
+                    <span>{money(venda.final_amount)}</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="row flex justify-between text-zinc-500">
+                    <span>Subtotal</span>
+                    <span>{money(venda.total_amount || 0)}</span>
+                  </div>
+                  {(venda.discount_amount ?? 0) > 0 && (
+                    <div className="row flex justify-between text-emerald-600">
+                      <span>Desconto</span>
+                      <span>- {money(venda.discount_amount)}</span>
+                    </div>
+                  )}
+                  <div className="total-row flex justify-between font-bold text-sm mt-1">
+                    <span>TOTAL</span>
+                    <span>{money(venda.final_amount)}</span>
+                  </div>
+                </>
               )}
-              <div className="total-row flex justify-between font-bold text-sm mt-1">
-                <span>TOTAL</span>
-                <span>{money(venda.final_amount)}</span>
-              </div>
             </div>
 
             {/* Rodapé */}

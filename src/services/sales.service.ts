@@ -759,6 +759,78 @@ export async function getTopCustomers(periodo: { inicio: string; fim: string }, 
 }
 
 /* =========================
+   RELATÓRIO: PRODUTOS POR REVENDEDOR
+========================= */
+export interface ProdutoPorRevendedor {
+  clienteId: number;
+  clienteNome: string;
+  produtoSku: string;
+  produtoNome: string;
+  quantidadeTotal: number;
+  receitaTotal: number;
+  numeroPedidos: number;
+}
+
+export async function getTopProductsByCustomer(
+  periodo: { inicio: string; fim: string }
+): Promise<ProdutoPorRevendedor[]> {
+  const { data, error } = await supabase
+    .from("sales")
+    .select(`
+      customer_id,
+      customer:people(id, name),
+      sale_items(
+        product_id,
+        quantity,
+        total_price,
+        products(sku, name)
+      )
+    `)
+    .eq("payment_status", "paid")
+    .not("customer_id", "is", null)
+    .gte("sale_date", periodo.inicio)
+    .lte("sale_date", periodo.fim);
+
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return [];
+
+  const map = new Map<string, ProdutoPorRevendedor>();
+
+  (data as any[]).forEach((sale) => {
+    const customer = sale.customer;
+    if (!customer) return;
+
+    (sale.sale_items || []).forEach((item: any) => {
+      const product = item.products;
+      if (!product) return;
+
+      const key = `${sale.customer_id}_${item.product_id}`;
+      const existing = map.get(key);
+
+      if (existing) {
+        existing.quantidadeTotal += item.quantity || 0;
+        existing.receitaTotal += item.total_price || 0;
+        existing.numeroPedidos += 1;
+      } else {
+        map.set(key, {
+          clienteId: sale.customer_id,
+          clienteNome: customer.name || "Sem nome",
+          produtoSku: String(product.sku),
+          produtoNome: product.name || "Produto sem nome",
+          quantidadeTotal: item.quantity || 0,
+          receitaTotal: item.total_price || 0,
+          numeroPedidos: 1,
+        });
+      }
+    });
+  });
+
+  return Array.from(map.values()).sort(
+    (a, b) => b.receitaTotal - a.receitaTotal
+  );
+}
+
+/* =========================
    BUSCAR VENDAS POR CLIENTE
 ========================= */
 export async function getSalesByCustomerId(customerId: number) {
