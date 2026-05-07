@@ -389,7 +389,7 @@ export default function CaixaPDVPro() {
           case 'debito': return 'debit';
           case 'dinheiro': return 'cash';
           case 'pix': return 'pix';
-          case 'consignado': return 'credit_card';
+          case 'consignado': return 'consignado';
           default: return null;
         }
       };

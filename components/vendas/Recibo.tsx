@@ -3,11 +3,12 @@
 import { useEffect, useState } from "react";
 import { X, Printer } from "lucide-react";
 import { CompanyService } from "@/services/company.service";
-import { Sale } from "@/types/sales";
+import { Sale, ConsignadoItemBreakdown } from "@/types/sales";
 
 interface Props {
   venda: Sale;
   onClose: () => void;
+  consignadoBreakdown?: ConsignadoItemBreakdown;
 }
 
 const paymentLabel: Record<string, string> = {
@@ -15,9 +16,10 @@ const paymentLabel: Record<string, string> = {
   debit: "Cartão de Débito",
   pix: "PIX",
   cash: "Dinheiro",
+  consignado: "Consignado",
 };
 
-export default function Recibo({ venda, onClose }: Props) {
+export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
   const [empresa, setEmpresa] = useState<any>(null);
 
   useEffect(() => {
@@ -154,25 +156,66 @@ export default function Recibo({ venda, onClose }: Props) {
             </div>
 
             {/* Itens */}
-            <div className="mb-3 pb-3 border-b border-dashed border-zinc-300">
-              <div className="flex justify-between text-[9px] uppercase font-bold text-zinc-400 mb-2">
-                <span>Item</span>
-                <span>Total</span>
-              </div>
-              {itens.map((item) => (
-                <div key={item.id} className="mb-2">
-                  <p className="item-name font-bold leading-none truncate">
-                    {item.product?.name || item.product_name || "Produto"}
-                  </p>
-                  <div className="item-sub flex justify-between text-zinc-500 mt-0.5">
-                    <span>
-                      {money(item.unit_price)} × {item.quantity}
-                    </span>
-                    <span className="font-bold text-zinc-700">{money(item.total_price)}</span>
-                  </div>
+            {consignadoBreakdown ? (
+              <div className="mb-3 pb-3 border-b border-dashed border-zinc-300 space-y-3">
+                {/* Saiu da loja */}
+                <div>
+                  <div className="text-[9px] uppercase font-bold text-zinc-400 mb-1">Saiu da loja</div>
+                  {consignadoBreakdown.itensOriginais.map((item, i) => (
+                    <div key={i} className="flex justify-between text-xs">
+                      <span className="font-medium truncate max-w-[160px]">{item.nome}</span>
+                      <span className="text-zinc-500 shrink-0 ml-1">× {item.quantidade}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+
+                {/* Devolvidas */}
+                {consignadoBreakdown.itensDevolvidos.length > 0 && (
+                  <div>
+                    <div className="text-[9px] uppercase font-bold text-amber-500 mb-1">↩ Devolvidas</div>
+                    {consignadoBreakdown.itensDevolvidos.map((item, i) => (
+                      <div key={i} className="flex justify-between text-xs text-amber-700">
+                        <span className="truncate max-w-[160px]">{item.nome}</span>
+                        <span className="shrink-0 ml-1">× {item.quantidade}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Ficou com o cliente */}
+                {consignadoBreakdown.itensFicaram.length > 0 && (
+                  <div>
+                    <div className="text-[9px] uppercase font-bold text-emerald-600 mb-1">✓ Ficou com o cliente</div>
+                    {consignadoBreakdown.itensFicaram.map((item, i) => (
+                      <div key={i} className="flex justify-between text-xs text-emerald-700 font-medium">
+                        <span className="truncate max-w-[160px]">{item.nome}</span>
+                        <span className="shrink-0 ml-1">× {item.quantidade}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="mb-3 pb-3 border-b border-dashed border-zinc-300">
+                <div className="flex justify-between text-[9px] uppercase font-bold text-zinc-400 mb-2">
+                  <span>Item</span>
+                  <span>Total</span>
+                </div>
+                {itens.map((item) => (
+                  <div key={item.id} className="mb-2">
+                    <p className="item-name font-bold leading-none truncate">
+                      {item.product?.name || item.product_name || "Produto"}
+                    </p>
+                    <div className="item-sub flex justify-between text-zinc-500 mt-0.5">
+                      <span>
+                        {money(item.unit_price)} × {item.quantity}
+                      </span>
+                      <span className="font-bold text-zinc-700">{money(item.total_price)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Totais */}
             <div className="mb-4 pb-3 border-b border-dashed border-zinc-300 space-y-1">
