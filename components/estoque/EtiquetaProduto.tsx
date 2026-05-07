@@ -29,8 +29,8 @@ export default function EtiquetaProduto({
     try {
       JsBarcode(barcodeRef.current, codigo, {
         format: "CODE128",
-        width: 1.5,
-        height: 32,
+        width: 1.4,
+        height: 38,
         displayValue: false,
         margin: 0,
         background: "#ffffff",
@@ -41,25 +41,22 @@ export default function EtiquetaProduto({
     }
   }, [codigo]);
 
-  const nomeTruncado =
-    nome.length > 36 ? nome.slice(0, 34) + "…" : nome;
-
+  const nomeTruncado = nome.length > 28 ? nome.slice(0, 26) + "…" : nome;
   const precoFormatado =
     preco !== undefined
       ? preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })
       : null;
-
   const nomeLoja = (empresa || "Minha Empresa").toUpperCase();
 
   return (
     /*
-     * Dimensões: 50 mm × 30 mm — padrão Zebra ZD220/ZD421
-     * Sem gradientes, sem cores — impressão térmica direta (DTH)
+     * Dimensões: 50 mm × 55 mm — tag/pendão compacto para peças de roupa
+     * Sem gradientes — compatível com impressão térmica e jato de tinta
      */
     <div
       style={{
         width: "50mm",
-        height: "30mm",
+        height: "55mm",
         fontFamily: "Arial, Helvetica, sans-serif",
         background: "#ffffff",
         color: "#000000",
@@ -70,73 +67,56 @@ export default function EtiquetaProduto({
         boxSizing: "border-box",
       }}
     >
-      {/* ── LINHA 1: Cabeçalho — logo + nome da loja + SKU ── */}
+      {/* ── LINHA 1: Cabeçalho — logo + nome da loja ── */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
-          justifyContent: "space-between",
-          padding: "1.2mm 2mm 1mm",
-          borderBottom: "0.5pt solid #999",
-          background: "#f0f0f0",
+          justifyContent: "center",
+          gap: "3px",
+          padding: "2mm 2mm 1.5mm",
+          borderBottom: "0.5pt solid #bbb",
+          background: "#111",
           minHeight: "7mm",
           maxHeight: "7mm",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: "2px", overflow: "hidden" }}>
-          {logoUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={logoUrl}
-              alt=""
-              style={{
-                width: "14px",
-                height: "14px",
-                objectFit: "contain",
-                flexShrink: 0,
-              }}
-            />
-          ) : (
-            <div
-              style={{
-                width: "14px",
-                height: "14px",
-                background: "#222",
-                borderRadius: "2px",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ fontSize: "7pt", color: "#fff", fontWeight: "bold", lineHeight: 1 }}>N</span>
-            </div>
-          )}
-          <span
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt=""
+            style={{ width: "16px", height: "16px", objectFit: "contain", flexShrink: 0, filter: "brightness(0) invert(1)" }}
+          />
+        ) : (
+          <div
             style={{
-              fontSize: "6.5pt",
-              fontWeight: "bold",
-              letterSpacing: "0.4px",
-              whiteSpace: "nowrap",
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              maxWidth: "26mm",
+              width: "16px",
+              height: "16px",
+              background: "#fff",
+              borderRadius: "2px",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
             }}
           >
-            {nomeLoja}
-          </span>
-        </div>
-
+            <span style={{ fontSize: "7pt", color: "#111", fontWeight: "bold", lineHeight: 1 }}>N</span>
+          </div>
+        )}
         <span
           style={{
-            fontSize: "5pt",
-            fontFamily: "Courier New, monospace",
-            color: "#444",
+            fontSize: "7pt",
+            fontWeight: "bold",
+            letterSpacing: "0.8px",
+            color: "#fff",
             whiteSpace: "nowrap",
-            flexShrink: 0,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            maxWidth: "36mm",
           }}
         >
-          {sku}
+          {nomeLoja}
         </span>
       </div>
 
@@ -147,16 +127,17 @@ export default function EtiquetaProduto({
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          padding: "0 2.5mm",
+          padding: "1.5mm 3mm",
+          borderBottom: "0.5pt solid #ddd",
         }}
       >
         <p
           style={{
             margin: 0,
-            fontSize: "8pt",
+            fontSize: "9pt",
             fontWeight: "bold",
             textAlign: "center",
-            lineHeight: 1.25,
+            lineHeight: 1.3,
             wordBreak: "break-word",
           }}
         >
@@ -164,36 +145,32 @@ export default function EtiquetaProduto({
         </p>
       </div>
 
-      {/* ── LINHA 3: Código de barras (full-width) ── */}
+      {/* ── LINHA 3: Código de barras ── */}
       <div
         style={{
-          padding: "0 2mm",
-          borderTop: "0.5pt solid #ddd",
+          padding: "1.5mm 2mm 0",
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          minHeight: "9mm",
-          maxHeight: "9mm",
+          minHeight: "13mm",
+          maxHeight: "13mm",
         }}
       >
         {codigo ? (
-          <svg ref={barcodeRef} style={{ width: "100%", height: "9mm" }} />
+          <svg ref={barcodeRef} style={{ width: "100%", height: "11mm" }} />
         ) : (
           <span style={{ fontSize: "6pt", color: "#aaa" }}>Sem código de barras</span>
         )}
       </div>
 
-      {/* ── LINHA 4: Número do código + tamanho + preço ── */}
+      {/* ── LINHA 4: Número do código ── */}
       <div
         style={{
           display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "0.5mm 2.5mm 1mm",
-          borderTop: "0.5pt solid #ddd",
+          justifyContent: "center",
+          padding: "0 2mm 1.5mm",
           minHeight: "5mm",
           maxHeight: "5mm",
-          background: "#f8f8f8",
         }}
       >
         <span
@@ -201,40 +178,62 @@ export default function EtiquetaProduto({
             fontSize: "5.5pt",
             fontFamily: "Courier New, monospace",
             color: "#444",
-            letterSpacing: "0.5px",
-            flexShrink: 0,
+            letterSpacing: "0.8px",
           }}
         >
           {codigo || "—"}
         </span>
+      </div>
 
+      {/* ── LINHA 6: Tamanho + Preço ── */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: tamanho && precoFormatado ? "space-between" : "center",
+          padding: "1.5mm 3mm 2mm",
+          borderTop: "0.5pt solid #ddd",
+          minHeight: "9mm",
+          maxHeight: "9mm",
+          background: "#f8f8f8",
+        }}
+      >
         {tamanho && (
-          <span
-            style={{
-              fontSize: "6pt",
-              fontWeight: "bold",
-              border: "0.5pt solid #000",
-              padding: "0 1mm",
-              borderRadius: "0.8mm",
-              lineHeight: 1.2,
-              flexShrink: 0,
-            }}
-          >
-            {tamanho.toUpperCase()}
-          </span>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "5pt", color: "#888", letterSpacing: "0.5px", marginBottom: "0.5mm" }}>
+              TAMANHO
+            </div>
+            <span
+              style={{
+                fontSize: "10pt",
+                fontWeight: "bold",
+                border: "0.8pt solid #000",
+                padding: "0 2mm",
+                borderRadius: "1mm",
+                lineHeight: 1.4,
+                display: "inline-block",
+              }}
+            >
+              {tamanho.toUpperCase()}
+            </span>
+          </div>
         )}
-
         {precoFormatado && (
-          <span
-            style={{
-              fontSize: "8pt",
-              fontWeight: "bold",
-              letterSpacing: "-0.2px",
-              flexShrink: 0,
-            }}
-          >
-            {precoFormatado}
-          </span>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: "5pt", color: "#888", letterSpacing: "0.5px", marginBottom: "0.5mm" }}>
+              PREÇO
+            </div>
+            <span
+              style={{
+                fontSize: "11pt",
+                fontWeight: "bold",
+                letterSpacing: "-0.3px",
+                lineHeight: 1,
+              }}
+            >
+              {precoFormatado}
+            </span>
+          </div>
         )}
       </div>
     </div>

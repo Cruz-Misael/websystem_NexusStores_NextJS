@@ -302,7 +302,7 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
     const conteudo = document.getElementById("etiqueta-print");
     if (!conteudo) return;
 
-    const win = window.open("", "_blank", "width=400,height=300");
+    const win = window.open("", "_blank", "width=220,height=240");
     if (!win) return;
 
     win.document.open();
@@ -311,17 +311,21 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
         <head>
           <title>Etiqueta - ${form.nome || "Produto"}</title>
           <style>
-            @page { margin: 0; }
-            body {
-              display: flex;
-              justify-content: center;
-              align-items: center;
-              height: 100vh;
+            @page {
               margin: 0;
+              size: 50mm 55mm;
+            }
+            html, body {
+              margin: 0;
+              padding: 0;
+              width: 50mm;
+              height: 55mm;
               background: white;
             }
             * {
               box-sizing: border-box;
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
           </style>
         </head>
@@ -330,7 +334,7 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
           <script>
             window.onload = function () {
               window.print();
-              setTimeout(() => window.close(), 1000);
+              setTimeout(() => window.close(), 1200);
             };
           </script>
         </body>

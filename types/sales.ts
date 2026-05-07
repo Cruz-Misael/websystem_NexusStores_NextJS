@@ -52,6 +52,13 @@ export interface Sale {
   items: SaleItem[];
 }
 
+// Breakdown de itens para fechamento de consignado
+export interface ConsignadoItemBreakdown {
+  itensOriginais: { nome: string; quantidade: number }[];
+  itensDevolvidos: { nome: string; quantidade: number }[];
+  itensFicaram: { nome: string; quantidade: number }[];
+}
+
 // DTO (Data Transfer Object) para criar uma nova venda
 export interface CreateSaleDTO {
   customer_id?: number | null;
