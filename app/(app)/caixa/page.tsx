@@ -70,7 +70,7 @@ export default function CaixaPDVPro() {
   // Modal de consignado
   const [mostrarModalConsignado, setMostrarModalConsignado] = useState(false);
   const [dataPrevistaPagamento, setDataPrevistaPagamento] = useState("");
-  const [observacaoConsignado, setObservacaoConsignado] = useState("");
+  const [observacaoConsignado, setObservacaoConsignado] = useState(`OBRIGAÇÕES DA CONSIGNATÁRIA\n\n• Cuidados com o material:\n  - Manter as peças em perfeito estado, sem amassar, sujar ou danificar.\n  - Conferir as peças recebidas, confirmar a quantidade e dar OK do recebimento.\n  - Organizar adequadamente para devolução.\n\n• Controle de vendas:\n  - Passar a data do Acerto em até 3 dias após recebimento do Kit.\n  - Enviar relação detalhada das vendas até 3 dias antes do pagamento.\n  - Informar: descrição, quantidade e valor unitário dos itens vendidos.\n\n• Devolução:\n  - Restituir todos os itens não vendidos nas mesmas condições de recebimento.\n  - Cumprir prazo estipulado para devolução.\n  - Multas por atraso: 5% do valor total do kit até 3 dias | 10% após 3 dias.\n\n• Responsabilidade por danos/perdas:\n  - Indenização integral pelo valor do kit em caso de: danos irreparáveis, extravio de peças ou devolução em condições inadequadas.\n\nDe Acordo: __________________________`);
 
   // Estados para popup e toast
   const [popupAberto, setPopupAberto] = useState(false);
@@ -132,7 +132,7 @@ export default function CaixaPDVPro() {
 
   // Carregar todos os produtos para busca por nome
   useEffect(() => {
-    listarProdutos().then(setTodosProdutos).catch(() => {});
+    listarProdutos().then(setTodosProdutos).catch(() => { });
   }, []);
 
   // Carregar clientes para o modal de seleção
@@ -206,15 +206,15 @@ export default function CaixaPDVPro() {
   const temLetras = /[a-zA-ZÀ-ÿ]/.test(busca);
   const sugestoesFiltradas = temLetras && busca.length >= 2
     ? todosProdutos
-        .filter(p => p.name.toLowerCase().includes(busca.toLowerCase()))
-        .slice(0, 8)
+      .filter(p => p.name.toLowerCase().includes(busca.toLowerCase()))
+      .slice(0, 8)
     : [];
 
   // Abre/fecha dropdown conforme sugestões
   useEffect(() => {
     setDropdownAberto(sugestoesFiltradas.length > 0);
     if (!temLetras || busca.length < 2) setIndiceSelecionado(-1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busca]);
 
   const selecionarProdutoDropdown = (produto: any) => {
@@ -526,11 +526,10 @@ export default function CaixaPDVPro() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setModalOperadorAberto(true)}
-            className={`flex items-center gap-2 px-3 py-1.5 border rounded-lg shadow-sm transition-colors ${
-              operadorSelecionado
+            className={`flex items-center gap-2 px-3 py-1.5 border rounded-lg shadow-sm transition-colors ${operadorSelecionado
                 ? 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
                 : 'bg-zinc-50 border-zinc-200 hover:bg-zinc-100'
-            }`}
+              }`}
             title="Selecionar operador"
           >
             <div className={`w-5 h-5 rounded-full flex items-center justify-center ${operadorSelecionado ? 'bg-indigo-200' : 'bg-zinc-200'}`}>
@@ -594,13 +593,12 @@ export default function CaixaPDVPro() {
                         key={produto.sku}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => selecionarProdutoDropdown(produto)}
-                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between border-b border-zinc-50 last:border-0 transition-colors ${
-                          ativo
+                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between border-b border-zinc-50 last:border-0 transition-colors ${ativo
                             ? 'bg-indigo-50'
                             : semEstoque
-                            ? 'opacity-50 hover:bg-zinc-50'
-                            : 'hover:bg-zinc-50'
-                        }`}
+                              ? 'opacity-50 hover:bg-zinc-50'
+                              : 'hover:bg-zinc-50'
+                          }`}
                       >
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-zinc-800 truncate">{produto.name}</p>
@@ -802,10 +800,10 @@ export default function CaixaPDVPro() {
                       }
                     }}
                     className={`relative flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${pagamentoAtivo === metodo.id
-                        ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]'
-                        : metodo.id === 'consignado'
-                          ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
-                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+                      ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]'
+                      : metodo.id === 'consignado'
+                        ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
+                        : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
                       }`}
                   >
                     <metodo.icon size={20} className="mb-1.5" />
@@ -814,10 +812,10 @@ export default function CaixaPDVPro() {
                       <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full border-2 border-white"></div>
                     )}
                     <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${metodo.id === 'consignado'
-                        ? 'text-orange-400'
-                        : pagamentoAtivo === metodo.id
-                          ? 'text-zinc-400'
-                          : 'text-zinc-300'
+                      ? 'text-orange-400'
+                      : pagamentoAtivo === metodo.id
+                        ? 'text-zinc-400'
+                        : 'text-zinc-300'
                       }`}>
                       {metodo.key}
                     </span>
@@ -833,8 +831,8 @@ export default function CaixaPDVPro() {
               onClick={finalizarVenda}
               disabled={finalizando || carrinho.length === 0}
               className={`w-full h-14 rounded-lg font-bold text-lg shadow-lg transition-all flex items-center justify-between px-6 group active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${pagamentoAtivo === 'consignado'
-                  ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
                 }`}
             >
               {finalizando ? (
@@ -853,8 +851,8 @@ export default function CaixaPDVPro() {
                       {money(totalFinal)}
                     </span>
                     <span className={`px-2 py-1 rounded text-xs font-mono ${pagamentoAtivo === 'consignado'
-                        ? 'bg-orange-800/40 text-orange-100'
-                        : 'bg-emerald-800/40 text-emerald-100'
+                      ? 'bg-orange-800/40 text-orange-100'
+                      : 'bg-emerald-800/40 text-emerald-100'
                       }`}>
                       {pagamentoAtivo === 'consignado' ? 'F10' : 'F5'}
                     </span>
@@ -1006,8 +1004,8 @@ export default function CaixaPDVPro() {
                 op.name.toLowerCase().includes(buscaOperador.toLowerCase()) ||
                 (op.code?.toLowerCase() ?? '').includes(buscaOperador.toLowerCase())
               ).length === 0 && (
-                <p className="text-center text-zinc-400 py-8 text-sm">Nenhum operador encontrado</p>
-              )}
+                  <p className="text-center text-zinc-400 py-8 text-sm">Nenhum operador encontrado</p>
+                )}
             </div>
           </div>
         </div>
@@ -1089,7 +1087,7 @@ export default function CaixaPDVPro() {
                 onClick={() => {
                   setMostrarModalConsignado(false);
                   setDataPrevistaPagamento("");
-                  setObservacaoConsignado("");
+                  setObservacaoConsignado(`OBRIGAÇÕES DA CONSIGNATÁRIA\n\n• Cuidados com o material:\n  - Manter as peças em perfeito estado, sem amassar, sujar ou danificar.\n  - Conferir as peças recebidas, confirmar a quantidade e dar OK do recebimento.\n  - Organizar adequadamente para devolução.\n\n• Controle de vendas:\n  - Passar a data do Acerto em até 3 dias após recebimento do Kit.\n  - Enviar relação detalhada das vendas até 3 dias antes do pagamento.\n  - Informar: descrição, quantidade e valor unitário dos itens vendidos.\n\n• Devolução:\n  - Restituir todos os itens não vendidos nas mesmas condições de recebimento.\n  - Cumprir prazo estipulado para devolução.\n  - Multas por atraso: 5% do valor total do kit até 3 dias | 10% após 3 dias.\n\n• Responsabilidade por danos/perdas:\n  - Indenização integral pelo valor do kit em caso de: danos irreparáveis, extravio de peças ou devolução em condições inadequadas.\n\nDe Acordo: __________________________`);
                   setPagamentoAtivo('credito');
                 }}
                 className="px-5 py-2.5 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
