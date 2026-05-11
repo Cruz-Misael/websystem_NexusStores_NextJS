@@ -106,7 +106,7 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
     if (isConsig) {
       totaisHtml =
         row("Saldo do consignado", money(saldo)) +
-        (pct > 0 ? row(`Desconto de lucro (${pct}%)`, `− ${money(saldo * pct / 100)}`, "#059669") : "") +
+        (pct > 0 ? row(`Comissão (${pct}%)`, `− ${money(saldo * pct / 100)}`, "#059669") : "") +
         `<div style="display:flex;justify-content:space-between;align-items:baseline;
                      padding:14px 0 6px;margin-top:6px;border-top:1px solid #e5e7eb;
                      font-size:22px;font-weight:800;color:#111827">
@@ -124,6 +124,14 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
            <span>TOTAL</span><span>${money(venda.final_amount)}</span>
          </div>`;
     }
+
+    /* ── observação ── */
+    const obsHtml = venda.observation
+      ? `<div style="margin-top:20px;padding:12px 16px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px">
+           <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1.2px;color:#9ca3af;margin-bottom:6px">Observação</div>
+           <div style="font-size:12px;color:#374151;line-height:1.6;white-space:pre-wrap">${venda.observation}</div>
+         </div>`
+      : "";
 
     win.document.open();
     win.document.write(`<!DOCTYPE html>
@@ -196,6 +204,8 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
   <div style="margin-top:16px;border-top:2px solid #111827;padding-top:12px">
     ${totaisHtml}
   </div>
+
+  ${obsHtml}
 
   <!-- Rodapé -->
   <div style="margin-top:48px;padding-top:20px;border-top:1px solid #e5e7eb;
@@ -315,9 +325,9 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                 {/* Devolvidas */}
                 {consignadoBreakdown.itensDevolvidos.length > 0 && (
                   <div>
-                    <div className="text-[9px] uppercase font-bold text-amber-500 mb-1">↩ Devolvidas</div>
+                    <div className="text-[9px] uppercase font-bold text-zinc-400 mb-1">↩ Devolvidas</div>
                     {consignadoBreakdown.itensDevolvidos.map((item, i) => (
-                      <div key={i} className="flex justify-between text-xs text-amber-700">
+                      <div key={i} className="flex justify-between text-xs text-zinc-400 line-through">
                         <span className="truncate max-w-[160px]">{item.nome}</span>
                         <span className="shrink-0 ml-1">× {item.quantidade}</span>
                       </div>
@@ -328,9 +338,9 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                 {/* Ficou com o cliente */}
                 {consignadoBreakdown.itensFicaram.length > 0 && (
                   <div>
-                    <div className="text-[9px] uppercase font-bold text-emerald-600 mb-1">✓ Ficou com o cliente</div>
+                    <div className="text-[9px] uppercase font-bold text-zinc-400 mb-1">✓ Ficou com o cliente</div>
                     {consignadoBreakdown.itensFicaram.map((item, i) => (
-                      <div key={i} className="flex justify-between text-xs text-emerald-700 font-medium">
+                      <div key={i} className="flex justify-between text-xs text-zinc-800 font-semibold">
                         <span className="truncate max-w-[160px]">{item.nome}</span>
                         <span className="shrink-0 ml-1">× {item.quantidade}</span>
                       </div>
@@ -369,8 +379,8 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                     <span>{money(venda.consignado_net_before_commission!)}</span>
                   </div>
                   {(venda.consignado_commission_percent ?? 0) > 0 && (
-                    <div className="row flex justify-between text-emerald-600">
-                      <span>Desconto ({venda.consignado_commission_percent}%)</span>
+                    <div className="row flex justify-between text-zinc-500">
+                      <span>Comissão ({venda.consignado_commission_percent}%)</span>
                       <span>- {money(venda.consignado_net_before_commission! * ((venda.consignado_commission_percent ?? 0) / 100))}</span>
                     </div>
                   )}
@@ -398,6 +408,14 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                 </>
               )}
             </div>
+
+            {/* Observação */}
+            {venda.observation && (
+              <div className="mb-4 pb-3 border-b border-dashed border-zinc-300">
+                <div className="text-[9px] uppercase font-bold text-zinc-400 mb-1">Observação</div>
+                <p className="text-[11px] text-zinc-600 leading-relaxed whitespace-pre-wrap">{venda.observation}</p>
+              </div>
+            )}
 
             {/* Rodapé */}
             <div className="text-center text-[10px] text-zinc-400 space-y-0.5">
