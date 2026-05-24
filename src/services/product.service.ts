@@ -100,26 +100,42 @@ export async function listarProdutos() {
 }
 
 export async function listarProdutosPaginado(
-  pagina: number = 1, 
-  itensPorPagina: number = 50
+  pagina: number = 1,
+  itensPorPagina: number = 50,
+  busca?: string,
+  mostrarInativos?: boolean
 ) {
   const inicio = (pagina - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina - 1;
 
-  console.log(`Buscando produtos - Página ${pagina}, itens ${inicio} a ${fim}`);
-
-  const { data, error, count } = await supabase
+  let query = supabase
     .from("products")
     .select("*", { count: 'exact' })
-    .order("created_at", { ascending: false })
-    .range(inicio, fim);
+    .order("created_at", { ascending: false });
+
+  if (busca && busca.trim()) {
+    const buscaTrimmed = busca.trim();
+    const semPrefix = buscaTrimmed.replace(/^SKU-/i, "");
+    const comoNumero = Number(semPrefix);
+    const isNumero = semPrefix !== "" && !isNaN(comoNumero) && Number.isFinite(comoNumero);
+
+    if (isNumero) {
+      query = query.or(`name.ilike.%${buscaTrimmed}%,sku.eq.${comoNumero},barcode.eq.${comoNumero}`);
+    } else {
+      query = query.ilike("name", `%${buscaTrimmed}%`);
+    }
+  }
+
+  if (!mostrarInativos) {
+    query = query.or("is_active.eq.true,is_active.is.null");
+  }
+
+  const { data, error, count } = await query.range(inicio, fim);
 
   if (error) {
     console.error("Erro ao listar produtos paginado:", error);
     throw new Error(`Erro: ${error.message}`);
   }
-
-  console.log(`Encontrados ${data?.length || 0} produtos nesta página. Total: ${count}`);
 
   return {
     produtos: data || [],
@@ -128,6 +144,18 @@ export async function listarProdutosPaginado(
     totalPaginas: Math.ceil((count || 0) / itensPorPagina),
     itensPorPagina
   };
+}
+
+export async function buscarProdutoPorBarcode(barcode: number) {
+  const { data, error } = await supabase
+    .from("products")
+    .select("*")
+    .eq("barcode", barcode)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(`Erro ao buscar por barcode: ${error.message}`);
+  return data;
 }
 
 export async function deletarProduto(sku: number) {
