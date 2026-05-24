@@ -5,26 +5,19 @@ import {
   Search,
   Trash2,
   CreditCard,
-  Smartphone,
   QrCode,
   Banknote,
   User,
-  Percent,
-  MoreHorizontal,
-  Box,
-  Delete,
   ShoppingBag,
-  Menu,
   Maximize2,
   Loader2,
   AlertCircle,
-  CheckCircle
 } from "lucide-react";
 import { criarVenda } from "@/src/services/sales.service";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { CreateSaleDTO } from "@/types/sales";
-import { buscarPessoaPorId, listarPessoas } from "@/src/services/people.service";
+import { listarPessoas } from "@/src/services/people.service";
 import { listarProdutos, buscarProdutoPorSKU } from "@/src/services/product.service";
 import { listarOperadores, Operator } from "@/src/services/operator.service";
 import Recibo from "@/components/vendas/Recibo";
@@ -64,11 +57,15 @@ export default function CaixaPDVPro() {
   const [buscaOperador, setBuscaOperador] = useState("");
   const [finalizando, setFinalizando] = useState(false);
   const [vendaFinalizada, setVendaFinalizada] = useState<Sale | null>(null);
+  const [todosProdutos, setTodosProdutos] = useState<any[]>([]);
+  const [dropdownAberto, setDropdownAberto] = useState(false);
+  const [indiceSelecionado, setIndiceSelecionado] = useState(-1);
 
   // Estado para evitar hydration mismatch
   const [horaAtual, setHoraAtual] = useState("");
 
   const inputRef = useRef<HTMLInputElement>(null);
+  const buscaContainerRef = useRef<HTMLDivElement>(null);
 
   // Modal de consignado
   const [mostrarModalConsignado, setMostrarModalConsignado] = useState(false);
@@ -133,6 +130,11 @@ export default function CaixaPDVPro() {
     return () => clearInterval(interval);
   }, []);
 
+  // Carregar todos os produtos para busca por nome
+  useEffect(() => {
+    listarProdutos().then(setTodosProdutos).catch(() => {});
+  }, []);
+
   // Carregar clientes para o modal de seleção
   useEffect(() => {
     if (modalClienteAberto) carregarClientes();
@@ -146,20 +148,20 @@ export default function CaixaPDVPro() {
   // Persistência de foco no input de bipar
   useEffect(() => {
     const focusInput = () => {
-      // Registrar se alguma modal ou campo de busca de cliente está aberto
-      const modalAberta = modalClienteAberto || mostrarModalConsignado || popupAberto || modalOperadorAberto;
-      
+      const modalAberta = modalClienteAberto || mostrarModalConsignado || popupAberto || modalOperadorAberto || dropdownAberto;
       if (!modalAberta && inputRef.current && document.activeElement?.tagName !== 'INPUT') {
         inputRef.current.focus();
       }
     };
 
-    // Foca ao iniciar
     focusInput();
 
-    // Tentar focar novamente se o usuário clicar fora ou em áreas neutras
-    const handleGlobalClick = () => {
-      // Pequeno delay para permitir que o clique em outro botão/input seja processado primeiro
+    const handleGlobalClick = (e: MouseEvent) => {
+      // Fechar dropdown se clicar fora do container de busca
+      if (buscaContainerRef.current && !buscaContainerRef.current.contains(e.target as Node)) {
+        setDropdownAberto(false);
+        setIndiceSelecionado(-1);
+      }
       setTimeout(focusInput, 100);
     };
 
@@ -180,7 +182,7 @@ export default function CaixaPDVPro() {
       window.removeEventListener("click", handleGlobalClick);
       window.removeEventListener("keydown", handleKeyDownGlobal);
     };
-  }, [modalClienteAberto, mostrarModalConsignado, popupAberto, modalOperadorAberto]);
+  }, [modalClienteAberto, mostrarModalConsignado, popupAberto, modalOperadorAberto, dropdownAberto]);
 
   const carregarClientes = async () => {
     try {
@@ -198,6 +200,46 @@ export default function CaixaPDVPro() {
     } catch (error) {
       console.error("Erro ao carregar operadores:", error);
     }
+  };
+
+  // Busca por nome — derivado do texto digitado
+  const temLetras = /[a-zA-ZÀ-ÿ]/.test(busca);
+  const sugestoesFiltradas = temLetras && busca.length >= 2
+    ? todosProdutos
+        .filter(p => p.name.toLowerCase().includes(busca.toLowerCase()))
+        .slice(0, 8)
+    : [];
+
+  // Abre/fecha dropdown conforme sugestões
+  useEffect(() => {
+    setDropdownAberto(sugestoesFiltradas.length > 0);
+    if (!temLetras || busca.length < 2) setIndiceSelecionado(-1);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busca]);
+
+  const selecionarProdutoDropdown = (produto: any) => {
+    if ((produto.stock_quantity || 0) <= 0) {
+      mostrarPopup(
+        "Produto Sem Estoque",
+        `"${produto.name}" está com estoque zerado.`,
+        "erro",
+        undefined,
+        "Entendido"
+      );
+      return;
+    }
+    adicionarAoCarrinho({
+      id: produto.sku,
+      codigo: `SKU-${produto.sku}`,
+      nome: produto.name,
+      precoUnitario: produto.price || 0,
+      quantidade: 1,
+      sku: produto.sku,
+      custo: produto.cost,
+      estoqueAtual: produto.stock_quantity || 0,
+    });
+    setDropdownAberto(false);
+    setIndiceSelecionado(-1);
   };
 
   // Totais
@@ -299,18 +341,6 @@ export default function CaixaPDVPro() {
     }
   };
 
-  const adiconarComVerificacao = (item: any) => {
-    if (item.estoqueAtual <= 0) {
-      mostrarPopup(
-        "Sem Estoque",
-        `O item "${item.nome}" não possui unidades em estoque.`,
-        "erro"
-      );
-      return;
-    }
-    adicionarAoCarrinho(item);
-  };
-
   const adicionarAoCarrinho = (novoItem: ItemCarrinho, barcode?: string) => {
     setCarrinho(prev => {
       const existente = prev.find(item => item.sku === novoItem.sku);
@@ -324,11 +354,36 @@ export default function CaixaPDVPro() {
       return [...prev, { ...novoItem, codigo: barcode || novoItem.codigo }];
     });
     setBusca("");
+    setDropdownAberto(false);
+    setIndiceSelecionado(-1);
   };
 
   const handleKeyDown = async (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setDropdownAberto(false);
+      setIndiceSelecionado(-1);
+      setBusca("");
+      return;
+    }
+    if (sugestoesFiltradas.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setIndiceSelecionado(prev => Math.min(prev + 1, sugestoesFiltradas.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setIndiceSelecionado(prev => Math.max(prev - 1, -1));
+        return;
+      }
+      if (e.key === 'Enter' && indiceSelecionado >= 0) {
+        e.preventDefault();
+        selecionarProdutoDropdown(sugestoesFiltradas[indiceSelecionado]);
+        return;
+      }
+    }
     if (buscandoProduto) return;
-    if (e.key === 'Enter' && busca) {
+    if (e.key === 'Enter' && busca && !temLetras) {
       await buscarProduto(busca);
     }
   };
@@ -389,7 +444,7 @@ export default function CaixaPDVPro() {
           case 'debito': return 'debit';
           case 'dinheiro': return 'cash';
           case 'pix': return 'pix';
-          case 'consignado': return 'credit_card';
+          case 'consignado': return 'consignado';
           default: return null;
         }
       };
@@ -500,8 +555,8 @@ export default function CaixaPDVPro() {
 
           {/* Barra de Busca */}
           <div className="p-4 border-b border-zinc-100 shrink-0">
-            <div className="relative group">
-              <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2 text-zinc-400">
+            <div ref={buscaContainerRef} className="relative">
+              <div className="absolute left-3 top-1/2 -translate-y-1/2 flex items-center gap-2 text-zinc-400 z-10">
                 <Search size={18} />
                 {buscandoProduto && <Loader2 size={14} className="animate-spin" />}
               </div>
@@ -511,15 +566,62 @@ export default function CaixaPDVPro() {
                 value={busca}
                 onChange={e => setBusca(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="Escaneie ou digite o código (F2)..."
+                placeholder="Escaneie o código ou digite o nome do produto..."
                 className="w-full h-12 pl-10 pr-20 bg-zinc-50 border border-zinc-200 rounded-lg text-lg font-medium outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder:text-zinc-400"
                 autoFocus
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
-                <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-zinc-500 bg-white border border-zinc-200 rounded shadow-sm">
-                  ENTER
-                </kbd>
+                {!temLetras && (
+                  <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-zinc-500 bg-white border border-zinc-200 rounded shadow-sm">
+                    ENTER
+                  </kbd>
+                )}
               </div>
+
+              {/* Dropdown de busca por nome */}
+              {dropdownAberto && sugestoesFiltradas.length > 0 && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                  <div className="px-3 py-1.5 bg-zinc-50 border-b border-zinc-100">
+                    <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                      {sugestoesFiltradas.length} produto(s) encontrado(s) — ↑↓ navegar · Enter selecionar
+                    </span>
+                  </div>
+                  {sugestoesFiltradas.map((produto, idx) => {
+                    const semEstoque = (produto.stock_quantity || 0) <= 0;
+                    const ativo = idx === indiceSelecionado;
+                    return (
+                      <button
+                        key={produto.sku}
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => selecionarProdutoDropdown(produto)}
+                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between border-b border-zinc-50 last:border-0 transition-colors ${
+                          ativo
+                            ? 'bg-indigo-50'
+                            : semEstoque
+                            ? 'opacity-50 hover:bg-zinc-50'
+                            : 'hover:bg-zinc-50'
+                        }`}
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-zinc-800 truncate">{produto.name}</p>
+                          <p className="text-[10px] text-zinc-400 font-mono">
+                            SKU {produto.sku}
+                            {produto.barcode ? ` · ${produto.barcode}` : ''}
+                            {semEstoque
+                              ? ' · sem estoque'
+                              : ` · ${produto.stock_quantity} em estoque`}
+                          </p>
+                        </div>
+                        <div className="shrink-0 ml-4 text-right">
+                          <p className={`text-sm font-bold ${semEstoque ? 'text-zinc-400' : 'text-zinc-900'}`}>
+                            {money(produto.price || 0)}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
 

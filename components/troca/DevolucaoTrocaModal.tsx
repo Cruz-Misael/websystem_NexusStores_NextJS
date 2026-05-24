@@ -5,18 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import {
   Barcode,
   RotateCcw,
-  Trash2,
   X,
   Info,
-  CheckCircle2,
   ShoppingBag,
   PlusCircle,
-  ArrowRight,
   Plus,
   Minus,
   Briefcase,
-  Zap,
-  AlertCircle
 } from "lucide-react";
 import { buscarProdutoPorBarcodeOuSKU } from "@/src/services/product.service";
 
@@ -296,115 +291,120 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   }
 
   return (
-    <div className="fixed inset-0 bg-zinc-950/60 backdrop-blur-sm flex items-center justify-center z-[100] p-4 lg:p-8 animate-in fade-in duration-200">
-      <div className="bg-zinc-50 w-full max-w-6xl h-[88vh] rounded-[2rem] shadow-2xl flex overflow-hidden border border-white/20 relative">
+    <div className="fixed inset-0 bg-zinc-950/50 backdrop-blur-sm flex items-center justify-center z-[100] p-4 animate-in fade-in duration-150">
+      <div className={`bg-white w-full ${isConsignado ? 'max-w-4xl' : 'max-w-5xl'} h-[84vh] rounded-xl shadow-2xl flex overflow-hidden border border-zinc-200`}>
 
-        {/* Lado Esquerdo: Centro de Operações */}
-        <div className="flex-1 flex flex-col min-w-0 bg-white shadow-xl z-20">
+        {/* Painel esquerdo: itens */}
+        <div className="flex-1 flex flex-col min-w-0 border-r border-zinc-100">
 
-          {/* Header Minimalista Nexus */}
-          <div className="px-8 py-6 flex justify-between items-center bg-white border-b border-zinc-100">
-            <div>
-              <h2 className="text-xl font-bold text-zinc-900 tracking-tight flex items-center gap-3">
-                <div className={`p-2 rounded-xl ${isConsignado ? 'bg-violet-50 text-violet-600' : 'bg-indigo-50 text-indigo-600'}`}>
-                  {isConsignado ? <Briefcase size={20} strokeWidth={2.5} /> : <RotateCcw size={20} strokeWidth={2.5} />}
-                </div>
-                {isConsignado ? 'Fechamento de Consignado' : 'Gestão de Troca e Devolução'}
-              </h2>
-              <p className="text-xs text-zinc-500 font-medium mt-1 ml-12">
-                Venda <span className="font-bold text-indigo-600">#{venda.id}</span> • {venda.customer?.name || 'Cliente Geral'}
-              </p>
+          {/* Header */}
+          <div className="px-5 py-4 flex items-center justify-between border-b border-zinc-100">
+            <div className="flex items-center gap-2.5">
+              {isConsignado
+                ? <Briefcase size={16} className="text-zinc-500" />
+                : <RotateCcw size={16} className="text-zinc-500" />}
+              <div>
+                <h2 className="text-sm font-bold text-zinc-900">
+                  {isConsignado ? 'Fechamento de Consignado' : 'Troca / Devolução'}
+                </h2>
+                <p className="text-[11px] text-zinc-400">
+                  Venda <span className="font-semibold text-indigo-600">#{venda.id}</span>
+                  {venda.customer?.name ? ` · ${venda.customer.name}` : ''}
+                </p>
+              </div>
             </div>
-            <button onClick={onClose} className="w-10 h-10 flex items-center justify-center hover:bg-zinc-100 rounded-full transition-all text-zinc-400">
-              <X size={20} />
+            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-zinc-100 rounded-lg transition-colors text-zinc-400">
+              <X size={16} />
             </button>
           </div>
 
           <div className="flex-1 flex overflow-hidden">
 
-            {/* Coluna 1: Devolução (O que volta) */}
-            <div className="flex-1 flex flex-col border-r border-zinc-100 bg-zinc-50/50">
-              <div className="p-6 pb-2">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center gap-2">
-                    <div className="w-2 h-5 bg-amber-500 rounded-full" />
-                    <h3 className="font-bold text-zinc-800 text-sm">Entrada no Estoque</h3>
-                  </div>
-                  <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-100 text-center uppercase tracking-widest">
-                    {quantidadeRemovida} devoluções
+            {/* Coluna: devolução */}
+            <div className="flex-1 flex flex-col">
+              <div className="px-4 pt-4 pb-2">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">
+                    {isConsignado ? 'Peças devolvidas' : 'Entrada no estoque'}
                   </span>
+                  {quantidadeRemovida > 0 && (
+                    <span className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
+                      {quantidadeRemovida} un.
+                    </span>
+                  )}
                 </div>
-                <div className="relative group">
-                  <Barcode className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-amber-500 transition-colors" size={18} strokeWidth={2} />
+                <div className="relative">
+                  <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={15} />
                   <input
                     ref={inputDevolucaoRef}
                     type="text"
-                    placeholder="Bipar devolução..."
+                    placeholder="Bipar código..."
                     value={barcodeDevolucao}
                     onChange={(e) => setBarcodeDevolucao(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        handleBipDevolucao(barcodeDevolucao);
-                      }
+                      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleBipDevolucao(barcodeDevolucao); }
                     }}
-                    className="w-full bg-white border-2 border-zinc-100 rounded-2xl pl-12 pr-4 py-3 text-sm focus:border-amber-500 focus:ring-4 focus:ring-amber-500/10 transition-all outline-none font-mono placeholder:text-zinc-400 shadow-sm"
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 outline-none font-mono placeholder:text-zinc-400 transition-all"
                   />
                 </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-3 pt-2">
+              <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1.5 pt-1">
                 {venda.itens.filter(i => i.quantidade > 0).map(item => {
                   const qtdDevolvida = itensDevolvidos[item.id] ?? 0;
                   const isSelected = qtdDevolvida > 0;
                   return (
-                    <div key={item.id} className={`group relative p-4 rounded-2xl border bg-white transition-all ${isSelected ? 'border-amber-200 shadow-md ring-4 ring-amber-50' : 'border-zinc-100 shadow-sm opacity-60 hover:opacity-100'}`}>
-                      <div className="flex justify-between items-center">
-                        <div>
-                          <p className={`font-bold text-sm ${isSelected ? 'text-zinc-900' : 'text-zinc-600'}`}>{item.nome}</p>
-                          <p className="text-[10px] text-zinc-400 font-mono mt-0.5">{item.codigoBarras || item.id}</p>
-                        </div>
-                        <div className="text-right">
-                          <p className={`text-sm font-bold ${isSelected ? 'text-amber-600' : 'text-zinc-900'}`}>R$ {item.precoUnitario.toFixed(2)}</p>
-                        </div>
+                    <div
+                      key={item.id}
+                      className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all ${
+                        isSelected
+                          ? 'border-zinc-300 bg-zinc-50'
+                          : 'border-zinc-100 opacity-50 hover:opacity-80'
+                      }`}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-zinc-800 truncate">{item.nome}</p>
+                        <p className="text-[10px] text-zinc-400 font-mono">
+                          {item.codigoBarras || item.id} · {item.quantidade} unid. · R$ {item.precoUnitario.toFixed(2)}
+                        </p>
                       </div>
-
-                      {isSelected && (
-                        <div className="mt-4 pt-4 border-t border-zinc-100 flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-amber-600 uppercase tracking-widest bg-amber-50 px-2 py-1 rounded">Devolvendo</span>
-                          <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200 rounded-lg p-1 shadow-inner">
-                            <button onClick={() => handleRemoverUnidade(item.id)} className="w-7 h-7 flex items-center justify-center hover:bg-white text-zinc-600 rounded-md transition-colors shadow-sm">
-                              <Minus size={14} strokeWidth={2.5} />
-                            </button>
-                            <span className="w-8 text-center font-bold text-sm text-zinc-800">{qtdDevolvida}</span>
-                            <button onClick={() => handleAdicionarUnidade(item.id)} className="w-7 h-7 flex items-center justify-center hover:bg-white text-zinc-600 rounded-md transition-colors shadow-sm">
-                              <Plus size={14} strokeWidth={2.5} />
-                            </button>
-                          </div>
-                        </div>
-                      )}
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button
+                          onClick={() => handleRemoverUnidade(item.id)}
+                          className="w-6 h-6 flex items-center justify-center hover:bg-zinc-200 text-zinc-500 rounded transition-colors"
+                        >
+                          <Minus size={12} />
+                        </button>
+                        <span className={`w-7 text-center text-sm font-bold ${isSelected ? 'text-zinc-900' : 'text-zinc-300'}`}>
+                          {qtdDevolvida}
+                        </span>
+                        <button
+                          onClick={() => handleAdicionarUnidade(item.id)}
+                          className="w-6 h-6 flex items-center justify-center hover:bg-zinc-200 text-zinc-500 rounded transition-colors"
+                        >
+                          <Plus size={12} />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Coluna 2: Troca (O que entra) */}
+            {/* Coluna: novos itens (troca, não consignado) */}
             {!isConsignado && (
-              <div className="flex-1 flex flex-col bg-zinc-50/50">
-                <div className="p-6 pb-2">
-                  <div className="flex items-center justify-between mb-4">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-5 bg-emerald-500 rounded-full" />
-                      <h3 className="font-bold text-zinc-800 text-sm">Saída da Loja</h3>
-                    </div>
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded-full border border-emerald-100 text-center uppercase tracking-widest">
-                      {itensNovos.length} novos
-                    </span>
+              <div className="flex-1 flex flex-col border-l border-zinc-100">
+                <div className="px-4 pt-4 pb-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">Saída da loja</span>
+                    {itensNovos.length > 0 && (
+                      <span className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
+                        {itensNovos.length} item(ns)
+                      </span>
+                    )}
                   </div>
-                  <div className="relative group">
-                    <PlusCircle className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-400 group-focus-within:text-emerald-500 transition-colors" size={18} strokeWidth={2} />
+                  <div className="relative">
+                    <PlusCircle className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={15} />
                     <input
                       ref={inputAdicaoRef}
                       type="text"
@@ -412,48 +412,34 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                       value={barcodeAdicao}
                       onChange={(e) => setBarcodeAdicao(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          handleBipAdicao(barcodeAdicao);
-                        }
+                        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleBipAdicao(barcodeAdicao); }
                       }}
-                      className="w-full bg-white border-2 border-zinc-100 rounded-2xl pl-12 pr-4 py-3 text-sm focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 transition-all outline-none font-mono placeholder:text-zinc-400 shadow-sm"
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 outline-none font-mono placeholder:text-zinc-400 transition-all"
                     />
                   </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto p-6 space-y-3 pt-2">
+                <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-1.5 pt-1">
                   {itensNovos.length === 0 ? (
-                    <div className="h-full flex flex-col items-center justify-center opacity-40 px-8 text-center text-zinc-400">
-                      <div className="w-16 h-16 bg-zinc-100 rounded-full flex items-center justify-center mb-4">
-                        <ShoppingBag size={28} strokeWidth={1.5} className="text-zinc-400" />
-                      </div>
-                      <p className="text-xs font-bold uppercase tracking-widest">Bipe as peças novas<br/>para a troca</p>
+                    <div className="h-full flex flex-col items-center justify-center text-zinc-300">
+                      <ShoppingBag size={24} strokeWidth={1.5} className="mb-2" />
+                      <p className="text-[11px] font-medium uppercase tracking-widest text-center">Bipe as peças<br/>para troca</p>
                     </div>
                   ) : (
                     itensNovos.map(item => (
-                      <div key={item.sku} className="p-4 rounded-2xl border border-emerald-200 bg-emerald-50/30 shadow-md ring-4 ring-emerald-50 animate-in slide-in-from-right-2 duration-200">
-                        <div className="flex justify-between items-center">
-                          <div>
-                            <p className="font-bold text-sm text-zinc-900">{item.nome}</p>
-                            <p className="text-[10px] text-zinc-400 font-mono mt-0.5">SKU: {item.sku}</p>
-                          </div>
-                          <div className="text-right">
-                            <p className="text-sm font-bold text-emerald-600">R$ {item.precoUnitario.toFixed(2)}</p>
-                          </div>
+                      <div key={item.sku} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-zinc-200 bg-zinc-50 transition-all">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-zinc-800 truncate">{item.nome}</p>
+                          <p className="text-[10px] text-zinc-400 font-mono">SKU: {item.sku} · R$ {item.precoUnitario.toFixed(2)}</p>
                         </div>
-                        <div className="mt-4 pt-4 border-t border-emerald-100 flex items-center justify-between">
-                          <span className="text-[10px] font-bold text-emerald-600 uppercase tracking-widest bg-emerald-50 px-2 py-1 rounded">Levando</span>
-                          <div className="flex items-center gap-1 bg-white border border-emerald-100 rounded-lg p-1 shadow-inner">
-                            <button onClick={() => handleRemoverNovoItem(item.sku)} className="w-7 h-7 flex items-center justify-center hover:bg-zinc-50 text-emerald-600 rounded-md transition-colors shadow-sm">
-                              <Minus size={14} strokeWidth={2.5} />
-                            </button>
-                            <span className="w-8 text-center font-bold text-sm text-zinc-900">{item.quantidade}</span>
-                            <button onClick={() => handleAdicionarNovoItem(item.sku)} className="w-7 h-7 flex items-center justify-center hover:bg-zinc-50 text-emerald-600 rounded-md transition-colors shadow-sm">
-                              <Plus size={14} strokeWidth={2.5} />
-                            </button>
-                          </div>
+                        <div className="flex items-center gap-0.5 shrink-0">
+                          <button onClick={() => handleRemoverNovoItem(item.sku)} className="w-6 h-6 flex items-center justify-center hover:bg-zinc-200 text-zinc-500 rounded transition-colors">
+                            <Minus size={12} />
+                          </button>
+                          <span className="w-7 text-center text-sm font-bold text-zinc-900">{item.quantidade}</span>
+                          <button onClick={() => handleAdicionarNovoItem(item.sku)} className="w-6 h-6 flex items-center justify-center hover:bg-zinc-200 text-zinc-500 rounded transition-colors">
+                            <Plus size={12} />
+                          </button>
                         </div>
                       </div>
                     ))
@@ -463,69 +449,77 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
             )}
           </div>
 
-          {/* Rodapé Alertas */}
-          <div className="h-10 flex items-center justify-center gap-3">
-            {mensagemErro && <span className="text-xs text-red-500">{mensagemErro}</span>}
-            {mensagemSucesso && <span className="text-xs text-emerald-600">{mensagemSucesso}</span>}
+          {/* Alertas */}
+          <div className="h-9 px-4 flex items-center gap-2 border-t border-zinc-50">
+            {mensagemErro && <span className="text-[11px] text-red-500">{mensagemErro}</span>}
+            {mensagemSucesso && <span className="text-[11px] text-emerald-600">{mensagemSucesso}</span>}
           </div>
         </div>
 
-        {/* Lado Direito: Resumo */}
-        <div className="w-[320px] bg-white pt-6 pb-6 px-8 flex flex-col relative z-20 shadow-[-10px_0_30px_rgba(0,0,0,0.02)]">
-          <div className="flex-1">
-            <h3 className="text-sm font-bold uppercase tracking-widest mb-6 text-zinc-400">
-              Resumo Final
-            </h3>
+        {/* Painel direito: resumo */}
+        <div className="w-64 flex flex-col bg-zinc-50 border-l border-zinc-100">
+          <div className="flex-1 overflow-y-auto px-5 py-5 space-y-4">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Resumo</p>
 
-            <div className="space-y-5">
-              {/* Total devolvido */}
-              <div>
-                <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mb-1">Total Devolvido</p>
-                <div className="text-zinc-800">
-                  <span className="text-sm font-bold text-zinc-400">R$</span>
-                  <span className="text-3xl font-black ml-1 tracking-tight">{valorTotalRemovido.toFixed(2)}</span>
+            {/* Tabela de peças — consignado */}
+            {isConsignado && (
+              <div className="rounded-lg border border-zinc-200 overflow-hidden bg-white">
+                <div className="grid grid-cols-[1fr_28px_28px_28px] text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-50 px-3 py-2 gap-1 border-b border-zinc-100">
+                  <span>Produto</span>
+                  <span className="text-center">↑</span>
+                  <span className="text-center">↩</span>
+                  <span className="text-center">✓</span>
+                </div>
+                {venda.itens.filter(i => i.quantidade > 0).map(item => {
+                  const dev = itensDevolvidos[item.id] ?? 0;
+                  const fica = item.quantidade - dev;
+                  return (
+                    <div key={item.id} className="grid grid-cols-[1fr_28px_28px_28px] items-center px-3 py-2 gap-1 border-b border-zinc-50 last:border-0 text-xs">
+                      <span className="text-zinc-700 truncate">{item.nome}</span>
+                      <span className="text-center text-zinc-400">{item.quantidade}</span>
+                      <span className={`text-center font-semibold ${dev > 0 ? 'text-zinc-700' : 'text-zinc-300'}`}>{dev}</span>
+                      <span className={`text-center font-semibold ${fica > 0 ? 'text-indigo-600' : 'text-zinc-300'}`}>{fica}</span>
+                    </div>
+                  );
+                })}
+                <div className="grid grid-cols-[1fr_28px_28px_28px] items-center px-3 py-2 gap-1 bg-zinc-50 text-[11px] font-bold text-zinc-500 border-t border-zinc-100">
+                  <span>Total</span>
+                  <span className="text-center">{venda.itens.reduce((s, i) => s + i.quantidade, 0)}</span>
+                  <span className="text-center text-zinc-700">{quantidadeRemovida}</span>
+                  <span className="text-center text-indigo-600">
+                    {venda.itens.reduce((s, i) => s + i.quantidade - (itensDevolvidos[i.id] ?? 0), 0)}
+                  </span>
                 </div>
               </div>
+            )}
 
-              {/* Total acrescentado (apenas troca) */}
-              {!isConsignado && (
-                <div>
-                  <p className="text-[10px] text-zinc-400 font-bold uppercase tracking-widest mb-1">Total Acrescentado</p>
-                  <div className="text-zinc-800">
-                    <span className="text-sm font-bold text-zinc-400">R$</span>
-                    <span className="text-3xl font-black ml-1 tracking-tight">{valorAdicionado.toFixed(2)}</span>
-                  </div>
+            {/* Breakdown financeiro */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs text-zinc-500">
+                <span>Valor consignado</span>
+                <span>R$ {valorTotalCompra.toFixed(2)}</span>
+              </div>
+              <div className="flex justify-between text-xs text-zinc-500">
+                <span>(−) Devolvidos</span>
+                <span>R$ {valorTotalRemovido.toFixed(2)}</span>
+              </div>
+              {!isConsignado && valorAdicionado > 0 && (
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>(+) Acrescentados</span>
+                  <span>R$ {valorAdicionado.toFixed(2)}</span>
                 </div>
               )}
-
-              {/* Breakdown detalhado */}
-              <div className="pt-4 space-y-3 border-t border-zinc-100">
-                <div className="flex justify-between text-xs text-zinc-500 font-medium">
-                  <span>Valor Original</span>
-                  <span>R$ {valorTotalCompra.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-xs text-zinc-500 font-medium">
-                  <span>(-) Devolvidos</span>
-                  <span className="text-amber-600">- R$ {valorTotalRemovido.toFixed(2)}</span>
-                </div>
-                {!isConsignado && valorAdicionado > 0 && (
-                  <div className="flex justify-between text-xs text-zinc-500 font-medium">
-                    <span>(+) Acrescentados</span>
-                    <span className="text-emerald-600">+ R$ {valorAdicionado.toFixed(2)}</span>
-                  </div>
-                )}
-                <div className="flex justify-between text-xs font-bold text-zinc-800 pt-2 border-t border-zinc-100">
-                  <span>Saldo do cliente</span>
-                  <span className="font-mono">R$ {saldoDevedor.toFixed(2)}</span>
-                </div>
+              <div className="flex justify-between text-xs font-semibold text-zinc-800 pt-2 border-t border-zinc-200">
+                <span>Saldo</span>
+                <span>R$ {saldoDevedor.toFixed(2)}</span>
               </div>
 
-              {/* Campo dinâmico de % de desconto — apenas consignado */}
+              {/* % desconto — consignado */}
               {isConsignado && (
-                <div className="pt-2 space-y-3">
-                  <div>
-                    <label className="text-[10px] text-violet-600 font-bold uppercase tracking-widest mb-2 block">
-                      % Desconto de Lucro do Vendedor
+                <>
+                  <div className="pt-1">
+                    <label className="text-[10px] text-zinc-400 font-semibold uppercase tracking-widest block mb-1.5">
+                      Desconto de lucro
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -535,58 +529,48 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                         step={1}
                         value={percentualLucro}
                         onChange={(e) => setPercentualLucro(e.target.value)}
-                        className="w-full bg-violet-50 border-2 border-violet-200 rounded-xl px-4 py-2.5 text-sm font-bold text-violet-900 focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10 outline-none transition-all text-center"
+                        className="flex-1 bg-white border border-zinc-200 rounded-lg px-3 py-2 text-sm font-semibold text-zinc-800 focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 outline-none transition-all text-center"
                         placeholder="0"
                       />
-                      <span className="text-xl font-black text-violet-500 shrink-0">%</span>
+                      <span className="text-sm font-semibold text-zinc-400 shrink-0">%</span>
                     </div>
                   </div>
                   {pctLucro > 0 && (
-                    <div className="flex justify-between text-xs text-violet-600 font-bold bg-violet-50 px-3 py-2 rounded-lg">
-                      <span>(-) Desconto ({pctLucro}%)</span>
-                      <span>- R$ {valorDescontoLucro.toFixed(2)}</span>
+                    <div className="flex justify-between text-xs text-zinc-500">
+                      <span>(−) Desconto {pctLucro}%</span>
+                      <span>R$ {valorDescontoLucro.toFixed(2)}</span>
                     </div>
                   )}
-                </div>
+                </>
               )}
             </div>
           </div>
 
-          {/* Total Final */}
-          <div className="mt-6 space-y-4">
-            <div className={`rounded-2xl p-6 border ${isConsignado ? 'bg-violet-50 border-violet-200' : 'bg-zinc-50 border-zinc-100'}`}>
-              <p className={`text-[10px] uppercase font-bold tracking-widest mb-2 ${isConsignado ? 'text-violet-500' : 'text-zinc-500'}`}>
-                Cobrança Final
-              </p>
-              <div className={`flex items-baseline ${isConsignado ? 'text-violet-700' : 'text-indigo-600'}`}>
-                <span className="text-xl font-bold">R$</span>
-                <span className="text-5xl font-black tracking-tighter ml-1">
-                  {isConsignado ? valorFinalConsignado.toFixed(2) : valorBaseFinal.toFixed(2)}
-                </span>
-              </div>
-              {isConsignado && pctLucro > 0 && (
-                <p className="text-[10px] text-violet-400 mt-2 font-medium">
-                  Saldo R$ {saldoDevedor.toFixed(2)} com {pctLucro}% de desconto de lucro
-                </p>
-              )}
+          {/* Total e ação */}
+          <div className="px-5 pb-5 pt-3 border-t border-zinc-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-zinc-500 uppercase tracking-widest">Cobrado</span>
+              <span className="text-xl font-black text-zinc-900">
+                R$ {(isConsignado ? valorFinalConsignado : valorBaseFinal).toFixed(2)}
+              </span>
             </div>
 
             <button
               onClick={handleConfirm}
               disabled={isConsignado ? false : (quantidadeRemovida === 0 && itensNovos.length === 0)}
-              className="w-full h-14 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20 rounded-xl text-xs uppercase tracking-widest font-black hover:bg-indigo-700 hover:scale-[1.02] active:scale-95 transition-all flex items-center justify-center disabled:bg-zinc-100 disabled:text-zinc-400 disabled:shadow-none disabled:cursor-not-allowed disabled:hover:scale-100"
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-colors disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
             >
-              Confirmar Operação
+              {isConsignado ? 'Confirmar Fechamento' : 'Confirmar Operação'}
             </button>
 
-            <button onClick={onClose} className="w-full text-[10px] flex items-center justify-center font-bold text-zinc-400 hover:text-zinc-800 transition-colors uppercase tracking-widest h-8">
+            <button
+              onClick={onClose}
+              className="w-full text-[11px] text-zinc-400 hover:text-zinc-600 transition-colors font-medium text-center"
+            >
               Cancelar
             </button>
           </div>
         </div>
-
-        {/* Gradiente de Decoração */}
-        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-600/5 blur-[120px] rounded-full -mr-32 -mt-32 pointer-events-none" />
       </div>
     </div>
   );

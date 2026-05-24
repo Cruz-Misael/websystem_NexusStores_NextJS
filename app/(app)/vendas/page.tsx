@@ -8,7 +8,7 @@ import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVend
 import { criarDevolucao } from "@/src/services/returns.service";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
-import { Sale } from "@/types/sales";
+import { Sale, ConsignadoItemBreakdown } from "@/types/sales";
 import {
   Search,
   Filter,
@@ -21,6 +21,7 @@ import {
   Calendar,
   CreditCard,
   ShoppingCart,
+  ShoppingBag,
   User,
   Loader2,
   RefreshCw,
@@ -61,7 +62,10 @@ export default function HistoricoVendasCompacto() {
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroData, setFiltroData] = useState<string>("");
   const [modoConsignado, setModoConsignado] = useState(false);
-  const [vendaConsignadoRecibo, setVendaConsignadoRecibo] = useState<Sale | null>(null);
+  const [vendaConsignadoRecibo, setVendaConsignadoRecibo] = useState<{
+    venda: Sale;
+    breakdown: ConsignadoItemBreakdown;
+  } | null>(null);
 
   // Estados para popup e toast
   const [popupAberto, setPopupAberto] = useState(false);
@@ -254,6 +258,25 @@ export default function HistoricoVendasCompacto() {
     try {
       setAtualizando(true);
 
+      // Capturar breakdown ANTES das alterações no banco
+      const itensOriginais = (selecionada?.items || []).map((i) => ({
+        nome: i.product?.name || i.product_name || "Produto",
+        quantidade: i.quantity,
+      }));
+      const itensDevolvidos = payload.itens
+        .map((item: any) => {
+          const orig = selecionada?.items.find((i) => i.id === item.itemId);
+          return { nome: orig?.product?.name || orig?.product_name || "Produto", quantidade: item.quantidade };
+        })
+        .filter((i: any) => i.quantidade > 0);
+      const itensFicaram = (selecionada?.items || [])
+        .map((i) => {
+          const dev = payload.itens.find((d: any) => d.itemId === i.id);
+          return { nome: i.product?.name || i.product_name || "Produto", quantidade: i.quantity - (dev?.quantidade || 0) };
+        })
+        .filter((i) => i.quantidade > 0);
+      const breakdown: ConsignadoItemBreakdown = { itensOriginais, itensDevolvidos, itensFicaram };
+
       // 1. Processar devolução dos itens não vendidos
       if (payload.itens.length > 0) {
         await criarDevolucao({
@@ -291,9 +314,13 @@ export default function HistoricoVendasCompacto() {
       // 3. Atualizar status e valor final no banco
       const pct = payload.percentualLucro ?? 0;
       const saldo = payload.valorNetAnteComissao ?? payload.valorFinal;
+      const saiu = itensOriginais.map((i) => `${i.nome} (x${i.quantidade})`).join("; ") || "Nenhuma";
+      const devolveu = itensDevolvidos.length > 0 ? itensDevolvidos.map((i: any) => `${i.nome} (x${i.quantidade})`).join("; ") : "Nenhuma";
+      const ficou = itensFicaram.length > 0 ? itensFicaram.map((i) => `${i.nome} (x${i.quantidade})`).join("; ") : "Nenhuma";
       const novaObs = [
         selecionada?.observation || '',
-        `[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] Saldo: ${formatarMoeda(saldo)} | Desconto de lucro: ${pct}% (${formatarMoeda(saldo * pct / 100)}) | Cobrado: ${formatarMoeda(payload.valorFinal)}`
+        `[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] Saldo: ${formatarMoeda(saldo)} | Desconto de lucro: ${pct}% (${formatarMoeda(saldo * pct / 100)}) | Cobrado: ${formatarMoeda(payload.valorFinal)}`,
+        `Saídas: ${saiu} | Devolvidas: ${devolveu} | Mantidas: ${ficou}`,
       ].filter(Boolean).join('\n');
 
       const { error } = await atualizarVendaConsignado(payload.vendaId, {
@@ -314,7 +341,7 @@ export default function HistoricoVendasCompacto() {
       ));
       setSelecionada(vendaAtualizada);
       setModalAberto(false);
-      setVendaConsignadoRecibo(vendaAtualizada);
+      setVendaConsignadoRecibo({ venda: vendaAtualizada, breakdown });
 
     } catch (error: any) {
       console.error("Erro ao fechar consignado:", error);
@@ -331,8 +358,28 @@ export default function HistoricoVendasCompacto() {
   };
 
   // ======= UTILITÁRIOS CONSIGNADO =======
+  function parseConsignadoBreakdown(obs: string | null): ConsignadoItemBreakdown | null {
+    if (!obs) return null;
+    const match = obs.match(/Saídas: (.+?) \| Devolvidas: (.+?) \| Mantidas: (.+?)(?:\n|$)/);
+    if (!match) return null;
+    const parseList = (s: string) =>
+      s === "Nenhuma"
+        ? []
+        : s.split("; ").map((e) => {
+            const m = e.match(/^(.+?) \(x(\d+)\)$/);
+            return m ? { nome: m[1], quantidade: parseInt(m[2]) } : null;
+          }).filter((x): x is { nome: string; quantidade: number } => x !== null);
+    return {
+      itensOriginais: parseList(match[1]),
+      itensDevolvidos: parseList(match[2]),
+      itensFicaram: parseList(match[3]),
+    };
+  }
+
   const isConsignado = (venda: Sale) => {
-    return venda.observation?.includes("Venda consignada") || venda.payment_method === 'credit_card' && venda.payment_status === 'pending';
+    return venda.payment_method === 'consignado' ||
+      venda.observation?.includes("Venda consignada") ||
+      (venda.payment_method === 'credit_card' && venda.payment_status === 'pending');
   };
 
   const extrairDataConsignado = (obs: string | null) => {
@@ -784,11 +831,64 @@ export default function HistoricoVendasCompacto() {
                 {/* Informações adicionais */}
                 {selecionada.observation && (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <p className="text-xs text-blue-700">
+                    <p className="text-xs text-blue-700 whitespace-pre-line">
                       <span className="font-bold">Observação:</span> {selecionada.observation}
                     </p>
                   </div>
                 )}
+
+                {/* Breakdown de itens — consignado fechado */}
+                {isConsignado(selecionada) && selecionada.payment_status === "paid" && (() => {
+                  const bd = parseConsignadoBreakdown(selecionada.observation);
+                  if (!bd) return null;
+                  return (
+                    <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-3">
+                      <h4 className="text-xs font-bold text-violet-700 uppercase tracking-wide">Peças do Consignado</h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        {/* Saiu */}
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1 flex items-center gap-1">
+                            <ShoppingBag size={10} /> Saiu da loja
+                          </p>
+                          {bd.itensOriginais.map((i, idx) => (
+                            <div key={idx} className="flex justify-between text-xs text-zinc-600">
+                              <span className="truncate">{i.nome}</span>
+                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Devolveu */}
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1 flex items-center gap-1">
+                            <RotateCcw size={10} /> Devolvidas
+                          </p>
+                          {bd.itensDevolvidos.length === 0 ? (
+                            <p className="text-xs text-zinc-400 italic">Nenhuma</p>
+                          ) : bd.itensDevolvidos.map((i, idx) => (
+                            <div key={idx} className="flex justify-between text-xs text-amber-700">
+                              <span className="truncate">{i.nome}</span>
+                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {/* Ficou */}
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600 mb-1 flex items-center gap-1">
+                            <CheckCircle size={10} /> Ficou com o cliente
+                          </p>
+                          {bd.itensFicaram.length === 0 ? (
+                            <p className="text-xs text-zinc-400 italic">Nenhuma</p>
+                          ) : bd.itensFicaram.map((i, idx) => (
+                            <div key={idx} className="flex justify-between text-xs text-emerald-700">
+                              <span className="truncate">{i.nome}</span>
+                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
           </>
@@ -797,12 +897,24 @@ export default function HistoricoVendasCompacto() {
 
       {/* RECIBO */}
       {modalRecibo && selecionada && (
-        <Recibo venda={selecionada} onClose={() => setModalRecibo(false)} />
+        <Recibo
+          venda={selecionada}
+          onClose={() => setModalRecibo(false)}
+          consignadoBreakdown={
+            isConsignado(selecionada) && selecionada.payment_status === "paid"
+              ? parseConsignadoBreakdown(selecionada.observation) ?? undefined
+              : undefined
+          }
+        />
       )}
 
       {/* RECIBO DE FECHAMENTO DE CONSIGNADO */}
       {vendaConsignadoRecibo && (
-        <Recibo venda={vendaConsignadoRecibo} onClose={() => setVendaConsignadoRecibo(null)} />
+        <Recibo
+          venda={vendaConsignadoRecibo.venda}
+          consignadoBreakdown={vendaConsignadoRecibo.breakdown}
+          onClose={() => setVendaConsignadoRecibo(null)}
+        />
       )}
 
       {/* MODAL: DEVOLUÇÃO/TROCA */}
