@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32">
+  <!-- Background rounded square -->
+  <rect width="32" height="32" rx="7" fill="#6366f1"/>
+
+  <!-- Bag handle arc -->
+  <path d="M 11 15 Q 16 7 21 15" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Bag body -->
+  <rect x="7" y="14" width="18" height="13" rx="2.5" fill="none" stroke="white" stroke-width="1.6"/>
+
+  <!-- Bag top highlight -->
+  <rect x="7" y="14" width="18" height="5" rx="2.5" fill="white" opacity="0.20"/>
+</svg>

@@ -9,6 +9,9 @@ const inter = Inter({ subsets: ["latin"] });
 export const metadata: Metadata = {
   title: "Nexus Store",
   description: "Sistema de gestão para pequenos negócios",
+  icons: {
+    icon: '/logo.svg',
+  },
 };
 
 export default function RootLayout({
