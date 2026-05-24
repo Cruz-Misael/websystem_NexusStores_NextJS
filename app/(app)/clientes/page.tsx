@@ -1,14 +1,14 @@
 "use client";
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import ClienteModal from "@/components/clientes/ClienteModal";
 import VisualizarDocumento from "@/components/clientes/VisualizarDocumento";
 import PopupConfirmacao from "@/components/clientes/PopupConfirmacao";
 import { History } from "lucide-react";
-import { 
-  Search, 
-  Mail, 
-  Calendar, 
+import {
+  Search,
+  Mail,
+  Calendar,
   ShoppingBag,
   MessageSquare,
   Users,
@@ -24,7 +24,9 @@ import {
   FileText,
   MoreVertical,
   Ban,
-  CheckCircle
+  CheckCircle,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 import { 
   BarChart, 
@@ -35,7 +37,7 @@ import {
   Tooltip, 
   ResponsiveContainer 
 } from "recharts";
-import { listarPessoas, buscarPessoaPorId, deletarPessoa, atualizarPessoa } from "@/src/services/people.service";
+import { listarPessoasPaginado, buscarPessoaPorId, deletarPessoa, atualizarPessoa } from "@/src/services/people.service";
 import { getSalesByCustomerId } from "@/src/services/sales.service";
 import { Sale } from "@/types/sales";
 
@@ -135,6 +137,10 @@ export default function CRMCompacto() {
   });
   
   const [menuAberto, setMenuAberto] = useState<number | null>(null);
+  const [mostrarInativos, setMostrarInativos] = useState(false);
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
+  const [totalClientes, setTotalClientes] = useState(0);
 
   const mostrarPopup = (
     titulo: string,
@@ -158,18 +164,19 @@ export default function CRMCompacto() {
     }, 300);
   };
 
-  const carregarClientes = async (mostrarInativos = false) => {
+  const carregarClientes = async (pagina: number = 1) => {
     try {
       setCarregando(true);
       setErro(null);
-      const pessoas = await listarPessoas();
-      const pessoasFiltradas = mostrarInativos ? pessoas : pessoas.filter((p: any) => p.is_active !== false);
-      const clientesConvertidos: Cliente[] = pessoasFiltradas.map((p: PessoaDB) => ({
+      setPaginaAtual(pagina);
+
+      const resultado = await listarPessoasPaginado(pagina, 50, debouncedBusca, mostrarInativos);
+      const clientesConvertidos: Cliente[] = resultado.pessoas.map((p: PessoaDB) => ({
         id: p.id,
         nome: p.name || "Sem nome",
         email: p.email || "",
         telefone: p.phone || "",
-        ultimaCompra: "", 
+        ultimaCompra: "",
         totalGasto: 0,
         documento: p.identity_number?.toString() || "",
         endereco: p.address_street || "",
@@ -180,7 +187,11 @@ export default function CRMCompacto() {
         is_active: p.is_active ?? true,
         document: p.document,
       }));
+
       setListaClientes(clientesConvertidos);
+      setTotalPaginas(resultado.totalPaginas);
+      setTotalClientes(resultado.total);
+
       if (clientesConvertidos.length > 0 && !selecionado) {
         setSelecionado(clientesConvertidos[0]);
       } else if (selecionado) {
@@ -277,9 +288,10 @@ export default function CRMCompacto() {
     setDocumentoAberto(true);
   };
 
+  // Carrega clientes na inicialização e quando busca/filtro mudam (reset para página 1)
   useEffect(() => {
-    carregarClientes();
-  }, []);
+    carregarClientes(1);
+  }, [debouncedBusca, mostrarInativos]);
 
   useEffect(() => {
     const handleClickOutside = () => setMenuAberto(null);
@@ -300,16 +312,9 @@ export default function CRMCompacto() {
   };
 
   const handleSalvarCliente = async () => {
-    await carregarClientes();
+    await carregarClientes(paginaAtual);
   };
 
-  const clientesFiltrados = useMemo(() =>
-    listaClientes.filter(c =>
-      c.nome.toLowerCase().includes(debouncedBusca.toLowerCase()) ||
-      c.email.toLowerCase().includes(debouncedBusca.toLowerCase())
-    ),
-    [listaClientes, debouncedBusca]
-  );
   
   const totalGasto = historicoVendas.reduce((acc, venda) => acc + (venda.final_amount || 0), 0);
   const ultimaCompra = historicoVendas.length > 0 ? new Date(historicoVendas[0].sale_date).toLocaleDateString('pt-BR') : "N/A";
@@ -366,7 +371,7 @@ export default function CRMCompacto() {
               <button 
                 onClick={() => {
                   setAtualizando(true);
-                  carregarClientes();
+                  carregarClientes(paginaAtual);
                 }}
                 disabled={atualizando}
                 className="p-2 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors"
@@ -396,18 +401,18 @@ export default function CRMCompacto() {
             </div>
 
             <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              <button 
-                onClick={() => carregarClientes(false)}
+              <button
+                onClick={() => setMostrarInativos(false)}
                 className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-tight transition-all border
-                  ${!busca ? 'bg-zinc-900 border-zinc-900 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300'}
+                  ${!mostrarInativos ? 'bg-zinc-900 border-zinc-900 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300'}
                 `}
               >
                 Ativos
               </button>
-              <button 
-                onClick={() => carregarClientes(true)}
+              <button
+                onClick={() => setMostrarInativos(true)}
                 className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-tight transition-all border
-                  ${busca === 'todos' ? 'bg-zinc-900 border-zinc-900 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300'}
+                  ${mostrarInativos ? 'bg-zinc-900 border-zinc-900 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300'}
                 `}
               >
                 Todos
@@ -423,13 +428,13 @@ export default function CRMCompacto() {
               <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
               <p className="text-red-600 text-xs mb-2">{erro}</p>
               <button
-                onClick={() => carregarClientes()}
+                onClick={() => carregarClientes(paginaAtual)}
                 className="text-indigo-600 hover:text-indigo-700 text-xs font-medium"
               >
                 Tentar novamente
               </button>
             </div>
-          ) : clientesFiltrados.length === 0 ? (
+          ) : listaClientes.length === 0 ? (
             <div className="p-8 text-center">
               <Users className="h-12 w-12 text-zinc-300 mx-auto mb-3" />
               <p className="text-zinc-500 text-sm mb-4">
@@ -445,7 +450,7 @@ export default function CRMCompacto() {
               )}
             </div>
           ) : (
-            clientesFiltrados.map((cliente) => (
+            listaClientes.map((cliente) => (
               <div 
                 key={cliente.id}
                 className={`relative group p-3 border-b border-zinc-50 cursor-pointer hover:bg-zinc-50 transition-all ${
@@ -525,8 +530,30 @@ export default function CRMCompacto() {
           )}
         </div>
         
+        {/* Paginação */}
+        {totalPaginas > 1 && (
+          <div className="flex items-center justify-between px-3 py-2 border-t border-zinc-100 bg-zinc-50 shrink-0">
+            <button
+              onClick={() => carregarClientes(paginaAtual - 1)}
+              disabled={paginaAtual === 1 || carregando}
+              className="p-1.5 rounded-md border border-zinc-200 text-zinc-500 disabled:opacity-30 hover:bg-zinc-100 transition-colors"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-[10px] font-bold text-zinc-500">
+              Página {paginaAtual} de {totalPaginas}
+            </span>
+            <button
+              onClick={() => carregarClientes(paginaAtual + 1)}
+              disabled={paginaAtual === totalPaginas || carregando}
+              className="p-1.5 rounded-md border border-zinc-200 text-zinc-500 disabled:opacity-30 hover:bg-zinc-100 transition-colors"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
         <div className="p-3 border-t border-zinc-100 text-[10px] font-bold text-zinc-400 text-center bg-zinc-50 uppercase tracking-widest">
-          {clientesFiltrados.length} registros encontrados
+          {totalClientes} registros encontrados
         </div>
       </div>
 

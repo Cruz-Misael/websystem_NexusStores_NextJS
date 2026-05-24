@@ -3,15 +3,15 @@
 import ProdutoModal from "@/components/estoque/ProdutoModal";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
-import { listarProdutos, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
-import { useState, useEffect, useMemo } from "react";
+import { listarProdutosPaginado, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
+import { useState, useEffect } from "react";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import { 
-  Search, 
-  Plus, 
+  Search,
+  Plus,
   Minus,
-  Package, 
-  AlertCircle, 
+  Package,
+  AlertCircle,
   History,
   Edit2,
   Trash2,
@@ -20,7 +20,9 @@ import {
   Loader2,
   RefreshCw,
   Eye,
-  EyeOff
+  EyeOff,
+  ChevronLeft,
+  ChevronRight
 } from "lucide-react";
 
 // TIPO PARA USO NA APLICAÇÃO (substituindo o mock)
@@ -154,7 +156,10 @@ export default function GestaoEstoqueCompacto() {
   const [carregandoAcao, setCarregandoAcao] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
-  
+  const [paginaAtual, setPaginaAtual] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
+  const [totalProdutos, setTotalProdutos] = useState(0);
+
   // Estados para popup e toast
   const [popupAberto, setPopupAberto] = useState(false);
   const [popupConfig, setPopupConfig] = useState({
@@ -212,16 +217,18 @@ export default function GestaoEstoqueCompacto() {
   };
 
   // Carrega produtos do Supabase
-// Função para carregar produtos do Supabase
-const carregarProdutos = async (isManualRefresh = false) => {
+const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => {
   try {
     setCarregando(true);
     setErro(null);
+    setPaginaAtual(pagina);
 
-    const produtosDB = await listarProdutos();
-    const produtosConvertidos = produtosDB.map(converterParaProduto);
+    const resultado = await listarProdutosPaginado(pagina, 50, debouncedBusca, mostrarInativos);
+    const produtosConvertidos = resultado.produtos.map(converterParaProduto);
 
     setListaProdutos(produtosConvertidos);
+    setTotalPaginas(resultado.totalPaginas);
+    setTotalProdutos(resultado.total);
 
     if (selecionado) {
       const produtoAindaExiste = produtosConvertidos.find(p => p.id === selecionado.id);
@@ -253,10 +260,10 @@ const carregarProdutos = async (isManualRefresh = false) => {
   }
 };
 
-  // Carrega produtos na inicialização
+  // Carrega produtos na inicialização e quando busca/filtro mudam (reset para página 1)
   useEffect(() => {
-    carregarProdutos();
-  }, []);
+    carregarProdutos(1);
+  }, [debouncedBusca, mostrarInativos]);
 
   // Atualiza estoque
   const atualizarEstoque = async (quantidade: number) => {
@@ -424,7 +431,7 @@ const carregarProdutos = async (isManualRefresh = false) => {
         mostrarToast(`Produto "${produtoForm.nome}" criado com sucesso!`, "sucesso");
       }
       
-      await carregarProdutos();
+      await carregarProdutos(modoModal === 'create' ? 1 : paginaAtual);
       setModalAberto(false);
       setProdutoParaEditar(null);
       
@@ -442,15 +449,6 @@ const carregarProdutos = async (isManualRefresh = false) => {
     }
   };
 
-  const produtosFiltrados = useMemo(() =>
-    listaProdutos.filter(p => {
-      const buscaMatch =
-        p.nome.toLowerCase().includes(debouncedBusca.toLowerCase()) ||
-        p.sku.toLowerCase().includes(debouncedBusca.toLowerCase());
-      return mostrarInativos ? buscaMatch : buscaMatch && p.is_active !== false;
-    }),
-    [listaProdutos, debouncedBusca, mostrarInativos]
-  );
 
   // Cálculos de Status
   const getStatusEstoque = (qtd: number, min: number) => {
@@ -568,7 +566,7 @@ const carregarProdutos = async (isManualRefresh = false) => {
             </div>
             <div className="flex gap-2">
               <button
-                onClick={() => carregarProdutos(true)}
+                onClick={() => carregarProdutos(paginaAtual, true)}
                 className="p-2 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors relative"
                 title="Recarregar produtos do banco"
                 disabled={carregando}
@@ -613,9 +611,9 @@ const carregarProdutos = async (isManualRefresh = false) => {
           
           {/* Quick Stats na Lista */}
           <div className="flex justify-between text-[10px] text-zinc-400 px-1">
-            <span>{produtosFiltrados.length} {produtosFiltrados.length === 1 ? 'produto' : 'produtos'}</span>
+            <span>{totalProdutos} {totalProdutos === 1 ? 'produto' : 'produtos'}</span>
             <span>Valor Total: {formatarMoeda(
-              produtosFiltrados.reduce((acc, p) => acc + (p.preco * p.estoque), 0)
+              listaProdutos.reduce((acc, p) => acc + (p.preco * p.estoque), 0)
             )}</span>
           </div>
         </div>
@@ -627,13 +625,13 @@ const carregarProdutos = async (isManualRefresh = false) => {
               <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
               <p className="text-red-600 text-sm">{erro}</p>
               <button
-                onClick={() => carregarProdutos(true)}
+                onClick={() => carregarProdutos(paginaAtual, true)}
                 className="mt-2 text-indigo-600 hover:text-indigo-700 text-sm font-medium"
               >
                 Tentar novamente
               </button>
             </div>
-          ) : produtosFiltrados.length === 0 ? (
+          ) : listaProdutos.length === 0 ? (
             <div className="p-8 text-center">
               <Package className="h-12 w-12 text-zinc-300 mx-auto mb-3" />
               <p className="text-zinc-500 text-sm mb-4">
@@ -649,7 +647,7 @@ const carregarProdutos = async (isManualRefresh = false) => {
               )}
             </div>
           ) : (
-            produtosFiltrados.map((produto) => {
+            listaProdutos.map((produto) => {
               const status = getStatusEstoque(produto.estoque, produto.estoqueMinimo);
               const estaSelecionado = selecionado?.id === produto.id;
               
@@ -690,6 +688,29 @@ const carregarProdutos = async (isManualRefresh = false) => {
             })
           )}
         </div>
+
+        {/* Controles de Paginação */}
+        {totalPaginas > 1 && (
+          <div className="flex items-center justify-between px-3 py-2 border-t border-zinc-100 bg-zinc-50 shrink-0">
+            <button
+              onClick={() => carregarProdutos(paginaAtual - 1)}
+              disabled={paginaAtual === 1 || carregando}
+              className="p-1.5 rounded-md border border-zinc-200 text-zinc-500 disabled:opacity-30 hover:bg-zinc-100 transition-colors"
+            >
+              <ChevronLeft size={14} />
+            </button>
+            <span className="text-[10px] font-bold text-zinc-500">
+              Página {paginaAtual} de {totalPaginas}
+            </span>
+            <button
+              onClick={() => carregarProdutos(paginaAtual + 1)}
+              disabled={paginaAtual === totalPaginas || carregando}
+              className="p-1.5 rounded-md border border-zinc-200 text-zinc-500 disabled:opacity-30 hover:bg-zinc-100 transition-colors"
+            >
+              <ChevronRight size={14} />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* COLUNA DIREITA: DETALHES E EDIÇÃO */}

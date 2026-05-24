@@ -662,6 +662,17 @@ export default function HistoricoVendasCompacto() {
                   <User size={10} />
                   {venda.customer?.name || 'Consumidor Final'}
                 </div>
+                {isConsignado(venda) && venda.payment_status === 'pending' && (() => {
+                  const dp = extrairDataConsignado(venda.observation);
+                  if (!dp) return null;
+                  const atrasado = estaAtrasado(venda);
+                  return (
+                    <div className={`flex items-center gap-1 text-[10px] font-bold mt-0.5 ${atrasado ? 'text-red-600' : 'text-orange-500'}`}>
+                      <Calendar size={9} />
+                      Prev.: {new Date(dp + 'T12:00:00').toLocaleDateString('pt-BR')}
+                    </div>
+                  );
+                })()}
               </div>
             ))
           )}
@@ -701,6 +712,18 @@ export default function HistoricoVendasCompacto() {
                   <span className="flex items-center gap-1">
                     <CreditCard size={12} /> {selecionada.payment_method || 'Não informado'}
                   </span>
+                  {isConsignado(selecionada) && (() => {
+                    const dp = extrairDataConsignado(selecionada.observation);
+                    if (!dp) return null;
+                    const atrasado = estaAtrasado(selecionada);
+                    return (
+                      <span className={`flex items-center gap-1 font-bold ${atrasado ? 'text-red-600' : 'text-orange-500'}`}>
+                        <Calendar size={12} />
+                        Previsto: {new Date(dp + 'T12:00:00').toLocaleDateString('pt-BR')}
+                        {atrasado && ' ATRASADO'}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 
