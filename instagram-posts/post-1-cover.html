@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nexus Store — Post 1</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 1080px; height: 1080px; overflow: hidden; font-family: 'Inter', sans-serif; background: #09090b; }
+
+    .slide { width: 1080px; height: 1080px; position: relative; overflow: hidden; background: #09090b; }
+
+    .blob { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; }
+    .blob-1 { width: 700px; height: 700px; background: #1e1b4b; opacity: .40; top: -200px; left: -180px; }
+    .blob-2 { width: 500px; height: 500px; background: #312e81; opacity: .25; bottom: -150px; right: -100px; }
+    .blob-3 { width: 300px; height: 300px; background: #4338ca; opacity: .15; top: 50%; left: 55%; transform: translate(-50%, -50%); }
+
+    .inner { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: space-between; padding: 60px 72px; }
+
+    .logo-mark { display: inline-flex; align-items: center; gap: 14px; }
+    .logo-icon {
+      width: 50px; height: 50px; background: #4f46e5; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 8px 24px rgba(79, 70, 229, .50); flex-shrink: 0;
+    }
+    .logo-text { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -.5px; }
+
+    .hero { flex: 1; display: flex; flex-direction: column; justify-content: center; padding-bottom: 20px; }
+
+    .eyebrow { font-size: 13px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; color: #818cf8; margin-bottom: 28px; }
+
+    .title { font-size: 92px; font-weight: 900; line-height: .93; letter-spacing: -5px; color: #fff; margin-bottom: 32px; }
+    .title span { color: #818cf8; }
+
+    .sub { font-size: 22px; font-weight: 500; color: #a1a1aa; line-height: 1.55; max-width: 570px; }
+
+    .footer { display: flex; align-items: center; justify-content: space-between; }
+
+    .badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(55, 48, 163, .35); border: 1px solid rgba(129, 140, 248, .25);
+      border-radius: 999px; padding: 8px 20px;
+      font-size: 11px; font-weight: 800; color: #a5b4fc; letter-spacing: 2.5px; text-transform: uppercase;
+    }
+    .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: #818cf8; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
+
+    .tag {
+      display: flex; align-items: center; gap: 10px;
+      background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08);
+      border-radius: 14px; padding: 14px 22px;
+    }
+    .tag span { font-size: 13px; font-weight: 600; color: #71717a; }
+    .tag strong { color: #fff; }
+
+    .counter { position: absolute; bottom: 44px; right: 52px; display: flex; gap: 8px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #3f3f46; }
+    .dot.active { background: #818cf8; width: 26px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+
+    <div class="inner">
+      <div class="logo-mark">
+        <div class="logo-icon">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <path d="M 11 15 Q 16 7.5 21 15" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+            <rect x="5" y="14" width="22" height="14" rx="3" stroke="white" stroke-width="2"/>
+            <rect x="5" y="14" width="22" height="5.5" rx="3" fill="white" fill-opacity=".2"/>
+          </svg>
+        </div>
+        <span class="logo-text">Nexus Store</span>
+      </div>
+
+      <div class="hero">
+        <p class="eyebrow">✦ &nbsp;Apresentando</p>
+        <h1 class="title">Sua loja,<br /><span>inteligente</span><br />de verdade.</h1>
+        <p class="sub">A plataforma completa de gestão para lojas que vendem mais com menos esforço.</p>
+      </div>
+
+      <div class="footer">
+        <div class="badge">
+          <div class="badge-dot"></div>
+          Novo produto Nexus
+        </div>
+        <div class="tag">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2.5">
+            <path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <path d="M16 10a4 4 0 0 1-8 0"/>
+          </svg>
+          <span>Consignados · Vendas · <strong>CRM</strong></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="counter">
+      <div class="dot active"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+    </div>
+  </div>
+</body>
+</html>

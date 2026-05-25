@@ -27,14 +27,15 @@ export async function middleware(req: NextRequest) {
   const { data: { session } } = await supabase.auth.getSession();
 
   const isAuthPage = req.nextUrl.pathname.startsWith('/login');
+  const isLandingPage = req.nextUrl.pathname === '/';
 
-  if (!session && !isAuthPage) {
-    // Se não há sessão e não é a página de login, redireciona para login
+  if (!session && !isAuthPage && !isLandingPage) {
+    // Se não há sessão e não é página pública, redireciona para login
     return NextResponse.redirect(new URL('/login', req.url));
   }
-  
-  if (session && !isAuthPage) {
-    // Se há sessão e não é a página de login, verifica autorização
+
+  if (session && !isAuthPage && !isLandingPage) {
+    // Se há sessão e não é página pública, verifica autorização
     const { data: authorizedUser, error } = await supabase
       .from('authorized_users')
       .select('status')

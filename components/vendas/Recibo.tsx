@@ -73,6 +73,12 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
     if (nome && item.product_barcode) barcodeMap.set(nome, item.product_barcode);
   });
 
+  const formatarData = (data: string | null | undefined) => {
+    if (!data) return null;
+    const d = new Date(data + "T12:00:00");
+    return d.toLocaleDateString("pt-BR");
+  };
+
   // Endereço completo do cliente
   const enderecoCliente = clienteCompleto
     ? [
@@ -303,10 +309,16 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                   color:#9ca3af;margin-bottom:10px">Dados do Cliente</div>
       ${kv("Nome", venda.customer?.name || "Consumidor Final")}
       ${clienteCompleto?.identity_number ? kv("CPF", formatarCPF(clienteCompleto.identity_number) || "—") : ""}
+      ${clienteCompleto?.birth_date ? kv("Nascimento", formatarData(clienteCompleto.birth_date) || "—") : ""}
       ${clienteCompleto?.phone || venda.customer?.phone ? kv("Telefone", clienteCompleto?.phone || venda.customer?.phone || "—") : ""}
+      ${clienteCompleto?.email || venda.customer?.email ? kv("E-mail", clienteCompleto?.email || venda.customer?.email || "—") : ""}
       ${enderecoCliente ? `<div style="padding:4px 0;font-size:12px;color:#374151;border-bottom:1px solid #f3f4f6">
         <span style="color:#6b7280;font-size:11px">Endereço</span><br>
         <span style="font-weight:600;color:#111827">${enderecoCliente}</span>
+      </div>` : ""}
+      ${clienteCompleto?.observation ? `<div style="padding:4px 0;font-size:12px;color:#374151">
+        <span style="color:#6b7280;font-size:11px">Obs. do Cliente</span><br>
+        <span style="font-weight:600;color:#111827;white-space:pre-wrap">${clienteCompleto.observation}</span>
       </div>` : ""}
     </div>
   </div>
@@ -449,16 +461,34 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                     <span className="font-bold">{formatarCPF(clienteCompleto.identity_number)}</span>
                   </div>
                 )}
+                {clienteCompleto?.birth_date && (
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400 font-semibold">Nascimento</span>
+                    <span className="font-bold">{formatarData(clienteCompleto.birth_date)}</span>
+                  </div>
+                )}
                 {(clienteCompleto?.phone || venda.customer?.phone) && (
                   <div className="flex justify-between">
                     <span className="text-zinc-400 font-semibold">Telefone</span>
                     <span className="font-bold">{clienteCompleto?.phone || venda.customer?.phone}</span>
                   </div>
                 )}
+                {(clienteCompleto?.email || venda.customer?.email) && (
+                  <div className="flex justify-between">
+                    <span className="text-zinc-400 font-semibold">E-mail</span>
+                    <span className="font-bold truncate max-w-[160px]">{clienteCompleto?.email || venda.customer?.email}</span>
+                  </div>
+                )}
                 {enderecoCliente && (
                   <div className="mt-1">
                     <span className="text-zinc-400 font-semibold">Endereço</span>
                     <p className="font-bold text-[10px] mt-0.5 leading-snug">{enderecoCliente}</p>
+                  </div>
+                )}
+                {clienteCompleto?.observation && (
+                  <div className="mt-1">
+                    <span className="text-zinc-400 font-semibold">Obs. do Cliente</span>
+                    <p className="font-bold text-[10px] mt-0.5 leading-snug whitespace-pre-wrap">{clienteCompleto.observation}</p>
                   </div>
                 )}
               </div>
