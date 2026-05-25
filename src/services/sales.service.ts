@@ -131,7 +131,7 @@ export async function buscarVendaPorId(id: number) {
       customer:people(id, name, email, phone),
       items:sale_items(
         *,
-        product:products(sku, name, price)
+        product:products(sku, name, price, size)
       )
     `)
     .eq("id", id)
@@ -161,7 +161,7 @@ export async function listarVendas(
       customer:people(id, name, email),
       items:sale_items(
         *,
-        product:products(sku, name, price)
+        product:products(sku, name, price, size)
       )
     `, { count: 'exact' })
     .order("created_at", { ascending: false })

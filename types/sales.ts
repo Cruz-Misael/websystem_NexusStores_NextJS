@@ -5,6 +5,7 @@ export type NestedProduct = {
   sku: number;
   name: string;
   price: number;
+  size?: string | null;
 };
 
 // Tipo para um cliente (pessoa) aninhado dentro de uma venda
