@@ -34,6 +34,7 @@ interface ItemCarrinho {
   sku: number;
   custo?: number;
   estoqueAtual: number;
+  tamanho?: string;
 }
 
 interface Cliente {
@@ -297,6 +298,7 @@ export default function CaixaPDVPro() {
       sku: produto.sku,
       custo: produto.cost,
       estoqueAtual: produto.stock_quantity || 0,
+      tamanho: produto.size || undefined,
     });
     setDropdownAberto(false);
     setIndiceSelecionado(-1);
@@ -341,7 +343,8 @@ export default function CaixaPDVPro() {
               quantidade: 1,
               sku: produto.sku,
               custo: produto.cost,
-              estoqueAtual: produto.stock_quantity || 0
+              estoqueAtual: produto.stock_quantity || 0,
+              tamanho: produto.size || undefined,
             });
             return;
           } else {
@@ -368,7 +371,8 @@ export default function CaixaPDVPro() {
             quantidade: 1,
             sku: produtoPorBarcode.sku,
             custo: produtoPorBarcode.cost,
-            estoqueAtual: produtoPorBarcode.stock_quantity || 0
+            estoqueAtual: produtoPorBarcode.stock_quantity || 0,
+            tamanho: produtoPorBarcode.size || undefined,
           });
         } else {
           setProdutoSemEstoque(produtoPorBarcode);
@@ -401,7 +405,7 @@ export default function CaixaPDVPro() {
             : item
         );
       }
-      return [...prev, { ...novoItem, codigo: barcode || novoItem.codigo }];
+      return [{ ...novoItem, codigo: barcode || novoItem.codigo }, ...prev];
     });
     setBusca("");
     setDropdownAberto(false);
@@ -699,7 +703,14 @@ export default function CaixaPDVPro() {
                       <td className="px-4 py-3 text-center text-zinc-400 font-mono text-xs">{index + 1}</td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-zinc-800">{item.nome}</div>
-                        <div className="text-[10px] text-zinc-400 font-mono tracking-wide">{item.codigo}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-zinc-400 font-mono tracking-wide">{item.codigo}</span>
+                          {item.tamanho && (
+                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded uppercase">
+                              {item.tamanho}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
