@@ -152,9 +152,11 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                     ?.quantidade ?? 0;
                 const fica = item.quantidade - dev;
                 const bc = barcodeMap.get(item.nome);
+                const sizeConsig = itens.find(i => (i.product?.name || i.product_name) === item.nome)?.product?.size;
                 return `<tr style="break-inside:avoid;page-break-inside:avoid">
                   <td style="${tdS}color:#111827;font-weight:700">
-                    ${item.nome}
+                    <span>${item.nome}</span>
+                    ${sizeConsig ? `<span style="font-size:10px;font-weight:800;color:#4f46e5;background:#eef2ff;padding:1px 5px;border-radius:3px;margin-left:6px;text-transform:uppercase">${sizeConsig}</span>` : ""}
                     ${bc ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;margin-top:1px">▪ ${bc}</div>` : ""}
                   </td>
                   <td style="${tdS}text-align:center;color:#374151;font-weight:600">${item.quantidade}</td>
@@ -179,7 +181,8 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
               .map(
                 (item) => `<tr style="break-inside:avoid;page-break-inside:avoid">
               <td style="${tdS}color:#111827;font-weight:700">
-                ${item.product?.name || item.product_name || "Produto"}
+                <span>${item.product?.name || item.product_name || "Produto"}</span>
+                ${item.product?.size ? `<span style="font-size:10px;font-weight:800;color:#4f46e5;background:#eef2ff;padding:1px 5px;border-radius:3px;margin-left:6px;text-transform:uppercase">${item.product.size}</span>` : ""}
                 ${item.product_barcode ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;margin-top:1px">▪ ${item.product_barcode}</div>` : ""}
               </td>
               <td style="${tdS}text-align:center;color:#6b7280;font-weight:600">${item.quantity}</td>
@@ -544,9 +547,16 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                 <div className="space-y-2">
                   {itens.map((item) => (
                     <div key={item.id}>
-                      <p className="font-black leading-tight">
-                        {item.product?.name || item.product_name || "Produto"}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="font-black leading-tight">
+                          {item.product?.name || item.product_name || "Produto"}
+                        </p>
+                        {item.product?.size && (
+                          <span className="text-[9px] font-black text-indigo-600 bg-indigo-50 px-1 py-0.5 rounded uppercase leading-none">
+                            {item.product.size}
+                          </span>
+                        )}
+                      </div>
                       {item.product_barcode && (
                         <p className="text-[9px] text-zinc-400">▪ {item.product_barcode}</p>
                       )}
