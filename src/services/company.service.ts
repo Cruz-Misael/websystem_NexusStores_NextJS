@@ -10,6 +10,13 @@ export interface CompanyData {
   email: string;
   website: string;
   logo_url?: string;
+  address_street?: string;
+  address_number?: string;
+  address_complement?: string;
+  neighbourhood?: string;
+  city?: string;
+  state?: string;
+  cep?: string;
 }
 
 export class CompanyService {
@@ -17,32 +24,34 @@ export class CompanyService {
     const { data, error } = await supabase
       .from('companies')
       .select('*')
-      .single();
+      .order('created_at', { ascending: true })
+      .limit(1);
 
-    if (error && error.code !== 'PGRST116') { // PGRST116 is "not found"
-      throw error;
-    }
+    if (error) throw error;
 
-    return data;
+    return data?.[0] ?? null;
   }
 
   static async saveCompany(companyData: Partial<CompanyData>): Promise<CompanyData> {
-    const { data, error } = await supabase
-      .from('companies')
-      .upsert(
-        {
-          ...companyData,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'cnpj' }
-      )
-      .select()
-      .single();
+    const payload = { ...companyData, updated_at: new Date().toISOString() };
 
-    if (error) {
-      throw error;
+    if (companyData.id) {
+      const { data, error } = await supabase
+        .from('companies')
+        .update(payload)
+        .eq('id', companyData.id)
+        .select()
+        .single();
+      if (error) throw error;
+      return data;
     }
 
+    const { data, error } = await supabase
+      .from('companies')
+      .insert(payload)
+      .select()
+      .single();
+    if (error) throw error;
     return data;
   }
 
