@@ -30,6 +30,8 @@ import {
   FileText,
   Phone,
   Mail,
+  Globe,
+  MapPin,
   UserPlus,
   Edit,
   Trash2,
@@ -75,6 +77,13 @@ interface FormLojaData {
   website: string;
   logo: File | null;
   logoPreview: string;
+  address_street: string;
+  address_number: string;
+  address_complement: string;
+  neighbourhood: string;
+  city: string;
+  state: string;
+  cep: string;
 }
 
 const defaultPermissions: OperatorPermissions = {
@@ -105,9 +114,12 @@ export default function ConfiguracoesPage() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Loja ---
+  const [companyId, setCompanyId] = useState<string | undefined>(undefined);
   const [formLoja, setFormLoja] = useState<FormLojaData>({
     nomeCompleto: '', nomeFantasia: '', descricao: '', cnpj: '',
     telefone: '', email: '', website: '', logo: null, logoPreview: '',
+    address_street: '', address_number: '', address_complement: '',
+    neighbourhood: '', city: '', state: '', cep: '',
   });
 
   // --- Usuários ---
@@ -149,6 +161,10 @@ export default function ConfiguracoesPage() {
       formattedValue = value.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1.$2').replace(/(\d{3})(\d)/, '$1/$2').replace(/(\d{4})(\d)/, '$1-$2').slice(0, 18);
     } else if (name === 'telefone') {
       formattedValue = value.replace(/\D/g, '').replace(/(\d{0})(\d)/, '$1($2').replace(/(\d{2})(\d)/, '$1) $2').replace(/(\d{5})(\d)/, '$1-$2').slice(0, 15);
+    } else if (name === 'cep') {
+      formattedValue = value.replace(/\D/g, '').replace(/(\d{5})(\d)/, '$1-$2').slice(0, 9);
+    } else if (name === 'state') {
+      formattedValue = value.toUpperCase().slice(0, 2);
     }
     setFormLoja(prev => ({ ...prev, [name]: formattedValue }));
   };
@@ -163,12 +179,21 @@ export default function ConfiguracoesPage() {
       let logoUrl = formLoja.logoPreview;
       if (formLoja.logo) logoUrl = await CompanyService.uploadLogo(formLoja.logo);
       const companyData: CompanyData = {
+        id: companyId,
         name: formLoja.nomeCompleto, fantasy_name: formLoja.nomeFantasia,
         description: formLoja.descricao, cnpj: formLoja.cnpj,
         phone: formLoja.telefone, email: formLoja.email,
         website: formLoja.website, logo_url: logoUrl,
+        address_street: formLoja.address_street || undefined,
+        address_number: formLoja.address_number || undefined,
+        address_complement: formLoja.address_complement || undefined,
+        neighbourhood: formLoja.neighbourhood || undefined,
+        city: formLoja.city || undefined,
+        state: formLoja.state || undefined,
+        cep: formLoja.cep || undefined,
       };
-      await CompanyService.saveCompany(companyData);
+      const saved = await CompanyService.saveCompany(companyData);
+      if (!companyId) setCompanyId(saved.id);
       toast.success('Configurações da loja salvas com sucesso!');
     } catch (error) {
       toast.error('Erro ao salvar configurações da loja');
@@ -408,7 +433,18 @@ export default function ConfiguracoesPage() {
   const loadCompanyData = async () => {
     try {
       const company = await CompanyService.getCompany();
-      if (company) setFormLoja({ nomeCompleto: company.name, nomeFantasia: company.fantasy_name || '', descricao: company.description || '', cnpj: company.cnpj || '', telefone: company.phone || '', email: company.email || '', website: company.website || '', logo: null, logoPreview: company.logo_url || '' });
+      if (company) {
+        setCompanyId(company.id);
+        setFormLoja({
+          nomeCompleto: company.name, nomeFantasia: company.fantasy_name || '',
+          descricao: company.description || '', cnpj: company.cnpj || '',
+          telefone: company.phone || '', email: company.email || '',
+          website: company.website || '', logo: null, logoPreview: company.logo_url || '',
+          address_street: company.address_street || '', address_number: company.address_number || '',
+          address_complement: company.address_complement || '', neighbourhood: company.neighbourhood || '',
+          city: company.city || '', state: company.state || '', cep: company.cep || '',
+        });
+      }
     } catch { toast.error('Erro ao carregar dados da empresa'); }
   };
 
@@ -513,14 +549,35 @@ export default function ConfiguracoesPage() {
                 <section className="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm">
                   <div className="flex items-center gap-2 mb-6"><div className="w-1 h-4 bg-indigo-500 rounded-full"></div><h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px]">Dados Cadastrais</h3></div>
                   <div className="grid grid-cols-2 gap-6">
-                    <Input label="Razão Social" name="nomeCompleto" value={formLoja.nomeCompleto} onChange={handleLojaInputChange} icon={<Building size={14} />} placeholder="Nome oficial" />
-                    <Input label="CNPJ" name="cnpj" value={formLoja.cnpj} onChange={handleLojaInputChange} icon={<FileText size={14} />} placeholder="00.000.000/0000-00" />
-                    <Input label="E-mail Comercial" name="email" value={formLoja.email} onChange={handleLojaInputChange} icon={<Mail size={14} />} placeholder="loja@email.com" />
-                    <Input label="Telefone" name="telefone" value={formLoja.telefone} onChange={handleLojaInputChange} icon={<Phone size={14} />} placeholder="(00) 00000-0000" />
+                    <Input label="Razão Social *" name="nomeCompleto" value={formLoja.nomeCompleto} onChange={handleLojaInputChange} icon={<Building size={14} />} placeholder="Nome oficial" />
+                    <Input label="Nome Fantasia" name="nomeFantasia" value={formLoja.nomeFantasia} onChange={handleLojaInputChange} icon={<Building size={14} />} placeholder="Como a loja é conhecida" />
+                    <Input label="CNPJ *" name="cnpj" value={formLoja.cnpj} onChange={handleLojaInputChange} icon={<FileText size={14} />} placeholder="00.000.000/0000-00" />
+                    <Input label="Telefone *" name="telefone" value={formLoja.telefone} onChange={handleLojaInputChange} icon={<Phone size={14} />} placeholder="(00) 00000-0000" />
+                    <Input label="E-mail Comercial *" name="email" value={formLoja.email} onChange={handleLojaInputChange} icon={<Mail size={14} />} placeholder="loja@email.com" />
+                    <Input label="Website" name="website" value={formLoja.website} onChange={handleLojaInputChange} icon={<Globe size={14} />} placeholder="www.minhaloja.com.br" />
                     <div className="col-span-2 space-y-1">
                       <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1">Descrição do Negócio</label>
                       <textarea name="descricao" value={formLoja.descricao} onChange={handleLojaInputChange} rows={3} className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none" placeholder="Sobre sua loja..." />
                     </div>
+                  </div>
+                </section>
+
+                <section className="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-6"><div className="w-1 h-4 bg-indigo-500 rounded-full"></div><h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px]">Endereço Comercial</h3></div>
+                  <div className="grid grid-cols-2 gap-6">
+                    <Input label="CEP" name="cep" value={formLoja.cep} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="00000-000" />
+                    <div className="grid grid-cols-3 gap-3 col-span-1">
+                      <div className="col-span-2">
+                        <Input label="Cidade" name="city" value={formLoja.city} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="São Paulo" />
+                      </div>
+                      <div>
+                        <Input label="UF" name="state" value={formLoja.state} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="SP" />
+                      </div>
+                    </div>
+                    <Input label="Rua / Logradouro" name="address_street" value={formLoja.address_street} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="Av. Paulista" />
+                    <Input label="Número" name="address_number" value={formLoja.address_number} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="1000" />
+                    <Input label="Complemento" name="address_complement" value={formLoja.address_complement} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="Sala 12, Loja A" />
+                    <Input label="Bairro" name="neighbourhood" value={formLoja.neighbourhood} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="Centro" />
                   </div>
                 </section>
               </div>
