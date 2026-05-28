@@ -42,6 +42,7 @@ interface PrintItem {
   sku: string;
   codigoBarras: string;
   tamanho?: string;
+  preco?: number;
   quantidade: number;
 }
 
@@ -50,6 +51,7 @@ interface ProdutoInicial {
   sku: string;
   codigoBarras: string;
   tamanho?: string;
+  preco?: number;
 }
 
 interface Props {
@@ -98,10 +100,9 @@ const PRESETS: Preset[] = [
 function calcularGrade(papel: ConfigPapel, etiqueta: ConfigEtiqueta) {
   const areaW = papel.largura - papel.margemEsquerda - papel.margemDireita;
   const areaH = papel.altura - papel.margemSuperior - papel.margemInferior;
-  const stepW = etiqueta.largura + etiqueta.gapHorizontal;
-  const stepH = etiqueta.altura + etiqueta.gapVertical;
-  const colunas = Math.max(1, Math.floor((areaW + etiqueta.gapHorizontal) / stepW));
-  const linhas = Math.max(1, Math.floor((areaH + etiqueta.gapVertical) / stepH));
+  // Gap é visual (padding interno) — não afeta quantas etiquetas cabem na folha
+  const colunas = Math.max(1, Math.floor(areaW / etiqueta.largura));
+  const linhas  = Math.max(1, Math.floor(areaH / etiqueta.altura));
   return { colunas, linhas, total: colunas * linhas };
 }
 
@@ -129,14 +130,24 @@ function gerarBarcodeSVG(codigo: string, heightPx = 25): string {
 function fontesPorAltura(alturaMM: number) {
   const h = alturaMM;
   return {
-    nome: `${Math.max(4, Math.min(9, h * 0.32)).toFixed(1)}pt`,
-    meta: `${Math.max(3, Math.min(7, h * 0.22)).toFixed(1)}pt`,
-    codigo: `${Math.max(3, Math.min(5.5, h * 0.17)).toFixed(1)}pt`,
-    nomeH: `${Math.max(2.5, Math.min(5, h * 0.20)).toFixed(1)}mm`,
-    metaH: `${Math.max(1.8, Math.min(4, h * 0.14)).toFixed(1)}mm`,
-    codigoH: `${Math.max(1.5, Math.min(3, h * 0.12)).toFixed(1)}mm`,
-    barcodeMaxH: `${(h * 0.55).toFixed(1)}mm`,
+    // linha nome+preço
+    headerH: `${Math.max(2.8, Math.min(5.5, h * 0.22)).toFixed(1)}mm`,
+    nome:    `${Math.max(3.5, Math.min(5.5, h * 0.28)).toFixed(1)}pt`,
+    preco:   `${Math.max(4.0, Math.min(6.5, h * 0.34)).toFixed(1)}pt`,
+    // linha tamanho
+    tam:     `${Math.max(3.0, Math.min(5.0, h * 0.22)).toFixed(1)}pt`,
+    tamH:    `${Math.max(1.8, Math.min(3.5, h * 0.14)).toFixed(1)}mm`,
+    // número do barcode
+    codigo:  `${Math.max(2.8, Math.min(4.5, h * 0.17)).toFixed(1)}pt`,
+    codigoH: `${Math.max(1.5, Math.min(2.8, h * 0.12)).toFixed(1)}mm`,
+    // max-height do svg
+    barcodeMaxH: `${(h * 0.58).toFixed(1)}mm`,
   };
+}
+
+function formatarPrecoHTML(preco?: number): string {
+  if (!preco || preco <= 0) return "";
+  return preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
 function gerarLabelHTML(
@@ -144,21 +155,35 @@ function gerarLabelHTML(
   etiqueta: ConfigEtiqueta,
 ): string {
   const f = fontesPorAltura(etiqueta.altura);
-  const barcodeH = Math.max(15, Math.round((etiqueta.altura * 0.5) * 3.78));
+  const barcodeH = Math.max(15, Math.round(etiqueta.altura * 0.55 * 3.78));
   const svgStr = gerarBarcodeSVG(item.codigoBarras, barcodeH);
-  const nome = item.nome.length > 42 ? item.nome.slice(0, 40) + "…" : item.nome;
-  const tamSpan = item.tamanho
-    ? `<span style="font-weight:bold">TAM: ${item.tamanho.toUpperCase()}</span>`
+  const precoStr = formatarPrecoHTML(item.preco);
+
+  // Nome mais curto quando há preço para não sobrepor
+  const maxLen = precoStr ? 22 : 38;
+  const nome = item.nome.length > maxLen ? item.nome.slice(0, maxLen - 1) + "…" : item.nome;
+
+  const precoHTML = precoStr
+    ? `<span class="et-preco" style="font-size:${f.preco}">${precoStr}</span>`
+    : "";
+  const tamHTML = item.tamanho
+    ? `<div class="et-tam" style="font-size:${f.tam};height:${f.tamH}">TAM: ${item.tamanho.toUpperCase()}</div>`
     : "";
   const barcodeContent = svgStr
     ? svgStr
-    : `<span style="font-size:3pt;color:#aaa">Sem código</span>`;
+    : `<span style="font-size:3pt;color:#bbb">Sem código</span>`;
+  const codigoHTML = item.codigoBarras
+    ? `<div class="et-codigo" style="font-size:${f.codigo};height:${f.codigoH}">${item.codigoBarras}</div>`
+    : "";
 
   return `<div class="etiqueta">
-  <div class="et-nome" style="font-size:${f.nome};height:${f.nomeH}">${nome}</div>
-  <div class="et-meta" style="font-size:${f.meta};height:${f.metaH}"><span>${item.sku}</span>${tamSpan}</div>
+  <div class="et-header" style="height:${f.headerH}">
+    <span class="et-nome" style="font-size:${f.nome}">${nome}</span>
+    ${precoHTML}
+  </div>
+  ${tamHTML}
   <div class="et-barcode">${barcodeContent}</div>
-  <div class="et-codigo" style="font-size:${f.codigo};height:${f.codigoH}">${item.codigoBarras}</div>
+  ${codigoHTML}
 </div>`;
 }
 
@@ -199,7 +224,9 @@ function gerarHTMLImpressao(
     })
     .join("\n");
 
-  const gapCSS = `${etiqueta.gapVertical}mm ${etiqueta.gapHorizontal}mm`;
+  // Gap é visual: vira padding interno (metade de cada lado)
+  const padH = (etiqueta.paddingH + etiqueta.gapHorizontal / 2).toFixed(2);
+  const padV = (etiqueta.paddingV + etiqueta.gapVertical  / 2).toFixed(2);
   const pageSize = papel.altura > 0
     ? `${papel.largura}mm ${papel.altura}mm`
     : `${papel.largura}mm`;
@@ -238,7 +265,7 @@ function gerarHTMLImpressao(
       display: grid;
       grid-template-columns: repeat(${colunas}, ${etiqueta.largura}mm);
       grid-template-rows: repeat(${linhas}, ${etiqueta.altura}mm);
-      gap: ${gapCSS};
+      gap: 0;
       page-break-after: always;
       overflow: hidden;
       background: white;
@@ -249,7 +276,7 @@ function gerarHTMLImpressao(
       height: ${etiqueta.altura}mm;
       overflow: hidden;
       box-sizing: border-box;
-      padding: ${etiqueta.paddingV}mm ${etiqueta.paddingH}mm;
+      padding: ${padV}mm ${padH}mm;
       display: flex;
       flex-direction: column;
       break-inside: avoid;
@@ -262,24 +289,40 @@ function gerarHTMLImpressao(
       box-sizing: border-box;
       background: white;
     }
+    /* ── linha nome + preço ── */
+    .et-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.8mm;
+      overflow: hidden;
+      flex-shrink: 0;
+      line-height: 1.15;
+    }
     .et-nome {
       font-weight: bold;
-      line-height: 1.2;
+      color: #000;
+      flex: 1;
+      min-width: 0;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+    }
+    .et-preco {
+      font-weight: bold;
       color: #000;
+      white-space: nowrap;
       flex-shrink: 0;
     }
-    .et-meta {
-      line-height: 1;
-      display: flex;
-      justify-content: space-between;
+    /* ── tamanho ── */
+    .et-tam {
+      color: #444;
       overflow: hidden;
-      color: #333;
       flex-shrink: 0;
-      margin-top: 0.2mm;
+      line-height: 1;
+      margin-top: 0.1mm;
     }
+    /* ── barcode ── */
     .et-barcode {
       flex: 1;
       display: flex;
@@ -287,6 +330,7 @@ function gerarHTMLImpressao(
       justify-content: center;
       overflow: hidden;
       min-height: 0;
+      margin-top: 0.2mm;
     }
     .et-barcode svg {
       width: 100%;
@@ -294,14 +338,16 @@ function gerarHTMLImpressao(
       max-height: ${f.barcodeMaxH};
       display: block;
     }
+    /* ── número do código ── */
     .et-codigo {
       text-align: center;
       font-family: Courier New, monospace;
-      letter-spacing: 0.2px;
+      letter-spacing: 0.3px;
       overflow: hidden;
       white-space: nowrap;
-      color: #444;
+      color: #555;
       flex-shrink: 0;
+      margin-top: 0.1mm;
     }
   </style>
 </head>
@@ -373,8 +419,9 @@ function FolhaPreview({
   const marginB = papel.margemInferior * escala;
   const labelW = etiqueta.largura * escala;
   const labelH = etiqueta.altura * escala;
-  const gapH = etiqueta.gapHorizontal * escala;
-  const gapV = etiqueta.gapVertical * escala;
+  // Gap é visual (padding interno) — grade não tem espaço físico entre células
+  const safeH = (etiqueta.paddingH + etiqueta.gapHorizontal / 2) * escala;
+  const safeV = (etiqueta.paddingV + etiqueta.gapVertical  / 2) * escala;
   const total = colunas * linhas;
 
   return (
@@ -413,7 +460,7 @@ function FolhaPreview({
           display: "grid",
           gridTemplateColumns: `repeat(${colunas}, ${labelW}px)`,
           gridTemplateRows: `repeat(${linhas}, ${labelH}px)`,
-          gap: `${gapV}px ${gapH}px`,
+          gap: 0,
         }}
       >
         {Array.from({ length: total }, (_, i) => {
@@ -427,17 +474,22 @@ function FolhaPreview({
               style={{
                 width: labelW,
                 height: labelH,
-                background: filled
-                  ? "#eff6ff"
-                  : skipped
-                  ? "#f4f4f5"
-                  : "#fafafa",
-                border: `${filled ? 0.8 : 0.3}px solid ${
-                  filled ? "#93c5fd" : "#e4e4e7"
-                }`,
+                background: filled ? "#eff6ff" : skipped ? "#f4f4f5" : "#fafafa",
+                border: `${filled ? 0.8 : 0.3}px solid ${filled ? "#93c5fd" : "#e4e4e7"}`,
                 borderRadius: 0.5,
+                boxSizing: "border-box",
+                padding: `${safeV}px ${safeH}px`,
               }}
-            />
+            >
+              {/* safe area interna — só visível quando há respiração */}
+              {(safeH > 0.5 || safeV > 0.5) && (
+                <div style={{
+                  width: "100%", height: "100%",
+                  background: filled ? "rgba(147,197,253,0.35)" : "rgba(0,0,0,0.04)",
+                  borderRadius: 0.5,
+                }} />
+              )}
+            </div>
           );
         })}
       </div>
@@ -479,6 +531,7 @@ export default function ImpressaoEtiquetasModal({
           sku: produtoInicial.sku,
           codigoBarras: produtoInicial.codigoBarras,
           tamanho: produtoInicial.tamanho,
+          preco: produtoInicial.preco,
           quantidade: 1,
         },
       ]);
@@ -562,6 +615,7 @@ export default function ImpressaoEtiquetasModal({
           sku: skuStr,
           codigoBarras: p.barcode?.toString() || "",
           tamanho: p.size || undefined,
+          preco: p.price ? Number(p.price) : undefined,
           quantidade: 1,
         },
       ]);
@@ -793,9 +847,9 @@ export default function ImpressaoEtiquetasModal({
                             <EtiquetaColacril
                               key={`${item.id}-${qi}`}
                               nome={item.nome}
-                              sku={item.sku}
                               codigoBarras={item.codigoBarras}
                               tamanho={item.tamanho}
+                              preco={item.preco}
                             />
                           )
                         )
@@ -898,12 +952,12 @@ export default function ImpressaoEtiquetasModal({
                     max={200}
                   />
                   <MmInput
-                    label="Espaço H"
+                    label="Resp. H"
                     value={etiqueta.gapHorizontal}
                     onChange={(v) => atualizarEtiqueta("gapHorizontal", v)}
                   />
                   <MmInput
-                    label="Espaço V"
+                    label="Resp. V"
                     value={etiqueta.gapVertical}
                     onChange={(v) => atualizarEtiqueta("gapVertical", v)}
                   />
