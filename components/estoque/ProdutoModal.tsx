@@ -795,6 +795,7 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
         sku: form.sku,
         codigoBarras: form.codigoBarras,
         tamanho: form.size || undefined,
+        preco: form.preco || undefined,
       }}
     />
     </>
