@@ -33,7 +33,7 @@ export default function EtiquetaColacril({
       JsBarcode(svgRef.current, codigoBarras, {
         format: "CODE128",
         width: 1.0,
-        height: 28,
+        height: 16,
         displayValue: false,
         margin: 0,
         background: "transparent",
@@ -58,8 +58,7 @@ export default function EtiquetaColacril({
   }
 
   const precoStr = formatarPreco(preco);
-  // Nome mais curto quando há preço para dividir a linha
-  const maxNomeLen = precoStr ? 16 : 26;
+  const maxNomeLen = 30;
   const nomeDisplay =
     nome.length > maxNomeLen ? nome.slice(0, maxNomeLen - 1) + "…" : nome;
 
@@ -78,14 +77,10 @@ export default function EtiquetaColacril({
         border: "0.3pt solid #ccc",
       }}
     >
-      {/* ── Linha 1: Nome + Preço ── */}
+      {/* ── Linha 1: Nome (largura total) ── */}
       <div
         style={{
-          display: "flex",
-          alignItems: "baseline",
-          justifyContent: "space-between",
-          gap: "0.8mm",
-          height: "3.2mm",
+          height: "3.8mm",
           overflow: "hidden",
           flexShrink: 0,
           lineHeight: 1.15,
@@ -93,47 +88,57 @@ export default function EtiquetaColacril({
       >
         <span
           style={{
-            fontSize: "5pt",
+            fontSize: "5.5pt",
             fontWeight: "bold",
             color: "#000",
-            flex: 1,
-            minWidth: 0,
             overflow: "hidden",
             whiteSpace: "nowrap",
             textOverflow: "ellipsis",
+            display: "block",
           }}
         >
           {nomeDisplay || "—"}
         </span>
-        {precoStr && (
-          <span
-            style={{
-              fontSize: "5.5pt",
-              fontWeight: "bold",
-              color: "#000",
-              whiteSpace: "nowrap",
-              flexShrink: 0,
-            }}
-          >
-            {precoStr}
-          </span>
-        )}
       </div>
 
-      {/* ── Linha 2: Tamanho ── */}
-      {tamanho && (
+      {/* ── Linha 2: Tamanho + Preço ── */}
+      {(tamanho || precoStr) && (
         <div
           style={{
-            fontSize: "4pt",
-            color: "#444",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
             flexShrink: 0,
-            height: "2.2mm",
+            height: "2.8mm",
             lineHeight: 1,
             overflow: "hidden",
             marginTop: "0.1mm",
           }}
         >
-          TAM: {tamanho.toUpperCase()}
+          {tamanho && (
+            <span
+              style={{
+                fontSize: "5.5pt",
+                fontWeight: "bold",
+                color: "#000",
+              }}
+            >
+              TAM: {tamanho.toUpperCase()}
+            </span>
+          )}
+          {precoStr && (
+            <span
+              style={{
+                fontSize: "5.5pt",
+                fontWeight: "bold",
+                color: "#000",
+                whiteSpace: "nowrap",
+                marginLeft: "auto",
+              }}
+            >
+              {precoStr}
+            </span>
+          )}
         </div>
       )}
 
@@ -152,7 +157,7 @@ export default function EtiquetaColacril({
         {codigoBarras ? (
           <svg
             ref={svgRef}
-            style={{ width: "30mm", height: "100%", display: "block" }}
+            style={{ width: "27mm", height: "100%", display: "block" }}
           />
         ) : (
           <span style={{ fontSize: "3pt", color: "#bbb" }}>
@@ -165,15 +170,16 @@ export default function EtiquetaColacril({
       {codigoBarras && (
         <div
           style={{
-            fontSize: "3pt",
+            fontSize: "5.5pt",
+            fontWeight: "bold",
             textAlign: "center",
             fontFamily: "Courier New, monospace",
             letterSpacing: "0.3px",
             flexShrink: 0,
             lineHeight: 1,
-            height: "1.8mm",
+            height: "2.8mm",
             overflow: "hidden",
-            color: "#555",
+            color: "#000",
             marginTop: "0.1mm",
           }}
         >
