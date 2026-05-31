@@ -320,6 +320,16 @@ export async function adicionarItemVenda(saleId: number, item: any) {
   return data;
 }
 
+export async function atualizarClienteVenda(saleId: number, customerId: number | null) {
+  const { error } = await supabase
+    .from("sales")
+    .update({ customer_id: customerId })
+    .eq("id", saleId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
 export async function atualizarValorVenda(saleId: number, novoValor: number) {
   console.log(`Atualizando valor total da venda ${saleId} para ${novoValor}`);
 

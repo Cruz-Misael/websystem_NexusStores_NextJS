@@ -668,6 +668,11 @@ export default function CaixaPDVPro() {
                           <p className={`text-sm font-bold ${semEstoque ? 'text-zinc-400' : 'text-zinc-900'}`}>
                             {money(produto.price || 0)}
                           </p>
+                          {produto.size && (
+                            <p className="text-[10px] font-medium text-indigo-500 uppercase">
+                              {produto.size}
+                            </p>
+                          )}
                         </div>
                       </button>
                     );

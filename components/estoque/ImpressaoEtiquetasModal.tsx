@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import JsBarcode from "jsbarcode";
 import {
   Printer, X, Plus, Minus, Search, Loader2,
-  ChevronLeft, ChevronRight, Package, Settings2, LayoutGrid,
+  ChevronLeft, ChevronRight, Package, Settings2, LayoutGrid, ScanBarcode,
 } from "lucide-react";
-import { listarProdutos } from "@/src/services/product.service";
+import { listarProdutos, buscarProdutoPorBarcodeOuSKU } from "@/src/services/product.service";
 import EtiquetaColacril from "./EtiquetaColacril";
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -66,14 +66,14 @@ const PRESETS: Preset[] = [
   {
     id: "colacril-ca4348",
     nome: "Colacril CA4348 / Pimaco A4348",
-    papel: { largura: 210, altura: 297, margemEsquerda: 12, margemDireita: 12, margemSuperior: 12.5, margemInferior: 12.5 },
-    etiqueta: { largura: 31, altura: 17, gapHorizontal: 0, gapVertical: 0, paddingH: 0.5, paddingV: 0.4 },
+    papel: { largura: 210, altura: 297, margemEsquerda: 6, margemDireita: 6, margemSuperior: 12.5, margemInferior: 12.5 },
+    etiqueta: { largura: 31, altura: 17, gapHorizontal: 2, gapVertical: 0, paddingH: 0.5, paddingV: 2 },
   },
   {
     id: "a4-3x8",
     nome: "A4 Genérico 3×8 (65×35mm)",
     papel: { largura: 210, altura: 297, margemEsquerda: 7.5, margemDireita: 7.5, margemSuperior: 13, margemInferior: 13 },
-    etiqueta: { largura: 65, altura: 35, gapHorizontal: 2, gapVertical: 0, paddingH: 2, paddingV: 1.5 },
+    etiqueta: { largura: 65, altura: 35, gapHorizontal: 0, gapVertical: 0, paddingH: 3, paddingV: 1.5 },
   },
   {
     id: "termica-58",
@@ -100,9 +100,11 @@ const PRESETS: Preset[] = [
 function calcularGrade(papel: ConfigPapel, etiqueta: ConfigEtiqueta) {
   const areaW = papel.largura - papel.margemEsquerda - papel.margemDireita;
   const areaH = papel.altura - papel.margemSuperior - papel.margemInferior;
-  // Gap é visual (padding interno) — não afeta quantas etiquetas cabem na folha
-  const colunas = Math.max(1, Math.floor(areaW / etiqueta.largura));
-  const linhas  = Math.max(1, Math.floor(areaH / etiqueta.altura));
+  const gH = etiqueta.gapHorizontal;
+  const gV = etiqueta.gapVertical;
+  // n*label + (n-1)*gap <= area  →  n <= (area + gap) / (label + gap)
+  const colunas = Math.max(1, Math.floor(gH > 0 ? (areaW + gH) / (etiqueta.largura + gH) : areaW / etiqueta.largura));
+  const linhas  = Math.max(1, Math.floor(gV > 0 ? (areaH + gV) / (etiqueta.altura  + gV) : areaH / etiqueta.altura));
   return { colunas, linhas, total: colunas * linhas };
 }
 
@@ -130,18 +132,18 @@ function gerarBarcodeSVG(codigo: string, heightPx = 25): string {
 function fontesPorAltura(alturaMM: number) {
   const h = alturaMM;
   return {
-    // linha nome+preço
-    headerH: `${Math.max(2.8, Math.min(5.5, h * 0.22)).toFixed(1)}mm`,
-    nome:    `${Math.max(3.5, Math.min(5.5, h * 0.28)).toFixed(1)}pt`,
-    preco:   `${Math.max(4.0, Math.min(6.5, h * 0.34)).toFixed(1)}pt`,
-    // linha tamanho
-    tam:     `${Math.max(3.0, Math.min(5.0, h * 0.22)).toFixed(1)}pt`,
-    tamH:    `${Math.max(1.8, Math.min(3.5, h * 0.14)).toFixed(1)}mm`,
-    // número do barcode
-    codigo:  `${Math.max(2.8, Math.min(4.5, h * 0.17)).toFixed(1)}pt`,
-    codigoH: `${Math.max(1.5, Math.min(2.8, h * 0.12)).toFixed(1)}mm`,
-    // max-height do svg
-    barcodeMaxH: `${(h * 0.58).toFixed(1)}mm`,
+    // linha nome (largura total, mais espaço)
+    headerH: `${Math.max(3.4, Math.min(6.0, h * 0.26)).toFixed(1)}mm`,
+    nome:    `${Math.max(4.0, Math.min(6.0, h * 0.32)).toFixed(1)}pt`,
+    // linha tamanho + preço (mesma linha)
+    tam:     `${Math.max(4.5, Math.min(6.5, h * 0.32)).toFixed(1)}pt`,
+    tamH:    `${Math.max(2.4, Math.min(4.0, h * 0.17)).toFixed(1)}mm`,
+    preco:   `${Math.max(4.5, Math.min(6.5, h * 0.32)).toFixed(1)}pt`,
+    // número do barcode — em negrito e ligeiramente maior
+    codigo:  `${Math.max(4.5, Math.min(6.5, h * 0.32)).toFixed(1)}pt`,
+    codigoH: `${Math.max(2.4, Math.min(4.0, h * 0.17)).toFixed(1)}mm`,
+    // max-height do svg — barras mais baixas
+    barcodeMaxH: `${(h * 0.37).toFixed(1)}mm`,
   };
 }
 
@@ -155,19 +157,18 @@ function gerarLabelHTML(
   etiqueta: ConfigEtiqueta,
 ): string {
   const f = fontesPorAltura(etiqueta.altura);
-  const barcodeH = Math.max(15, Math.round(etiqueta.altura * 0.55 * 3.78));
+  const barcodeH = Math.max(10, Math.round(etiqueta.altura * 0.35 * 3.78));
   const svgStr = gerarBarcodeSVG(item.codigoBarras, barcodeH);
   const precoStr = formatarPrecoHTML(item.preco);
 
-  // Nome mais curto quando há preço para não sobrepor
-  const maxLen = precoStr ? 22 : 38;
+  const maxLen = 38;
   const nome = item.nome.length > maxLen ? item.nome.slice(0, maxLen - 1) + "…" : item.nome;
 
-  const precoHTML = precoStr
-    ? `<span class="et-preco" style="font-size:${f.preco}">${precoStr}</span>`
-    : "";
-  const tamHTML = item.tamanho
-    ? `<div class="et-tam" style="font-size:${f.tam};height:${f.tamH}">TAM: ${item.tamanho.toUpperCase()}</div>`
+  const tamPrecoHTML = (item.tamanho || precoStr)
+    ? `<div class="et-tam-preco" style="height:${f.tamH}">
+        ${item.tamanho ? `<span class="et-tam" style="font-size:${f.tam}">TAM: ${item.tamanho.toUpperCase()}</span>` : ""}
+        ${precoStr ? `<span class="et-preco" style="font-size:${f.preco}">${precoStr}</span>` : ""}
+      </div>`
     : "";
   const barcodeContent = svgStr
     ? svgStr
@@ -179,9 +180,8 @@ function gerarLabelHTML(
   return `<div class="etiqueta">
   <div class="et-header" style="height:${f.headerH}">
     <span class="et-nome" style="font-size:${f.nome}">${nome}</span>
-    ${precoHTML}
   </div>
-  ${tamHTML}
+  ${tamPrecoHTML}
   <div class="et-barcode">${barcodeContent}</div>
   ${codigoHTML}
 </div>`;
@@ -224,9 +224,8 @@ function gerarHTMLImpressao(
     })
     .join("\n");
 
-  // Gap é visual: vira padding interno (metade de cada lado)
-  const padH = (etiqueta.paddingH + etiqueta.gapHorizontal / 2).toFixed(2);
-  const padV = (etiqueta.paddingV + etiqueta.gapVertical  / 2).toFixed(2);
+  const padH = etiqueta.paddingH.toFixed(2);
+  const padV = etiqueta.paddingV.toFixed(2);
   const pageSize = papel.altura > 0
     ? `${papel.largura}mm ${papel.altura}mm`
     : `${papel.largura}mm`;
@@ -265,7 +264,9 @@ function gerarHTMLImpressao(
       display: grid;
       grid-template-columns: repeat(${colunas}, ${etiqueta.largura}mm);
       grid-template-rows: repeat(${linhas}, ${etiqueta.altura}mm);
-      gap: 0;
+      gap: ${etiqueta.gapVertical}mm ${etiqueta.gapHorizontal}mm;
+      justify-content: center;
+      align-content: start;
       page-break-after: always;
       overflow: hidden;
       background: white;
@@ -289,12 +290,8 @@ function gerarHTMLImpressao(
       box-sizing: border-box;
       background: white;
     }
-    /* ── linha nome + preço ── */
+    /* ── linha nome (largura total) ── */
     .et-header {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 0.8mm;
       overflow: hidden;
       flex-shrink: 0;
       line-height: 1.15;
@@ -302,25 +299,30 @@ function gerarHTMLImpressao(
     .et-nome {
       font-weight: bold;
       color: #000;
-      flex: 1;
-      min-width: 0;
+      display: block;
       overflow: hidden;
       white-space: nowrap;
       text-overflow: ellipsis;
+    }
+    /* ── linha tamanho + preço ── */
+    .et-tam-preco {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      overflow: hidden;
+      flex-shrink: 0;
+      line-height: 1;
+      margin-top: 0.1mm;
+    }
+    .et-tam {
+      font-weight: bold;
+      color: #000;
     }
     .et-preco {
       font-weight: bold;
       color: #000;
       white-space: nowrap;
-      flex-shrink: 0;
-    }
-    /* ── tamanho ── */
-    .et-tam {
-      color: #444;
-      overflow: hidden;
-      flex-shrink: 0;
-      line-height: 1;
-      margin-top: 0.1mm;
+      margin-left: auto;
     }
     /* ── barcode ── */
     .et-barcode {
@@ -333,19 +335,20 @@ function gerarHTMLImpressao(
       margin-top: 0.2mm;
     }
     .et-barcode svg {
-      width: 100%;
+      width: 87%;
       height: auto;
       max-height: ${f.barcodeMaxH};
       display: block;
     }
     /* ── número do código ── */
     .et-codigo {
+      font-weight: bold;
       text-align: center;
       font-family: Courier New, monospace;
       letter-spacing: 0.3px;
       overflow: hidden;
       white-space: nowrap;
-      color: #555;
+      color: #000;
       flex-shrink: 0;
       margin-top: 0.1mm;
     }
@@ -419,10 +422,15 @@ function FolhaPreview({
   const marginB = papel.margemInferior * escala;
   const labelW = etiqueta.largura * escala;
   const labelH = etiqueta.altura * escala;
-  // Gap é visual (padding interno) — grade não tem espaço físico entre células
-  const safeH = (etiqueta.paddingH + etiqueta.gapHorizontal / 2) * escala;
-  const safeV = (etiqueta.paddingV + etiqueta.gapVertical  / 2) * escala;
+  const gapHpx = etiqueta.gapHorizontal * escala;
+  const gapVpx = etiqueta.gapVertical * escala;
+  const safeH = etiqueta.paddingH * escala;
+  const safeV = etiqueta.paddingV * escala;
   const total = colunas * linhas;
+  // Centraliza a grade dentro da área entre as margens
+  const contentW = previewWidth - marginL - marginR;
+  const gridW = colunas * labelW + Math.max(0, colunas - 1) * gapHpx;
+  const centeredLeft = marginL + Math.max(0, (contentW - gridW) / 2);
 
   return (
     <div
@@ -456,11 +464,11 @@ function FolhaPreview({
         style={{
           position: "absolute",
           top: marginT,
-          left: marginL,
+          left: centeredLeft,
           display: "grid",
           gridTemplateColumns: `repeat(${colunas}, ${labelW}px)`,
           gridTemplateRows: `repeat(${linhas}, ${labelH}px)`,
-          gap: 0,
+          gap: `${gapVpx}px ${gapHpx}px`,
         }}
       >
         {Array.from({ length: total }, (_, i) => {
@@ -511,6 +519,10 @@ export default function ImpressaoEtiquetasModal({
   const [todosProdutos, setTodosProdutos] = useState<any[]>([]);
   const [carregandoProdutos, setCarregandoProdutos] = useState(false);
   const [mostrarBusca, setMostrarBusca] = useState(false);
+  const [scanCodigo, setScanCodigo] = useState("");
+  const [scanCarregando, setScanCarregando] = useState(false);
+  const [scanErro, setScanErro] = useState("");
+  const scanInputRef = useRef<HTMLInputElement>(null);
   const [isPrinting, setIsPrinting] = useState(false);
   const [presetId, setPresetId] = useState("colacril-ca4348");
   const [papel, setPapel] = useState<ConfigPapel>({ ...PRESETS[0].papel });
@@ -543,6 +555,8 @@ export default function ImpressaoEtiquetasModal({
       setBusca("");
       setMostrarBusca(false);
       setTodosProdutos([]);
+      setScanCodigo("");
+      setScanErro("");
     }
   }, [aberto, produtoInicial]);
 
@@ -622,6 +636,27 @@ export default function ImpressaoEtiquetasModal({
     }
     setBusca("");
     setMostrarBusca(false);
+  };
+
+  const handleScan = async (codigo: string) => {
+    const cod = codigo.trim();
+    if (!cod) return;
+    setScanCarregando(true);
+    setScanErro("");
+    try {
+      const p = await buscarProdutoPorBarcodeOuSKU(cod);
+      if (!p) {
+        setScanErro("Produto não encontrado");
+        return;
+      }
+      adicionarProduto(p);
+      setScanCodigo("");
+      scanInputRef.current?.focus();
+    } catch {
+      setScanErro("Erro ao buscar produto");
+    } finally {
+      setScanCarregando(false);
+    }
   };
 
   const removerItem = (id: string) =>
@@ -713,6 +748,30 @@ export default function ImpressaoEtiquetasModal({
                 <span className="text-[10px] font-medium text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-full">
                   {totalEtiquetas} etiq.
                 </span>
+              )}
+            </div>
+
+            {/* ── Campo de scan ── */}
+            <div className="px-3 py-2 border-b border-zinc-100 bg-white">
+              <div className="relative">
+                <ScanBarcode size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
+                <input
+                  ref={scanInputRef}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="Bipe ou digite o código de barras…"
+                  value={scanCodigo}
+                  onChange={(e) => { setScanCodigo(e.target.value); setScanErro(""); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleScan(scanCodigo); }}
+                  disabled={scanCarregando}
+                  className="w-full h-8 pl-8 pr-8 border border-zinc-200 rounded-lg text-xs focus:outline-none focus:ring-1 focus:ring-indigo-400 focus:border-indigo-400 disabled:opacity-50 placeholder:text-zinc-300"
+                />
+                {scanCarregando && (
+                  <Loader2 size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-indigo-500 animate-spin" />
+                )}
+              </div>
+              {scanErro && (
+                <p className="text-[10px] text-red-500 mt-1 px-0.5">{scanErro}</p>
               )}
             </div>
 

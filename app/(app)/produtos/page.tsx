@@ -676,7 +676,16 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
                   <div className="flex justify-between items-center">
                     <div className="flex flex-col">
                       <span className="font-mono text-[10px] text-zinc-400">{produto.sku}</span>
-                      <span className="text-[10px] text-zinc-500">{produto.categoria}</span>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        {produto.size && (
+                          <span className="text-[10px] font-medium text-indigo-500 uppercase">{produto.size}</span>
+                        )}
+                        {produto.preco > 0 && (
+                          <span className="text-[10px] font-semibold text-emerald-600">
+                            {produto.preco.toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <div className="text-right">
                       <div className="font-bold text-sm text-zinc-800">{produto.estoque} {produto.units_type || 'un'}</div>
