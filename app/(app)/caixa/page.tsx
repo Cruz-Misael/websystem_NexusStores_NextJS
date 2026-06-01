@@ -82,7 +82,7 @@ export default function CaixaPDVPro() {
 
   // Modal de cadastro rápido (produto não cadastrado)
   const [modalCadastroRapido, setModalCadastroRapido] = useState<{ codigoBipado: string } | null>(null);
-  const [cadastroRapido, setCadastroRapido] = useState({ nome: "", preco: "", estoque: 1 });
+  const [cadastroRapido, setCadastroRapido] = useState({ nome: "", preco: "", estoque: 1, tamanho: "" });
 
   const [salvando, setSalvando] = useState(false);
 
@@ -168,6 +168,7 @@ export default function CaixaPDVPro() {
         price: parseFloat(String(cadastroRapido.preco)),
         stock_quantity: cadastroRapido.estoque,
         barcode: isNaN(barcodeNum) ? undefined : barcodeNum,
+        ...(cadastroRapido.tamanho.trim() && { size: cadastroRapido.tamanho.trim() }),
       });
       adicionarAoCarrinho({
         id: produtoCriado.sku,
@@ -180,7 +181,7 @@ export default function CaixaPDVPro() {
         estoqueAtual: produtoCriado.stock_quantity || cadastroRapido.estoque,
       });
       setModalCadastroRapido(null);
-      setCadastroRapido({ nome: "", preco: "", estoque: 1 });
+      setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" });
       mostrarToast(`"${produtoCriado.name}" cadastrado e adicionado ao carrinho!`, "sucesso");
     } catch {
       mostrarToast("Erro ao cadastrar produto", "erro");
@@ -382,7 +383,7 @@ export default function CaixaPDVPro() {
       }
 
       setModalCadastroRapido({ codigoBipado: codigoLimpo });
-      setCadastroRapido({ nome: "", preco: "", estoque: 1 });
+      setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" });
     } catch (error) {
       console.error("Erro ao buscar produto:", error);
       mostrarToast("Erro ao buscar produto", "erro");
@@ -1264,6 +1265,16 @@ export default function CaixaPDVPro() {
                   autoFocus
                 />
               </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Tamanho</label>
+                <input
+                  type="text"
+                  placeholder="Ex: P, M, G, 38, 40..."
+                  value={cadastroRapido.tamanho}
+                  onChange={e => setCadastroRapido(p => ({ ...p, tamanho: e.target.value }))}
+                  className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                />
+              </div>
               <div className="flex gap-3">
                 <div className="flex-1">
                   <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Preço (R$) *</label>
@@ -1291,7 +1302,7 @@ export default function CaixaPDVPro() {
             </div>
             <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex gap-3">
               <button
-                onClick={() => { setModalCadastroRapido(null); setCadastroRapido({ nome: "", preco: "", estoque: 1 }); }}
+                onClick={() => { setModalCadastroRapido(null); setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" }); }}
                 className="flex-1 h-10 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
               >
                 Cancelar
