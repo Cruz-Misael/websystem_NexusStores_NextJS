@@ -3,6 +3,7 @@
 import ProdutoModal from "@/components/estoque/ProdutoModal";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
+import ImpressaoEtiquetasModal from "@/components/estoque/ImpressaoEtiquetasModal";
 import { listarProdutosPaginado, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
 import { useState, useEffect } from "react";
 import { useDebounce } from "@/src/hooks/useDebounce";
@@ -22,7 +23,13 @@ import {
   Eye,
   EyeOff,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Tag,
+  Clock,
+  ScanBarcode,
+  FileText,
+  MapPin,
+  Truck
 } from "lucide-react";
 
 // TIPO PARA USO NA APLICAÇÃO (substituindo o mock)
@@ -150,6 +157,7 @@ export default function GestaoEstoqueCompacto() {
   const [ajusteTipo, setAjusteTipo] = useState<"entrada" | "saida">("entrada");
   const [ajusteObservacao, setAjusteObservacao] = useState("");
   const [modalAberto, setModalAberto] = useState(false);
+  const [modalEtiquetaAberto, setModalEtiquetaAberto] = useState(false);
   const [modoModal, setModoModal] = useState<"create" | "edit">("create");
   const [produtoParaEditar, setProdutoParaEditar] = useState<Produto | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -579,7 +587,14 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
                   <span className="absolute -top-1 -right-1 w-2 h-2 bg-indigo-600 rounded-full animate-ping"></span>
                 )}
               </button>
-              <button 
+              <button
+                onClick={() => setModalEtiquetaAberto(true)}
+                className="p-2 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-100 rounded-lg transition-colors"
+                title="Imprimir Etiquetas"
+              >
+                <Tag size={18} />
+              </button>
+              <button
                 onClick={abrirNovoProduto}
                 className="p-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition-all active:scale-95"
                 title="Cadastrar Novo Produto"
@@ -746,20 +761,40 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
             {/* Header do Detalhe */}
             <header className="bg-white border-b border-zinc-200 px-6 py-4 flex justify-between items-start shrink-0 shadow-sm z-10">
               <div>
-                <div className="flex items-center gap-2 text-[10px] text-zinc-400 uppercase tracking-wider mb-1">
+                <div className="flex items-center gap-2 text-[10px] text-zinc-400 uppercase tracking-wider mb-1.5 flex-wrap">
                   <span>{selecionado.categoria || "Sem categoria"}</span>
                   <span>•</span>
                   <span>SKU: {selecionado.sku}</span>
                   <span>•</span>
                   <span>Loc: {selecionado.localizacao || "Não definida"}</span>
-                  {!selecionado.is_active && (
+                  {selecionado.size && (
                     <>
                       <span>•</span>
-                      <span className="text-amber-600">INATIVO</span>
+                      <span className="bg-indigo-50 text-indigo-600 border border-indigo-100 px-1.5 py-0.5 rounded font-bold normal-case tracking-normal">
+                        {selecionado.size}
+                      </span>
+                    </>
+                  )}
+                  {selecionado.color && (
+                    <>
+                      <span>•</span>
+                      <span className="bg-zinc-100 text-zinc-600 px-1.5 py-0.5 rounded font-bold normal-case tracking-normal">
+                        {selecionado.color}
+                      </span>
                     </>
                   )}
                 </div>
-                <h2 className="text-2xl font-bold text-zinc-900">{selecionado.nome}</h2>
+                <div className="flex items-center gap-3">
+                  <h2 className="text-2xl font-bold text-zinc-900">{selecionado.nome}</h2>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide border ${
+                    selecionado.is_active
+                      ? 'bg-emerald-50 text-emerald-600 border-emerald-100'
+                      : 'bg-amber-50 text-amber-600 border-amber-100'
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${selecionado.is_active ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                    {selecionado.is_active ? 'Ativo' : 'Inativo'}
+                  </span>
+                </div>
               </div>
               
               <div className="flex gap-2">
@@ -942,63 +977,88 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
 
                 {/* Informações Adicionais */}
                 <div className="bg-white rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
-                  <div className="px-6 py-4 border-b border-zinc-100">
-                    <h3 className="text-sm font-bold text-zinc-800">Detalhes do Produto</h3>
+                  <div className="px-5 py-3.5 border-b border-zinc-100">
+                    <h3 className="text-[10px] font-black uppercase tracking-widest text-zinc-400">Detalhes do Produto</h3>
                   </div>
-                  <div className="p-6">
-                    <div className="grid grid-cols-2 gap-6">
-                      <div className="space-y-4">
-                        <div>
-                          <label className="text-xs text-zinc-500 block mb-1">Descrição</label>
-                          <p className="text-sm text-zinc-800">{selecionado.description || "Sem descrição"}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-zinc-500 block mb-1">Código de Barras</label>
-                          <p className="text-sm font-mono text-zinc-800">{selecionado.codigoBarras || "Não informado"}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-zinc-500 block mb-1">Características</label>
-                          <div className="flex flex-wrap gap-2 mt-2">
-                            {selecionado.color && (
-                              <span className="px-2 py-1 bg-zinc-100 text-zinc-700 rounded text-xs">
-                                Cor: {selecionado.color}
-                              </span>
-                            )}
-                            {selecionado.size && (
-                              <span className="px-2 py-1 bg-zinc-100 text-zinc-700 rounded text-xs">
-                                Tamanho: {selecionado.size}
-                              </span>
-                            )}
-                            <span className="px-2 py-1 bg-zinc-100 text-zinc-700 rounded text-xs">
-                              Unidade: {selecionado.units_type || 'un'}
+
+                  <div className="divide-y divide-zinc-50">
+                    {/* Descrição */}
+                    <div className="px-5 py-3.5 flex items-start gap-3">
+                      <FileText size={13} className="text-zinc-300 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-0.5">Descrição</p>
+                        <p className="text-sm text-zinc-700 leading-relaxed">{selecionado.description || "—"}</p>
+                      </div>
+                    </div>
+
+                    {/* Código de Barras */}
+                    <div className="px-5 py-3.5 flex items-center gap-3">
+                      <ScanBarcode size={13} className="text-zinc-300 shrink-0" />
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-0.5">Código de Barras</p>
+                        <p className="text-sm font-mono text-zinc-700">{selecionado.codigoBarras || "—"}</p>
+                      </div>
+                    </div>
+
+                    {/* Características */}
+                    <div className="px-5 py-3.5 flex items-start gap-3">
+                      <Tag size={13} className="text-zinc-300 mt-0.5 shrink-0" />
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-2">Características</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {selecionado.size && (
+                            <span className="px-2.5 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-lg text-xs font-semibold">
+                              Tam: {selecionado.size}
                             </span>
-                          </div>
+                          )}
+                          {selecionado.color && (
+                            <span className="px-2.5 py-1 bg-zinc-100 text-zinc-600 rounded-lg text-xs font-semibold">
+                              Cor: {selecionado.color}
+                            </span>
+                          )}
+                          <span className="px-2.5 py-1 bg-zinc-100 text-zinc-600 rounded-lg text-xs font-semibold">
+                            {selecionado.units_type || 'un'}
+                          </span>
                         </div>
                       </div>
-                      <div className="space-y-4">
+                    </div>
+
+                    {/* Status · Localização · Fornecedor */}
+                    <div className="px-5 py-3.5 grid grid-cols-3 gap-4">
+                      <div className="flex items-start gap-2">
+                        <div className={`w-1.5 h-1.5 rounded-full mt-1 shrink-0 ${selecionado.is_active ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
                         <div>
-                          <label className="text-xs text-zinc-500 block mb-1">Status</label>
-                          <div className="flex items-center gap-2">
-                            <div className={`w-3 h-3 rounded-full ${selecionado.is_active ? 'bg-emerald-500' : 'bg-amber-500'}`}></div>
-                            <span className="text-sm text-zinc-800">
-                              {selecionado.is_active ? 'Ativo' : 'Inativo'}
-                            </span>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-zinc-500 block mb-1">Localização</label>
-                          <p className="text-sm text-zinc-800">{selecionado.localizacao || "Não informada"}</p>
-                        </div>
-                        <div>
-                          <label className="text-xs text-zinc-500 block mb-1">Última Atualização</label>
-                          <p className="text-sm text-zinc-800">
-                            {selecionado.ultimaMovimentacao 
-                              ? new Date(selecionado.ultimaMovimentacao).toLocaleString('pt-BR')
-                              : 'Não disponível'
-                            }
-                          </p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-0.5">Status</p>
+                          <p className="text-xs font-medium text-zinc-700">{selecionado.is_active ? 'Ativo' : 'Inativo'}</p>
                         </div>
                       </div>
+                      <div className="flex items-start gap-2">
+                        <MapPin size={13} className="text-zinc-300 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-0.5">Localização</p>
+                          <p className="text-xs text-zinc-700">{selecionado.localizacao || "—"}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-start gap-2">
+                        <Truck size={13} className="text-zinc-300 mt-0.5 shrink-0" />
+                        <div>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 mb-0.5">Fornecedor</p>
+                          <p className="text-xs text-zinc-700 truncate" title={selecionado.fornecedor}>{selecionado.fornecedor || "—"}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Rodapé: última atualização */}
+                    <div className="px-5 py-2.5 flex items-center gap-2 bg-zinc-50/60">
+                      <Clock size={11} className="text-zinc-300 shrink-0" />
+                      <p className="text-[10px] text-zinc-400">
+                        Última atualização:{" "}
+                        <span className="font-medium text-zinc-500">
+                          {selecionado.ultimaMovimentacao
+                            ? new Date(selecionado.ultimaMovimentacao).toLocaleString('pt-BR')
+                            : 'Não disponível'}
+                        </span>
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1034,6 +1094,19 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
         confirmando={carregandoAcao}
         textoConfirmar={popupConfig.textoConfirmar}
         textoCancelar={popupConfig.textoCancelar}
+      />
+
+      {/* MODAL DE IMPRESSÃO DE ETIQUETAS */}
+      <ImpressaoEtiquetasModal
+        aberto={modalEtiquetaAberto}
+        onClose={() => setModalEtiquetaAberto(false)}
+        produtoInicial={selecionado ? {
+          nome: selecionado.nome,
+          sku: selecionado.sku,
+          codigoBarras: selecionado.codigoBarras || "",
+          tamanho: selecionado.size || undefined,
+          preco: selecionado.preco,
+        } : undefined}
       />
 
       {/* TOAST DE NOTIFICAÇÃO */}

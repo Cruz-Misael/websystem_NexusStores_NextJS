@@ -2,6 +2,7 @@
 'use client';
 import UsuarioModal from '@/components/users/UsuarioModal';
 import { useState, useEffect, useRef } from 'react';
+import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { Toaster, toast } from 'react-hot-toast';
 import { CompanyService, CompanyData } from '@/services/company.service';
@@ -105,7 +106,12 @@ const emptyOperator: Omit<Operator, 'id' | 'created_at' | 'updated_at'> = {
 };
 
 export default function ConfiguracoesPage() {
-  const [activeTab, setActiveTab] = useState<TabType>('loja');
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState<TabType>(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores') return tab;
+    return 'loja';
+  });
   const [isLoading, setIsLoading] = useState(false);
   const [progresso, setProgresso] = useState({ loja: 0, usuarios: 0 });
   const [modalAberto, setModalAberto] = useState(false);
