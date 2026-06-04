@@ -6,7 +6,8 @@ import {
   Printer, X, Plus, Minus, Search, Loader2,
   ChevronLeft, ChevronRight, Package, Settings2, LayoutGrid, ScanBarcode,
 } from "lucide-react";
-import { listarProdutos, buscarProdutoPorBarcodeOuSKU } from "@/src/services/product.service";
+import { listarProdutosPaginado, buscarProdutoPorBarcodeOuSKU } from "@/src/services/product.service";
+import { useDebounce } from "@/src/hooks/useDebounce";
 import EtiquetaColacril from "./EtiquetaColacril";
 
 // ─── TYPES ───────────────────────────────────────────────────────────────────
@@ -515,8 +516,9 @@ export default function ImpressaoEtiquetasModal({
   const [items, setItems] = useState<PrintItem[]>([]);
   const [posicaoInicial, setPosicaoInicial] = useState(1);
   const [busca, setBusca] = useState("");
+  const buscaDebounced = useDebounce(busca, 300);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [todosProdutos, setTodosProdutos] = useState<any[]>([]);
+  const [produtosResultado, setProdutosResultado] = useState<any[]>([]);
   const [carregandoProdutos, setCarregandoProdutos] = useState(false);
   const [mostrarBusca, setMostrarBusca] = useState(false);
   const [scanCodigo, setScanCodigo] = useState("");
@@ -554,21 +556,21 @@ export default function ImpressaoEtiquetasModal({
       setPosicaoInicial(1);
       setBusca("");
       setMostrarBusca(false);
-      setTodosProdutos([]);
+      setProdutosResultado([]);
       setScanCodigo("");
       setScanErro("");
     }
   }, [aberto, produtoInicial]);
 
-  // Carrega produtos ao abrir busca
+  // Busca server-side com ilike a cada keystroke (debounced)
   useEffect(() => {
-    if (!mostrarBusca || todosProdutos.length > 0) return;
+    if (!mostrarBusca) return;
     setCarregandoProdutos(true);
-    listarProdutos()
-      .then(setTodosProdutos)
-      .catch(() => {})
+    listarProdutosPaginado(1, 10, buscaDebounced.trim() || undefined, true)
+      .then(({ produtos }) => setProdutosResultado(produtos))
+      .catch(() => setProdutosResultado([]))
       .finally(() => setCarregandoProdutos(false));
-  }, [mostrarBusca, todosProdutos.length]);
+  }, [buscaDebounced, mostrarBusca]);
 
   // Reseta posição quando a grade muda de tamanho
   useEffect(() => {
@@ -582,15 +584,6 @@ export default function ImpressaoEtiquetasModal({
   const folhasNecessarias =
     totalEtiquetas > 0 ? Math.ceil(totalComOffset / porPagina) : 0;
 
-  const produtosFiltrados = todosProdutos
-    .filter((p) => {
-      if (!busca.trim()) return true;
-      const t = busca.toLowerCase();
-      return (
-        p.name?.toLowerCase().includes(t) || p.sku?.toString().includes(t)
-      );
-    })
-    .slice(0, 10);
 
   const aplicarPreset = (id: string) => {
     setPresetId(id);
@@ -866,12 +859,12 @@ export default function ImpressaoEtiquetasModal({
                         <Loader2 size={12} className="animate-spin" />
                         Carregando...
                       </div>
-                    ) : produtosFiltrados.length === 0 ? (
+                    ) : produtosResultado.length === 0 ? (
                       <p className="text-xs text-zinc-400 p-2 text-center">
                         Nenhum produto encontrado
                       </p>
                     ) : (
-                      produtosFiltrados.map((p) => (
+                      produtosResultado.map((p) => (
                         <button
                           key={p.sku}
                           onClick={() => adicionarProduto(p)}

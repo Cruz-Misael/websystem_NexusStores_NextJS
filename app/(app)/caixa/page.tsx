@@ -179,6 +179,7 @@ export default function CaixaPDVPro() {
         sku: produtoCriado.sku,
         custo: produtoCriado.cost,
         estoqueAtual: produtoCriado.stock_quantity || cadastroRapido.estoque,
+        tamanho: produtoCriado.size || undefined,
       });
       setModalCadastroRapido(null);
       setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" });

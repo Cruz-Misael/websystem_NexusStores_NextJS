@@ -134,6 +134,7 @@ export default function EtiquetaColacril({
                 color: "#000",
                 whiteSpace: "nowrap",
                 marginLeft: "auto",
+                marginRight: "1.5mm",
               }}
             >
               {precoStr}

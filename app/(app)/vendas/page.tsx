@@ -881,7 +881,11 @@ export default function HistoricoVendasCompacto() {
                 <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                   <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
                     <h3 className="font-semibold text-gray-700 text-xs uppercase tracking-wide">Itens do Pedido</h3>
-                    <span className="text-xs text-gray-500">{selecionada.items?.length || 0} itens</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-500">{selecionada.items?.filter(i => i.quantity > 0).length || 0} itens</span>
+                      <span className="text-xs text-gray-400">·</span>
+                      <span className="text-xs text-gray-500">{selecionada.items?.reduce((acc, i) => acc + (i.quantity > 0 ? i.quantity : 0), 0) || 0} unidades</span>
+                    </div>
                   </div>
                   <table className="w-full text-left border-collapse">
                     <thead>

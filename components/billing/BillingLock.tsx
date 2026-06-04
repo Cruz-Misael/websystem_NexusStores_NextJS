@@ -36,7 +36,7 @@ export default function BillingLock({ diasAtraso, nextDueDate }: Props) {
         </p>
 
         <button
-          onClick={() => router.push('/configuracoes')}
+          onClick={() => router.push('/configuracoes?tab=pagamento')}
           className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 rounded-xl transition-colors shadow-lg shadow-indigo-200"
         >
           <Settings size={18} />

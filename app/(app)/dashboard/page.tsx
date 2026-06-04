@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import {
   TrendingUp,
   TrendingDown,
@@ -85,7 +86,8 @@ interface OperatorData {
 }
 
 export default function DashboardExecutive() {
-  
+  const router = useRouter();
+
   // --- ESTADOS DO COMPONENTE ---
   const [kpiData, setKpiData] = useState<KpiData | null>(null);
   const [financialData, setFinancialData] = useState<FinancialData[]>([]);
@@ -380,7 +382,7 @@ export default function DashboardExecutive() {
           <div className="lg:col-span-2 bg-white p-5 rounded-xl border border-zinc-200 shadow-sm overflow-hidden">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Top Performance</h3>
-              <button className="text-indigo-600 text-xs font-bold hover:underline">Ver Estoque Completo</button>
+              <button onClick={() => router.push('/produtos')} className="text-indigo-600 text-xs font-bold hover:underline">Ver Estoque Completo</button>
             </div>
             
             <div className="overflow-x-auto">
