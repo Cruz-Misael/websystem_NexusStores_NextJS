@@ -1,9 +1,7 @@
 // app/configuracoes/page.tsx
 'use client';
-
-export const dynamic = 'force-dynamic';
 import UsuarioModal from '@/components/users/UsuarioModal';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { Toaster, toast } from 'react-hot-toast';
@@ -107,7 +105,7 @@ const emptyOperator: Omit<Operator, 'id' | 'created_at' | 'updated_at'> = {
   is_active: true,
 };
 
-export default function ConfiguracoesPage() {
+function ConfiguracoesContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const tab = searchParams.get('tab');
@@ -1077,6 +1075,14 @@ export default function ConfiguracoesPage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function ConfiguracoesPage() {
+  return (
+    <Suspense fallback={null}>
+      <ConfiguracoesContent />
+    </Suspense>
   );
 }
 
