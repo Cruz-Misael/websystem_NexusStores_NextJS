@@ -44,7 +44,7 @@ export function calcularProximoVencimento(
 
 export function calcularStatus(nextDueDate: string): BillingStatus {
   const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+  hoje.setHours(12, 0, 0, 0);
   const vencimento = new Date(nextDueDate + 'T12:00:00');
   const diasAtraso = Math.floor((hoje.getTime() - vencimento.getTime()) / (1000 * 60 * 60 * 24));
 
@@ -55,7 +55,7 @@ export function calcularStatus(nextDueDate: string): BillingStatus {
 
 export function diasAtraso(nextDueDate: string): number {
   const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+  hoje.setHours(12, 0, 0, 0);
   const vencimento = new Date(nextDueDate + 'T12:00:00');
   return Math.max(0, Math.floor((hoje.getTime() - vencimento.getTime()) / (1000 * 60 * 60 * 24)));
 }

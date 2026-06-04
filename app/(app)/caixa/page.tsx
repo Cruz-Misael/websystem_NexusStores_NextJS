@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useDebounce } from "@/src/hooks/useDebounce";
 import {
   Search,
   Trash2,
@@ -17,8 +18,8 @@ import { criarVenda } from "@/src/services/sales.service";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { CreateSaleDTO } from "@/types/sales";
-import { listarPessoas } from "@/src/services/people.service";
-import { listarProdutos, buscarProdutoPorSKU } from "@/src/services/product.service";
+import { listarPessoasPaginado } from "@/src/services/people.service";
+import { listarProdutosPaginado, buscarProdutoPorSKU, buscarProdutoPorBarcode, criarProduto, atualizarProduto } from "@/src/services/product.service";
 import { listarOperadores, Operator } from "@/src/services/operator.service";
 import Recibo from "@/components/vendas/Recibo";
 import { Sale } from "@/types/sales";
@@ -33,6 +34,7 @@ interface ItemCarrinho {
   sku: number;
   custo?: number;
   estoqueAtual: number;
+  tamanho?: string;
 }
 
 interface Cliente {
@@ -57,9 +59,11 @@ export default function CaixaPDVPro() {
   const [buscaOperador, setBuscaOperador] = useState("");
   const [finalizando, setFinalizando] = useState(false);
   const [vendaFinalizada, setVendaFinalizada] = useState<Sale | null>(null);
-  const [todosProdutos, setTodosProdutos] = useState<any[]>([]);
+  const [sugestoesFiltradas, setSugestoesFiltradas] = useState<any[]>([]);
   const [dropdownAberto, setDropdownAberto] = useState(false);
   const [indiceSelecionado, setIndiceSelecionado] = useState(-1);
+  const debouncedBusca = useDebounce(busca, 250);
+  const debouncedBuscaCliente = useDebounce(buscaCliente, 300);
 
   // Estado para evitar hydration mismatch
   const [horaAtual, setHoraAtual] = useState("");
@@ -70,7 +74,17 @@ export default function CaixaPDVPro() {
   // Modal de consignado
   const [mostrarModalConsignado, setMostrarModalConsignado] = useState(false);
   const [dataPrevistaPagamento, setDataPrevistaPagamento] = useState("");
-  const [observacaoConsignado, setObservacaoConsignado] = useState("");
+  const [observacaoConsignado, setObservacaoConsignado] = useState(`OBRIGAÇÕES DA CONSIGNATÁRIA\n\n• Cuidados com o material:\n  - Manter as peças em perfeito estado, sem amassar, sujar ou danificar.\n  - Conferir as peças recebidas, confirmar a quantidade e dar OK do recebimento.\n  - Organizar adequadamente para devolução.\n\n• Controle de vendas:\n  - Passar a data do Acerto em até 3 dias após recebimento do Kit.\n  - Enviar relação detalhada das vendas até 3 dias antes do pagamento.\n  - Informar: descrição, quantidade e valor unitário dos itens vendidos.\n\n• Devolução:\n  - Restituir todos os itens não vendidos nas mesmas condições de recebimento.\n  - Cumprir prazo estipulado para devolução.\n  - Multas por atraso: 5% do valor total do kit até 3 dias | 10% após 3 dias.\n\n• Responsabilidade por danos/perdas:\n  - Indenização integral pelo valor do kit em caso de: danos irreparáveis, extravio de peças ou devolução em condições inadequadas.\n\nDe Acordo: __________________________`);
+
+  // Modal de produto sem estoque
+  const [produtoSemEstoque, setProdutoSemEstoque] = useState<any | null>(null);
+  const [qtdAdicionar, setQtdAdicionar] = useState(1);
+
+  // Modal de cadastro rápido (produto não cadastrado)
+  const [modalCadastroRapido, setModalCadastroRapido] = useState<{ codigoBipado: string } | null>(null);
+  const [cadastroRapido, setCadastroRapido] = useState({ nome: "", preco: "", estoque: 1, tamanho: "" });
+
+  const [salvando, setSalvando] = useState(false);
 
   // Estados para popup e toast
   const [popupAberto, setPopupAberto] = useState(false);
@@ -118,6 +132,65 @@ export default function CaixaPDVPro() {
     setPopupAberto(false);
   };
 
+  const confirmarAdicionarEstoque = async () => {
+    if (!produtoSemEstoque || qtdAdicionar < 1) return;
+    setSalvando(true);
+    try {
+      const novoEstoque = (produtoSemEstoque.stock_quantity || 0) + qtdAdicionar;
+      await atualizarProduto(produtoSemEstoque.sku, { stock_quantity: novoEstoque });
+      adicionarAoCarrinho({
+        id: produtoSemEstoque.sku,
+        codigo: produtoSemEstoque.barcode ? String(produtoSemEstoque.barcode) : `SKU-${produtoSemEstoque.sku}`,
+        nome: produtoSemEstoque.name,
+        precoUnitario: produtoSemEstoque.price || 0,
+        quantidade: 1,
+        sku: produtoSemEstoque.sku,
+        custo: produtoSemEstoque.cost,
+        estoqueAtual: novoEstoque,
+      });
+      setProdutoSemEstoque(null);
+      setQtdAdicionar(1);
+      mostrarToast(`Estoque atualizado! "${produtoSemEstoque.name}" adicionado ao carrinho.`, "sucesso");
+    } catch {
+      mostrarToast("Erro ao atualizar estoque", "erro");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const confirmarCadastroRapido = async () => {
+    if (!modalCadastroRapido || !cadastroRapido.nome.trim() || !cadastroRapido.preco) return;
+    setSalvando(true);
+    try {
+      const barcodeNum = parseInt(modalCadastroRapido.codigoBipado);
+      const produtoCriado = await criarProduto({
+        name: cadastroRapido.nome.trim(),
+        price: parseFloat(String(cadastroRapido.preco)),
+        stock_quantity: cadastroRapido.estoque,
+        barcode: isNaN(barcodeNum) ? undefined : barcodeNum,
+        ...(cadastroRapido.tamanho.trim() && { size: cadastroRapido.tamanho.trim() }),
+      });
+      adicionarAoCarrinho({
+        id: produtoCriado.sku,
+        codigo: modalCadastroRapido.codigoBipado,
+        nome: produtoCriado.name,
+        precoUnitario: produtoCriado.price || 0,
+        quantidade: 1,
+        sku: produtoCriado.sku,
+        custo: produtoCriado.cost,
+        estoqueAtual: produtoCriado.stock_quantity || cadastroRapido.estoque,
+        tamanho: produtoCriado.size || undefined,
+      });
+      setModalCadastroRapido(null);
+      setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" });
+      mostrarToast(`"${produtoCriado.name}" cadastrado e adicionado ao carrinho!`, "sucesso");
+    } catch {
+      mostrarToast("Erro ao cadastrar produto", "erro");
+    } finally {
+      setSalvando(false);
+    }
+  };
+
   // Atualizar hora apenas no cliente para evitar hydration mismatch
   useEffect(() => {
     const atualizarHora = () => {
@@ -130,15 +203,25 @@ export default function CaixaPDVPro() {
     return () => clearInterval(interval);
   }, []);
 
-  // Carregar todos os produtos para busca por nome
+  // Autocomplete por nome — busca no servidor ao digitar
   useEffect(() => {
-    listarProdutos().then(setTodosProdutos).catch(() => {});
-  }, []);
+    const temLetras = /[a-zA-ZÀ-ÿ]/.test(debouncedBusca);
+    if (!temLetras || debouncedBusca.length < 2) {
+      setSugestoesFiltradas([]);
+      return;
+    }
+    listarProdutosPaginado(1, 8, debouncedBusca, false)
+      .then(res => setSugestoesFiltradas(res.produtos))
+      .catch(() => setSugestoesFiltradas([]));
+  }, [debouncedBusca]);
 
-  // Carregar clientes para o modal de seleção
+  // Carregar clientes para o modal (e re-buscar ao digitar)
   useEffect(() => {
-    if (modalClienteAberto) carregarClientes();
-  }, [modalClienteAberto]);
+    if (!modalClienteAberto) return;
+    listarPessoasPaginado(1, 100, debouncedBuscaCliente, false)
+      .then(res => setClientes(res.pessoas as any[]))
+      .catch(err => console.error("Erro ao carregar clientes:", err));
+  }, [modalClienteAberto, debouncedBuscaCliente]);
 
   // Carregar operadores para o modal de seleção
   useEffect(() => {
@@ -184,15 +267,6 @@ export default function CaixaPDVPro() {
     };
   }, [modalClienteAberto, mostrarModalConsignado, popupAberto, modalOperadorAberto, dropdownAberto]);
 
-  const carregarClientes = async () => {
-    try {
-      const pessoas = await listarPessoas();
-      setClientes(pessoas.filter((p: any) => p.is_active !== false));
-    } catch (error) {
-      console.error("Erro ao carregar clientes:", error);
-    }
-  };
-
   const carregarOperadores = async () => {
     try {
       const ops = await listarOperadores();
@@ -202,30 +276,19 @@ export default function CaixaPDVPro() {
     }
   };
 
-  // Busca por nome — derivado do texto digitado
-  const temLetras = /[a-zA-ZÀ-ÿ]/.test(busca);
-  const sugestoesFiltradas = temLetras && busca.length >= 2
-    ? todosProdutos
-        .filter(p => p.name.toLowerCase().includes(busca.toLowerCase()))
-        .slice(0, 8)
-    : [];
-
   // Abre/fecha dropdown conforme sugestões
   useEffect(() => {
     setDropdownAberto(sugestoesFiltradas.length > 0);
-    if (!temLetras || busca.length < 2) setIndiceSelecionado(-1);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sugestoesFiltradas]);
+
+  useEffect(() => {
+    if (!/[a-zA-ZÀ-ÿ]/.test(busca) || busca.length < 2) setIndiceSelecionado(-1);
   }, [busca]);
 
   const selecionarProdutoDropdown = (produto: any) => {
     if ((produto.stock_quantity || 0) <= 0) {
-      mostrarPopup(
-        "Produto Sem Estoque",
-        `"${produto.name}" está com estoque zerado.`,
-        "erro",
-        undefined,
-        "Entendido"
-      );
+      setProdutoSemEstoque(produto);
+      setQtdAdicionar(1);
       return;
     }
     adicionarAoCarrinho({
@@ -237,6 +300,7 @@ export default function CaixaPDVPro() {
       sku: produto.sku,
       custo: produto.cost,
       estoqueAtual: produto.stock_quantity || 0,
+      tamanho: produto.size || undefined,
     });
     setDropdownAberto(false);
     setIndiceSelecionado(-1);
@@ -281,17 +345,13 @@ export default function CaixaPDVPro() {
               quantidade: 1,
               sku: produto.sku,
               custo: produto.cost,
-              estoqueAtual: produto.stock_quantity || 0
+              estoqueAtual: produto.stock_quantity || 0,
+              tamanho: produto.size || undefined,
             });
             return;
           } else {
-            mostrarPopup(
-              "Produto Sem Estoque",
-              `O produto "${produto.name}" está com estoque ZERO. Não é possível realizar a venda até que seja feita uma entrada de mercadoria.`,
-              "erro",
-              undefined,
-              "Entendido"
-            );
+            setProdutoSemEstoque(produto);
+            setQtdAdicionar(1);
             return;
           }
         }
@@ -301,8 +361,7 @@ export default function CaixaPDVPro() {
       }
 
       // Tenta por código de barras
-      const produtos = await listarProdutos();
-      const produtoPorBarcode = produtos.find(p => p.barcode?.toString() === codigoLimpo);
+      const produtoPorBarcode = await buscarProdutoPorBarcode(parseInt(codigoLimpo));
 
       if (produtoPorBarcode) {
         if ((produtoPorBarcode.stock_quantity || 0) > 0) {
@@ -314,21 +373,18 @@ export default function CaixaPDVPro() {
             quantidade: 1,
             sku: produtoPorBarcode.sku,
             custo: produtoPorBarcode.cost,
-            estoqueAtual: produtoPorBarcode.stock_quantity || 0
+            estoqueAtual: produtoPorBarcode.stock_quantity || 0,
+            tamanho: produtoPorBarcode.size || undefined,
           });
         } else {
-          mostrarPopup(
-            "Produto Sem Estoque",
-            `O produto "${produtoPorBarcode.name}" está com estoque esgotado.`,
-            "erro",
-            undefined,
-            "Entendido"
-          );
+          setProdutoSemEstoque(produtoPorBarcode);
+          setQtdAdicionar(1);
         }
         return;
       }
 
-      mostrarToast("Produto não encontrado", "info");
+      setModalCadastroRapido({ codigoBipado: codigoLimpo });
+      setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" });
     } catch (error) {
       console.error("Erro ao buscar produto:", error);
       mostrarToast("Erro ao buscar produto", "erro");
@@ -351,7 +407,7 @@ export default function CaixaPDVPro() {
             : item
         );
       }
-      return [...prev, { ...novoItem, codigo: barcode || novoItem.codigo }];
+      return [{ ...novoItem, codigo: barcode || novoItem.codigo }, ...prev];
     });
     setBusca("");
     setDropdownAberto(false);
@@ -383,7 +439,7 @@ export default function CaixaPDVPro() {
       }
     }
     if (buscandoProduto) return;
-    if (e.key === 'Enter' && busca && !temLetras) {
+    if (e.key === 'Enter' && busca && !/[a-zA-ZÀ-ÿ]/.test(busca)) {
       await buscarProduto(busca);
     }
   };
@@ -526,11 +582,10 @@ export default function CaixaPDVPro() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setModalOperadorAberto(true)}
-            className={`flex items-center gap-2 px-3 py-1.5 border rounded-lg shadow-sm transition-colors ${
-              operadorSelecionado
+            className={`flex items-center gap-2 px-3 py-1.5 border rounded-lg shadow-sm transition-colors ${operadorSelecionado
                 ? 'bg-indigo-50 border-indigo-200 hover:bg-indigo-100'
                 : 'bg-zinc-50 border-zinc-200 hover:bg-zinc-100'
-            }`}
+              }`}
             title="Selecionar operador"
           >
             <div className={`w-5 h-5 rounded-full flex items-center justify-center ${operadorSelecionado ? 'bg-indigo-200' : 'bg-zinc-200'}`}>
@@ -571,7 +626,7 @@ export default function CaixaPDVPro() {
                 autoFocus
               />
               <div className="absolute right-3 top-1/2 -translate-y-1/2 flex gap-1">
-                {!temLetras && (
+                {!/[a-zA-ZÀ-ÿ]/.test(busca) && (
                   <kbd className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 text-[10px] font-bold text-zinc-500 bg-white border border-zinc-200 rounded shadow-sm">
                     ENTER
                   </kbd>
@@ -594,13 +649,12 @@ export default function CaixaPDVPro() {
                         key={produto.sku}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => selecionarProdutoDropdown(produto)}
-                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between border-b border-zinc-50 last:border-0 transition-colors ${
-                          ativo
+                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between border-b border-zinc-50 last:border-0 transition-colors ${ativo
                             ? 'bg-indigo-50'
                             : semEstoque
-                            ? 'opacity-50 hover:bg-zinc-50'
-                            : 'hover:bg-zinc-50'
-                        }`}
+                              ? 'opacity-50 hover:bg-zinc-50'
+                              : 'hover:bg-zinc-50'
+                          }`}
                       >
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-zinc-800 truncate">{produto.name}</p>
@@ -616,6 +670,11 @@ export default function CaixaPDVPro() {
                           <p className={`text-sm font-bold ${semEstoque ? 'text-zinc-400' : 'text-zinc-900'}`}>
                             {money(produto.price || 0)}
                           </p>
+                          {produto.size && (
+                            <p className="text-[10px] font-medium text-indigo-500 uppercase">
+                              {produto.size}
+                            </p>
+                          )}
                         </div>
                       </button>
                     );
@@ -651,7 +710,14 @@ export default function CaixaPDVPro() {
                       <td className="px-4 py-3 text-center text-zinc-400 font-mono text-xs">{index + 1}</td>
                       <td className="px-4 py-3">
                         <div className="font-medium text-zinc-800">{item.nome}</div>
-                        <div className="text-[10px] text-zinc-400 font-mono tracking-wide">{item.codigo}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-zinc-400 font-mono tracking-wide">{item.codigo}</span>
+                          {item.tamanho && (
+                            <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded uppercase">
+                              {item.tamanho}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1">
@@ -802,10 +868,10 @@ export default function CaixaPDVPro() {
                       }
                     }}
                     className={`relative flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${pagamentoAtivo === metodo.id
-                        ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]'
-                        : metodo.id === 'consignado'
-                          ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
-                          : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+                      ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]'
+                      : metodo.id === 'consignado'
+                        ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
+                        : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
                       }`}
                   >
                     <metodo.icon size={20} className="mb-1.5" />
@@ -814,10 +880,10 @@ export default function CaixaPDVPro() {
                       <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full border-2 border-white"></div>
                     )}
                     <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${metodo.id === 'consignado'
-                        ? 'text-orange-400'
-                        : pagamentoAtivo === metodo.id
-                          ? 'text-zinc-400'
-                          : 'text-zinc-300'
+                      ? 'text-orange-400'
+                      : pagamentoAtivo === metodo.id
+                        ? 'text-zinc-400'
+                        : 'text-zinc-300'
                       }`}>
                       {metodo.key}
                     </span>
@@ -833,8 +899,8 @@ export default function CaixaPDVPro() {
               onClick={finalizarVenda}
               disabled={finalizando || carrinho.length === 0}
               className={`w-full h-14 rounded-lg font-bold text-lg shadow-lg transition-all flex items-center justify-between px-6 group active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${pagamentoAtivo === 'consignado'
-                  ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
+                ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200'
+                : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-200'
                 }`}
             >
               {finalizando ? (
@@ -853,8 +919,8 @@ export default function CaixaPDVPro() {
                       {money(totalFinal)}
                     </span>
                     <span className={`px-2 py-1 rounded text-xs font-mono ${pagamentoAtivo === 'consignado'
-                        ? 'bg-orange-800/40 text-orange-100'
-                        : 'bg-emerald-800/40 text-emerald-100'
+                      ? 'bg-orange-800/40 text-orange-100'
+                      : 'bg-emerald-800/40 text-emerald-100'
                       }`}>
                       {pagamentoAtivo === 'consignado' ? 'F10' : 'F5'}
                     </span>
@@ -1006,8 +1072,8 @@ export default function CaixaPDVPro() {
                 op.name.toLowerCase().includes(buscaOperador.toLowerCase()) ||
                 (op.code?.toLowerCase() ?? '').includes(buscaOperador.toLowerCase())
               ).length === 0 && (
-                <p className="text-center text-zinc-400 py-8 text-sm">Nenhum operador encontrado</p>
-              )}
+                  <p className="text-center text-zinc-400 py-8 text-sm">Nenhum operador encontrado</p>
+                )}
             </div>
           </div>
         </div>
@@ -1089,7 +1155,7 @@ export default function CaixaPDVPro() {
                 onClick={() => {
                   setMostrarModalConsignado(false);
                   setDataPrevistaPagamento("");
-                  setObservacaoConsignado("");
+                  setObservacaoConsignado(`OBRIGAÇÕES DA CONSIGNATÁRIA\n\n• Cuidados com o material:\n  - Manter as peças em perfeito estado, sem amassar, sujar ou danificar.\n  - Conferir as peças recebidas, confirmar a quantidade e dar OK do recebimento.\n  - Organizar adequadamente para devolução.\n\n• Controle de vendas:\n  - Passar a data do Acerto em até 3 dias após recebimento do Kit.\n  - Enviar relação detalhada das vendas até 3 dias antes do pagamento.\n  - Informar: descrição, quantidade e valor unitário dos itens vendidos.\n\n• Devolução:\n  - Restituir todos os itens não vendidos nas mesmas condições de recebimento.\n  - Cumprir prazo estipulado para devolução.\n  - Multas por atraso: 5% do valor total do kit até 3 dias | 10% após 3 dias.\n\n• Responsabilidade por danos/perdas:\n  - Indenização integral pelo valor do kit em caso de: danos irreparáveis, extravio de peças ou devolução em condições inadequadas.\n\nDe Acordo: __________________________`);
                   setPagamentoAtivo('credito');
                 }}
                 className="px-5 py-2.5 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
@@ -1109,6 +1175,146 @@ export default function CaixaPDVPro() {
                 className="px-5 py-2.5 bg-orange-600 text-white rounded-lg text-sm font-medium hover:bg-orange-700 transition-colors shadow-sm shadow-orange-200"
               >
                 Confirmar Consignado
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: PRODUTO SEM ESTOQUE */}
+      {produtoSemEstoque && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-200 bg-amber-50 flex items-center gap-3">
+              <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
+                <AlertCircle size={20} className="text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-zinc-900">Produto Sem Estoque</h2>
+                <p className="text-xs text-zinc-500 truncate max-w-[220px]">{produtoSemEstoque.name}</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-zinc-600">
+                Quantas unidades deseja adicionar ao estoque agora?
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setQtdAdicionar(q => Math.max(1, q - 1))}
+                  className="w-10 h-10 bg-zinc-100 hover:bg-zinc-200 rounded-lg font-bold text-zinc-700 transition-colors"
+                >
+                  −
+                </button>
+                <input
+                  type="number"
+                  min={1}
+                  value={qtdAdicionar}
+                  onChange={e => setQtdAdicionar(Math.max(1, parseInt(e.target.value) || 1))}
+                  className="flex-1 h-10 text-center text-lg font-bold border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  autoFocus
+                />
+                <button
+                  onClick={() => setQtdAdicionar(q => q + 1)}
+                  className="w-10 h-10 bg-zinc-100 hover:bg-zinc-200 rounded-lg font-bold text-zinc-700 transition-colors"
+                >
+                  +
+                </button>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex gap-3">
+              <button
+                onClick={() => { setProdutoSemEstoque(null); setQtdAdicionar(1); }}
+                className="flex-1 h-10 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarAdicionarEstoque}
+                disabled={salvando}
+                className="flex-1 h-10 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {salvando ? <Loader2 size={16} className="animate-spin" /> : null}
+                Adicionar e continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: CADASTRO RÁPIDO DE PRODUTO */}
+      {modalCadastroRapido && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-200 bg-red-50 flex items-center gap-3">
+              <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center">
+                <AlertCircle size={20} className="text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-zinc-900">Produto Não Cadastrado</h2>
+                <p className="text-xs text-zinc-500 font-mono">Código: {modalCadastroRapido.codigoBipado}</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-3">
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Nome *</label>
+                <input
+                  type="text"
+                  placeholder="Nome do produto"
+                  value={cadastroRapido.nome}
+                  onChange={e => setCadastroRapido(p => ({ ...p, nome: e.target.value }))}
+                  className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Tamanho</label>
+                <input
+                  type="text"
+                  placeholder="Ex: P, M, G, 38, 40..."
+                  value={cadastroRapido.tamanho}
+                  onChange={e => setCadastroRapido(p => ({ ...p, tamanho: e.target.value }))}
+                  className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Preço (R$) *</label>
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.01}
+                    placeholder="0,00"
+                    value={cadastroRapido.preco}
+                    onChange={e => setCadastroRapido(p => ({ ...p, preco: e.target.value }))}
+                    className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+                <div className="w-28">
+                  <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Estoque inicial</label>
+                  <input
+                    type="number"
+                    min={1}
+                    value={cadastroRapido.estoque}
+                    onChange={e => setCadastroRapido(p => ({ ...p, estoque: Math.max(1, parseInt(e.target.value) || 1) }))}
+                    className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex gap-3">
+              <button
+                onClick={() => { setModalCadastroRapido(null); setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" }); }}
+                className="flex-1 h-10 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarCadastroRapido}
+                disabled={salvando || !cadastroRapido.nome.trim() || !cadastroRapido.preco}
+                className="flex-1 h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {salvando ? <Loader2 size={16} className="animate-spin" /> : null}
+                Cadastrar e continuar
               </button>
             </div>
           </div>

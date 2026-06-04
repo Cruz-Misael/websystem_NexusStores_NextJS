@@ -20,6 +20,7 @@ import {
   AlertCircle
 } from "lucide-react";
 import EtiquetaProduto from "./EtiquetaProduto";
+import ImpressaoEtiquetasModal from "./ImpressaoEtiquetasModal";
 import { CompanyService } from "@/services/company.service";
 import { listarCategorias, ProductCategory } from "@/src/services/category.service";
 
@@ -141,6 +142,7 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
   const [isLoading, setIsLoading] = useState(false);
   const [empresa, setEmpresa] = useState({ nome: "Minha Empresa", logoUrl: "" });
   const [categorias, setCategorias] = useState<ProductCategory[]>([]);
+  const [modalImpressaoAberto, setModalImpressaoAberto] = useState(false);
 
   useEffect(() => {
     listarCategorias().then(setCategorias).catch(() => {});
@@ -298,51 +300,6 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
     }
   };
 
-  const imprimirEtiqueta = () => {
-    const conteudo = document.getElementById("etiqueta-print");
-    if (!conteudo) return;
-
-    const win = window.open("", "_blank", "width=220,height=240");
-    if (!win) return;
-
-    win.document.open();
-    win.document.write(`
-      <html>
-        <head>
-          <title>Etiqueta - ${form.nome || "Produto"}</title>
-          <style>
-            @page {
-              margin: 0;
-              size: 50mm 55mm;
-            }
-            html, body {
-              margin: 0;
-              padding: 0;
-              width: 50mm;
-              height: 55mm;
-              background: white;
-            }
-            * {
-              box-sizing: border-box;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
-          </style>
-        </head>
-        <body>
-          ${conteudo.outerHTML}
-          <script>
-            window.onload = function () {
-              window.print();
-              setTimeout(() => window.close(), 1200);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
-  };
-
   const handleGerarNovosCodigos = () => {
     setForm(prev => ({ 
       ...prev, 
@@ -354,6 +311,7 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
   if (!aberto) return null;
 
   return (
+    <>
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white w-full max-w-6xl rounded-xl shadow-2xl overflow-hidden flex flex-col max-h-[95vh]">
 
@@ -503,11 +461,11 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                     </div>
                   </div>
 
-                  <button 
-                    onClick={imprimirEtiqueta}
+                  <button
+                    onClick={() => setModalImpressaoAberto(true)}
                     className="w-full h-8 flex items-center justify-center gap-2 bg-white border border-zinc-300 text-zinc-700 rounded text-xs font-medium hover:bg-zinc-100 transition-colors"
                   >
-                    <Printer size={12} /> Imprimir Etiqueta
+                    <Printer size={12} /> Imprimir Etiquetas
                   </button>
                 </div>
               </div>
@@ -828,5 +786,18 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
         </div>
       </div>
     </div>
+
+    <ImpressaoEtiquetasModal
+      aberto={modalImpressaoAberto}
+      onClose={() => setModalImpressaoAberto(false)}
+      produtoInicial={{
+        nome: form.nome || "Produto",
+        sku: form.sku,
+        codigoBarras: form.codigoBarras,
+        tamanho: form.size || undefined,
+        preco: form.preco || undefined,
+      }}
+    />
+    </>
   );
 }

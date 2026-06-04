@@ -95,17 +95,28 @@ export async function listarPessoas() {
 ========================= */
 export async function listarPessoasPaginado(
   pagina: number = 1,
-  itensPorPagina: number = 50
+  itensPorPagina: number = 50,
+  busca?: string,
+  mostrarInativos?: boolean
 ) {
   const inicio = (pagina - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina - 1;
 
-  // Primeiro busca as pessoas paginadas
-  const { data: pessoas, error: pessoasError, count } = await supabase
+  let pessoasQuery = supabase
     .from("people")
     .select("*", { count: "exact" })
-    .order("created_at", { ascending: false })
-    .range(inicio, fim);
+    .order("created_at", { ascending: false });
+
+  if (busca && busca.trim()) {
+    pessoasQuery = pessoasQuery.or(`name.ilike.%${busca.trim()}%,email.ilike.%${busca.trim()}%,phone.ilike.%${busca.trim()}%`);
+  }
+
+  if (!mostrarInativos) {
+    pessoasQuery = pessoasQuery.or("is_active.eq.true,is_active.is.null");
+  }
+
+  // Primeiro busca as pessoas paginadas
+  const { data: pessoas, error: pessoasError, count } = await pessoasQuery.range(inicio, fim);
 
   if (pessoasError) {
     console.error("Erro ao listar pessoas paginado:", pessoasError);

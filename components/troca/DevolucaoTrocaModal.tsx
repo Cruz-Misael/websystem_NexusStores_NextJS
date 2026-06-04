@@ -514,12 +514,12 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                 <span>R$ {saldoDevedor.toFixed(2)}</span>
               </div>
 
-              {/* % desconto — consignado */}
+              {/* % comissão — consignado */}
               {isConsignado && (
                 <>
                   <div className="pt-1">
                     <label className="text-[10px] text-zinc-400 font-semibold uppercase tracking-widest block mb-1.5">
-                      Desconto de lucro
+                      Comissão
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -537,7 +537,7 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                   </div>
                   {pctLucro > 0 && (
                     <div className="flex justify-between text-xs text-zinc-500">
-                      <span>(−) Desconto {pctLucro}%</span>
+                      <span>(−) Comissão {pctLucro}%</span>
                       <span>R$ {valorDescontoLucro.toFixed(2)}</span>
                     </div>
                   )}

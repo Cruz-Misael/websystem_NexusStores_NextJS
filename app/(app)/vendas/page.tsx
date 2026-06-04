@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import DevolucaoTrocaModal from "@/components/troca/DevolucaoTrocaModal";
 import Recibo from "@/components/vendas/Recibo";
-import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda } from "@/src/services/sales.service";
+import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
@@ -28,8 +28,14 @@ import {
   AlertCircle,
   CheckCircle,
   Eye,
-  FileText
+  FileText,
+  Pencil,
+  X,
+  UserX,
 } from "lucide-react";
+import { listarPessoasPaginado } from "@/src/services/people.service";
+import { useRef } from "react";
+import { useDebounce as useDebounceLocal } from "@/src/hooks/useDebounce";
 
 type StatusVenda = "Concluída" | "Pendente" | "Cancelada";
 
@@ -62,6 +68,16 @@ export default function HistoricoVendasCompacto() {
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroData, setFiltroData] = useState<string>("");
   const [modoConsignado, setModoConsignado] = useState(false);
+
+  // ── Edição de cliente ──
+  const [editandoCliente, setEditandoCliente] = useState(false);
+  const [buscaCliente, setBuscaCliente] = useState("");
+  const debouncedBuscaCliente = useDebounceLocal(buscaCliente, 300);
+  const [resultadosCliente, setResultadosCliente] = useState<any[]>([]);
+  const [carregandoCliente, setCarregandoCliente] = useState(false);
+  const [salvandoCliente, setSalvandoCliente] = useState(false);
+  const clienteInputRef = useRef<HTMLInputElement>(null);
+
   const [vendaConsignadoRecibo, setVendaConsignadoRecibo] = useState<{
     venda: Sale;
     breakdown: ConsignadoItemBreakdown;
@@ -113,6 +129,34 @@ export default function HistoricoVendasCompacto() {
     setPopupAberto(false);
   };
 
+  // Busca de clientes para edição
+  useEffect(() => {
+    if (!editandoCliente) return;
+    setCarregandoCliente(true);
+    listarPessoasPaginado(1, 8, debouncedBuscaCliente)
+      .then(r => setResultadosCliente(r.pessoas))
+      .catch(() => setResultadosCliente([]))
+      .finally(() => setCarregandoCliente(false));
+  }, [debouncedBuscaCliente, editandoCliente]);
+
+  const handleSalvarCliente = async (cliente: { id: number; name: string } | null) => {
+    if (!selecionada) return;
+    setSalvandoCliente(true);
+    try {
+      await atualizarClienteVenda(selecionada.id, cliente?.id ?? null);
+      const atualizada = await buscarVendaPorId(selecionada.id);
+      setVendas(prev => prev.map(v => v.id === atualizada.id ? atualizada : v));
+      setSelecionada(atualizada);
+      setEditandoCliente(false);
+      setBuscaCliente("");
+      mostrarToast(cliente ? `Cliente alterado para ${cliente.name}` : "Cliente removido da venda", "sucesso");
+    } catch (e: any) {
+      mostrarToast(`Erro ao salvar cliente: ${e.message}`, "erro");
+    } finally {
+      setSalvandoCliente(false);
+    }
+  };
+
   // Carregar vendas do backend
   const carregarVendas = async () => {
     try {
@@ -137,6 +181,12 @@ export default function HistoricoVendasCompacto() {
   useEffect(() => {
     carregarVendas();
   }, []);
+
+  useEffect(() => {
+    setEditandoCliente(false);
+    setBuscaCliente("");
+    setResultadosCliente([]);
+  }, [selecionada?.id]);
 
   // Cancelar venda
   const handleCancelarVenda = async () => {
@@ -662,6 +712,17 @@ export default function HistoricoVendasCompacto() {
                   <User size={10} />
                   {venda.customer?.name || 'Consumidor Final'}
                 </div>
+                {isConsignado(venda) && venda.payment_status === 'pending' && (() => {
+                  const dp = extrairDataConsignado(venda.observation);
+                  if (!dp) return null;
+                  const atrasado = estaAtrasado(venda);
+                  return (
+                    <div className={`flex items-center gap-1 text-[10px] font-bold mt-0.5 ${atrasado ? 'text-red-600' : 'text-orange-500'}`}>
+                      <Calendar size={9} />
+                      Prev.: {new Date(dp + 'T12:00:00').toLocaleDateString('pt-BR')}
+                    </div>
+                  );
+                })()}
               </div>
             ))
           )}
@@ -683,67 +744,132 @@ export default function HistoricoVendasCompacto() {
         ) : (
           <>
             {/* Header do Painel */}
-            <header className="bg-white border-b border-gray-200 px-6 py-4 flex justify-between items-center shrink-0 shadow-sm z-10">
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-xl font-bold text-gray-900">Venda #{selecionada.id}</h2>
-                  <span className={`text-xs px-2 py-0.5 rounded-full border font-medium ${getStatusColor(selecionada)}`}>
+            <header className="bg-white border-b border-gray-100 px-5 py-3 shrink-0 z-10">
+              <div className="flex items-center justify-between gap-4">
+
+                {/* Esquerda: ID + status + meta */}
+                <div className="flex items-center gap-3 min-w-0">
+                  <span className="text-base font-bold text-zinc-900 shrink-0">#{selecionada.id}</span>
+                  <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold shrink-0 ${getStatusColor(selecionada)}`}>
                     {getStatusFromVenda(selecionada)}
                   </span>
-                </div>
-                <div className="flex items-center gap-4 text-xs text-gray-500 mt-1">
-                  <span className="flex items-center gap-1">
-                    <Calendar size={12} /> {new Date(selecionada.sale_date).toLocaleString('pt-BR')}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <User size={12} /> {selecionada.customer?.name || 'Consumidor Final'}
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <CreditCard size={12} /> {selecionada.payment_method || 'Não informado'}
-                  </span>
-                </div>
-              </div>
 
-              <div className="flex gap-2">
-                {selecionada.payment_status === 'pending' && (
-                  <button
-                    onClick={() => {
-                      if (isConsignado(selecionada)) {
-                        setModoConsignado(true);
-                        setModalAberto(true);
-                      } else {
-                        handleConfirmarPagamento();
-                      }
-                    }}
-                    disabled={atualizando}
-                    className={`px-3 py-2 text-white rounded-lg font-medium text-xs flex items-center gap-2 shadow-sm disabled:opacity-50 ${isConsignado(selecionada)
-                      ? 'bg-orange-600 hover:bg-orange-700 animate-bounce-subtle'
-                      : 'bg-emerald-600 hover:bg-emerald-700'
+                  <div className="w-px h-4 bg-zinc-200 shrink-0" />
+
+                  {/* Meta: data · cliente · método · previsto */}
+                  <div className="flex items-center gap-2.5 text-[11px] text-zinc-400 min-w-0 flex-wrap">
+                    <span className="shrink-0">
+                      {new Date(selecionada.sale_date).toLocaleDateString('pt-BR')}
+                    </span>
+
+                    <span className="text-zinc-200">·</span>
+
+                    {/* Cliente editável */}
+                    <div className="relative shrink-0">
+                      {editandoCliente ? (
+                        <div className="flex items-center gap-1">
+                          <div className="relative">
+                            <input
+                              ref={clienteInputRef}
+                              autoFocus
+                              type="text"
+                              placeholder="Buscar cliente…"
+                              value={buscaCliente}
+                              onChange={e => setBuscaCliente(e.target.value)}
+                              className="h-6 w-40 pl-2 pr-6 text-[11px] border border-indigo-300 rounded focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white text-zinc-800"
+                            />
+                            {carregandoCliente
+                              ? <Loader2 size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 animate-spin text-zinc-400" />
+                              : <button onClick={() => { setEditandoCliente(false); setBuscaCliente(""); }} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600"><X size={10} /></button>
+                            }
+                            {(resultadosCliente.length > 0 || (!carregandoCliente && buscaCliente === "" && selecionada.customer)) && (
+                              <div className="absolute top-full left-0 mt-0.5 w-56 bg-white border border-zinc-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                                {selecionada.customer && (
+                                  <button onClick={() => handleSalvarCliente(null)} disabled={salvandoCliente} className="w-full text-left px-3 py-1.5 text-[11px] text-red-500 hover:bg-red-50 border-b border-zinc-100 flex items-center gap-1.5">
+                                    <UserX size={11} /> Remover cliente
+                                  </button>
+                                )}
+                                {resultadosCliente.map(c => (
+                                  <button key={c.id} onClick={() => handleSalvarCliente({ id: c.id, name: c.name })} disabled={salvandoCliente} className="w-full text-left px-3 py-1.5 hover:bg-indigo-50 border-b border-zinc-50 last:border-0">
+                                    <p className="text-xs font-medium text-zinc-800 truncate">{c.name}</p>
+                                    {c.phone && <p className="text-[10px] text-zinc-400">{c.phone}</p>}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                          {salvandoCliente && <Loader2 size={10} className="animate-spin text-indigo-500" />}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setEditandoCliente(true); setBuscaCliente(""); setResultadosCliente([]); }}
+                          className="flex items-center gap-1 text-zinc-500 hover:text-indigo-600 group transition-colors"
+                          title="Editar cliente"
+                        >
+                          <User size={11} />
+                          <span className="font-medium text-zinc-600 max-w-[140px] truncate">{selecionada.customer?.name || 'Consumidor Final'}</span>
+                          <Pencil size={9} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                        </button>
+                      )}
+                    </div>
+
+                    <span className="text-zinc-200">·</span>
+                    <span className="shrink-0 capitalize">{selecionada.payment_method || '—'}</span>
+
+                    {isConsignado(selecionada) && (() => {
+                      const dp = extrairDataConsignado(selecionada.observation);
+                      if (!dp) return null;
+                      const atrasado = estaAtrasado(selecionada);
+                      return (
+                        <>
+                          <span className="text-zinc-200">·</span>
+                          <span className={`shrink-0 font-semibold flex items-center gap-1 ${atrasado ? 'text-red-500' : 'text-orange-500'}`}>
+                            <Calendar size={10} />
+                            {new Date(dp + 'T12:00:00').toLocaleDateString('pt-BR')}
+                            {atrasado && <span className="bg-red-500 text-white text-[9px] font-black px-1 py-px rounded">ATRASADO</span>}
+                          </span>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+
+                {/* Direita: ações */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {selecionada.payment_status === 'pending' && (
+                    <button
+                      onClick={() => {
+                        if (isConsignado(selecionada)) { setModoConsignado(true); setModalAberto(true); }
+                        else handleConfirmarPagamento();
+                      }}
+                      disabled={atualizando}
+                      className={`px-3 py-1.5 text-white rounded-lg font-semibold text-xs flex items-center gap-1.5 disabled:opacity-50 transition-colors ${
+                        isConsignado(selecionada) ? 'bg-orange-500 hover:bg-orange-600' : 'bg-emerald-500 hover:bg-emerald-600'
                       }`}
-                  >
-                    {isConsignado(selecionada) ? (
-                      <><RefreshCw size={16} /> Fechar Consignado</>
-                    ) : (
-                      <><CheckCircle size={16} /> Confirmar Pagamento</>
-                    )}
-                  </button>
-                )}
-                <button
-                  onClick={() => setModalRecibo(true)}
-                  className="px-3 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium text-xs flex items-center gap-2 shadow-sm"
-                >
-                  <Printer size={16} /> Comprovante
-                </button>
-                {selecionada.payment_status !== 'cancelled' && (
+                    >
+                      {isConsignado(selecionada)
+                        ? <><RefreshCw size={13} /> Fechar Consignado</>
+                        : <><CheckCircle size={13} /> Confirmar Pagamento</>}
+                    </button>
+                  )}
                   <button
-                    className="px-3 py-2 bg-white border border-red-200 text-red-600 rounded-lg hover:bg-red-50 font-medium text-xs flex items-center gap-2 shadow-sm disabled:opacity-50"
-                    onClick={handleCancelarVenda}
-                    disabled={atualizando}
-                    title="Estornar todos os itens ao estoque e cancelar a venda"
+                    onClick={() => setModalRecibo(true)}
+                    title="Imprimir comprovante"
+                    className="p-1.5 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 rounded-lg transition-colors border border-zinc-200"
                   >
-                    <XCircle size={16} /> Cancelar
+                    <Printer size={15} />
                   </button>
-                )}
+                  {selecionada.payment_status !== 'cancelled' && (
+                    <button
+                      onClick={handleCancelarVenda}
+                      disabled={atualizando}
+                      title="Cancelar venda"
+                      className="p-1.5 text-zinc-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors border border-zinc-200 disabled:opacity-50"
+                    >
+                      <XCircle size={15} />
+                    </button>
+                  )}
+                </div>
               </div>
             </header>
 
@@ -755,7 +881,11 @@ export default function HistoricoVendasCompacto() {
                 <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                   <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
                     <h3 className="font-semibold text-gray-700 text-xs uppercase tracking-wide">Itens do Pedido</h3>
-                    <span className="text-xs text-gray-500">{selecionada.items?.length || 0} itens</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs text-gray-500">{selecionada.items?.filter(i => i.quantity > 0).length || 0} itens</span>
+                      <span className="text-xs text-gray-400">·</span>
+                      <span className="text-xs text-gray-500">{selecionada.items?.reduce((acc, i) => acc + (i.quantity > 0 ? i.quantity : 0), 0) || 0} unidades</span>
+                    </div>
                   </div>
                   <table className="w-full text-left border-collapse">
                     <thead>

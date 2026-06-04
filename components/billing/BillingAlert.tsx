@@ -35,7 +35,7 @@ export default function BillingAlert({ diasAtraso, nextDueDate }: Props) {
       </div>
       <div className="flex items-center gap-2 shrink-0">
         <button
-          onClick={() => router.push('/configuracoes')}
+          onClick={() => router.push('/configuracoes?tab=pagamento')}
           className="flex items-center gap-1.5 text-xs font-bold text-amber-700 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-lg transition-colors"
         >
           <Settings size={13} />

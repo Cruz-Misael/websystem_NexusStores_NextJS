@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Nexus Store — Post 4</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 1080px; height: 1080px; overflow: hidden; font-family: 'Inter', sans-serif; background: #09090b; }
+
+    .slide { width: 1080px; height: 1080px; position: relative; overflow: hidden; background: #09090b; }
+
+    .blob { position: absolute; border-radius: 50%; filter: blur(80px); pointer-events: none; }
+    .blob-1 { width: 700px; height: 700px; background: #1e1b4b; opacity: .45; top: -180px; left: -200px; }
+    .blob-2 { width: 400px; height: 400px; background: #3730a3; opacity: .20; bottom: -80px; right: -60px; }
+    .blob-3 { width: 320px; height: 320px; background: #6366f1; opacity: .12; top: 60%; left: 60%; transform: translate(-50%, -50%); }
+
+    .inner { position: relative; z-index: 2; height: 100%; display: flex; flex-direction: column; justify-content: space-between; padding: 60px 72px; }
+
+    .logo-mark { display: inline-flex; align-items: center; gap: 14px; }
+    .logo-icon {
+      width: 50px; height: 50px; background: #4f46e5; border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 8px 24px rgba(79, 70, 229, .50); flex-shrink: 0;
+    }
+    .logo-text { font-size: 22px; font-weight: 800; color: #fff; letter-spacing: -.5px; }
+
+    .body { flex: 1; display: flex; gap: 56px; align-items: center; }
+
+    .left { flex: 1; }
+    .eyebrow { font-size: 13px; font-weight: 800; letter-spacing: 4px; text-transform: uppercase; color: #818cf8; margin-bottom: 28px; }
+    .title { font-size: 86px; font-weight: 900; line-height: .93; letter-spacing: -5px; color: #fff; margin-bottom: 28px; }
+    .title span { color: #818cf8; }
+    .sub { font-size: 19px; font-weight: 500; color: #a1a1aa; line-height: 1.55; max-width: 400px; }
+
+    /* Mock receipt card */
+    .receipt {
+      width: 320px; flex-shrink: 0;
+      background: rgba(255,255,255,.05); border: 1px solid rgba(129,140,248,.20);
+      border-radius: 24px; padding: 28px;
+    }
+    .receipt-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+    .receipt-label { font-size: 11px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #52525b; }
+    .receipt-status {
+      font-size: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
+      background: rgba(79,70,229,.25); color: #a5b4fc; border-radius: 999px; padding: 4px 12px;
+    }
+    .receipt-items { display: flex; flex-direction: column; gap: 14px; border-bottom: 1px solid rgba(255,255,255,.08); padding-bottom: 18px; margin-bottom: 18px; }
+    .item { display: flex; justify-content: space-between; align-items: center; }
+    .item-name { font-size: 13px; font-weight: 600; color: #a1a1aa; }
+    .item-price { font-size: 13px; font-weight: 700; color: #fff; }
+    .total-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+    .total-label { font-size: 13px; font-weight: 700; color: #71717a; }
+    .total-value { font-size: 26px; font-weight: 900; letter-spacing: -1px; color: #818cf8; }
+    .payment-row { display: flex; gap: 8px; }
+    .pay-btn {
+      flex: 1; padding: 10px 0; border-radius: 10px; text-align: center;
+      font-size: 11px; font-weight: 800; letter-spacing: 1px; text-transform: uppercase;
+    }
+    .pay-btn.pix { background: rgba(79,70,229,.30); color: #a5b4fc; border: 1px solid rgba(129,140,248,.25); }
+    .pay-btn.credit { background: rgba(255,255,255,.06); color: #71717a; border: 1px solid rgba(255,255,255,.08); }
+    .pay-btn.cash { background: rgba(255,255,255,.06); color: #71717a; border: 1px solid rgba(255,255,255,.08); }
+
+    .footer { display: flex; align-items: center; justify-content: space-between; }
+    .badge {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: rgba(55, 48, 163, .35); border: 1px solid rgba(129, 140, 248, .25);
+      border-radius: 999px; padding: 8px 20px;
+      font-size: 11px; font-weight: 800; color: #a5b4fc; letter-spacing: 2.5px; text-transform: uppercase;
+    }
+    .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: #818cf8; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1 } 50% { opacity: .4 } }
+
+    .pill {
+      font-size: 12px; font-weight: 700; color: #818cf8; letter-spacing: 1.5px; text-transform: uppercase;
+      background: rgba(79,70,229,.15); border: 1px solid rgba(129,140,248,.2); border-radius: 999px; padding: 6px 18px;
+    }
+
+    .counter { position: absolute; bottom: 44px; right: 52px; display: flex; gap: 8px; }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #3f3f46; }
+    .dot.active { background: #818cf8; width: 26px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <div class="slide">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+    <div class="blob blob-3"></div>
+
+    <div class="inner">
+      <div class="logo-mark">
+        <div class="logo-icon">
+          <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+            <path d="M 11 15 Q 16 7.5 21 15" stroke="white" stroke-width="2.2" stroke-linecap="round"/>
+            <rect x="5" y="14" width="22" height="14" rx="3" stroke="white" stroke-width="2"/>
+            <rect x="5" y="14" width="22" height="5.5" rx="3" fill="white" fill-opacity=".2"/>
+          </svg>
+        </div>
+        <span class="logo-text">Nexus Store</span>
+      </div>
+
+      <div class="body">
+        <div class="left">
+          <p class="eyebrow">✦ &nbsp;Ponto de Venda</p>
+          <h1 class="title">Da venda<br />ao caixa em<br /><span>segundos.</span></h1>
+          <p class="sub">PDV rápido com múltiplas formas de pagamento, parcelamento e histórico automático.</p>
+        </div>
+
+        <div class="receipt">
+          <div class="receipt-header">
+            <span class="receipt-label">Venda #0042</span>
+            <span class="receipt-status">Aprovado</span>
+          </div>
+          <div class="receipt-items">
+            <div class="item">
+              <span class="item-name">Produto A</span>
+              <span class="item-price">R$ 89,90</span>
+            </div>
+            <div class="item">
+              <span class="item-name">Produto B</span>
+              <span class="item-price">R$ 149,00</span>
+            </div>
+            <div class="item">
+              <span class="item-name">Produto C</span>
+              <span class="item-price">R$ 59,90</span>
+            </div>
+          </div>
+          <div class="total-row">
+            <span class="total-label">Total</span>
+            <span class="total-value">R$ 298,80</span>
+          </div>
+          <div class="payment-row">
+            <div class="pay-btn pix">Pix</div>
+            <div class="pay-btn credit">Crédito</div>
+            <div class="pay-btn cash">Dinheiro</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <div class="badge">
+          <div class="badge-dot"></div>
+          Nexus Store
+        </div>
+        <div class="pill">PDV Inteligente</div>
+      </div>
+    </div>
+
+    <div class="counter">
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot"></div>
+      <div class="dot active"></div>
+      <div class="dot"></div>
+    </div>
+  </div>
+</body>
+</html>

@@ -131,7 +131,7 @@ export async function buscarVendaPorId(id: number) {
       customer:people(id, name, email, phone),
       items:sale_items(
         *,
-        product:products(sku, name, price)
+        product:products(sku, name, price, size)
       )
     `)
     .eq("id", id)
@@ -161,7 +161,7 @@ export async function listarVendas(
       customer:people(id, name, email),
       items:sale_items(
         *,
-        product:products(sku, name, price)
+        product:products(sku, name, price, size)
       )
     `, { count: 'exact' })
     .order("created_at", { ascending: false })
@@ -318,6 +318,16 @@ export async function adicionarItemVenda(saleId: number, item: any) {
   });
 
   return data;
+}
+
+export async function atualizarClienteVenda(saleId: number, customerId: number | null) {
+  const { error } = await supabase
+    .from("sales")
+    .update({ customer_id: customerId })
+    .eq("id", saleId);
+
+  if (error) throw error;
+  return { success: true };
 }
 
 export async function atualizarValorVenda(saleId: number, novoValor: number) {
