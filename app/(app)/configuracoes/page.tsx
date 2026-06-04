@@ -1,5 +1,7 @@
 // app/configuracoes/page.tsx
 'use client';
+
+export const dynamic = 'force-dynamic';
 import UsuarioModal from '@/components/users/UsuarioModal';
 import { useState, useEffect, useRef } from 'react';
 import { useSearchParams } from 'next/navigation';
