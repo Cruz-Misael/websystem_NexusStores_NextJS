@@ -103,7 +103,8 @@ export async function listarProdutosPaginado(
   pagina: number = 1,
   itensPorPagina: number = 50,
   busca?: string,
-  mostrarInativos?: boolean
+  mostrarInativos?: boolean,
+  somenteCriticos?: boolean
 ) {
   const inicio = (pagina - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina - 1;
@@ -128,6 +129,10 @@ export async function listarProdutosPaginado(
 
   if (!mostrarInativos) {
     query = query.or("is_active.eq.true,is_active.is.null");
+  }
+
+  if (somenteCriticos) {
+    query = query.or("stock_quantity.lte.0,stock_quantity.is.null");
   }
 
   const { data, error, count } = await query.range(inicio, fim);

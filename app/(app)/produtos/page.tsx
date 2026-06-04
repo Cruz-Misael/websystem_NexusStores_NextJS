@@ -164,6 +164,7 @@ export default function GestaoEstoqueCompacto() {
   const [carregandoAcao, setCarregandoAcao] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
+  const [filtrarCriticos, setFiltrarCriticos] = useState(false);
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
   const [totalProdutos, setTotalProdutos] = useState(0);
@@ -231,7 +232,7 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
     setErro(null);
     setPaginaAtual(pagina);
 
-    const resultado = await listarProdutosPaginado(pagina, 50, debouncedBusca, mostrarInativos);
+    const resultado = await listarProdutosPaginado(pagina, 50, debouncedBusca, mostrarInativos, filtrarCriticos);
     const produtosConvertidos = resultado.produtos.map(converterParaProduto);
 
     setListaProdutos(produtosConvertidos);
@@ -271,7 +272,7 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
   // Carrega produtos na inicialização e quando busca/filtro mudam (reset para página 1)
   useEffect(() => {
     carregarProdutos(1);
-  }, [debouncedBusca, mostrarInativos]);
+  }, [debouncedBusca, mostrarInativos, filtrarCriticos]);
 
   // Atualiza estoque
   const atualizarEstoque = async (quantidade: number) => {
@@ -615,12 +616,24 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
                 className="w-full pl-8 pr-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-xs focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500"
               />
             </div>
-            <button 
+            <button
               onClick={() => setMostrarInativos(!mostrarInativos)}
               className="p-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-zinc-500 hover:text-indigo-600 hover:border-indigo-200 flex items-center gap-1"
               title={mostrarInativos ? "Mostrar apenas ativos" : "Mostrar inativos"}
             >
               {mostrarInativos ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+            <button
+              onClick={() => setFiltrarCriticos(!filtrarCriticos)}
+              className={`p-1.5 border rounded-md flex items-center gap-1 transition-colors text-xs font-semibold ${
+                filtrarCriticos
+                  ? 'bg-red-50 border-red-300 text-red-600'
+                  : 'bg-zinc-50 border-zinc-200 text-zinc-500 hover:text-red-600 hover:border-red-200'
+              }`}
+              title={filtrarCriticos ? "Mostrar todos" : "Mostrar apenas críticos"}
+            >
+              <AlertCircle size={14} />
+              <span className="text-[11px]">Críticos</span>
             </button>
           </div>
           
