@@ -12,6 +12,7 @@ interface ModalUsuarioProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (usuario: any) => Promise<void>;
+  isAdmin?: boolean;
   usuarioParaEditar?: {
     id: string;
     full_name: string;
@@ -53,6 +54,7 @@ export default function UsuarioModal({
   isOpen,
   onClose,
   onSave,
+  isAdmin = false,
   usuarioParaEditar = null,
   modo = 'criacao',
 }: ModalUsuarioProps) {
@@ -207,7 +209,8 @@ export default function UsuarioModal({
                   <FieldIcon><Shield size={16} /></FieldIcon>
                   <select
                     required
-                    className={`${fieldClass} appearance-none cursor-pointer`}
+                    disabled={!isAdmin}
+                    className={`${fieldClass} appearance-none ${isAdmin ? 'cursor-pointer' : 'cursor-not-allowed opacity-60'}`}
                     value={formData.cargo}
                     onChange={(e) => setFormData({ ...formData, cargo: e.target.value })}
                   >
@@ -217,7 +220,7 @@ export default function UsuarioModal({
                   </select>
                 </div>
                 <p className="text-[10px] text-zinc-400 px-1">
-                  {CARGOS.find((c) => c.value === formData.cargo)?.desc}
+                  {!isAdmin ? 'Apenas administradores podem alterar o cargo.' : CARGOS.find((c) => c.value === formData.cargo)?.desc}
                 </p>
               </div>
             </div>

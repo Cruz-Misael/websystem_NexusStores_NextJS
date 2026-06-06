@@ -2,8 +2,28 @@
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/supabase/admin';
 
+async function getCallerRole(req: Request): Promise<string | null> {
+  const authHeader = req.headers.get('Authorization');
+  if (!authHeader?.startsWith('Bearer ')) return null;
+  const token = authHeader.slice(7);
+  const { data: { user }, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !user) return null;
+  const { data } = await supabaseAdmin
+    .from('authorized_users')
+    .select('role')
+    .eq('user_id', user.id)
+    .eq('status', 'ativo')
+    .single();
+  return data?.role ?? null;
+}
+
 export async function POST(req: Request) {
   try {
+    const callerRole = await getCallerRole(req);
+    if (callerRole !== 'admin') {
+      return NextResponse.json({ error: 'Acesso negado. Apenas administradores podem alterar senhas.' }, { status: 403 });
+    }
+
     const { userId, password } = await req.json();
 
     // Validação básica

@@ -60,6 +60,13 @@ export function diasAtraso(nextDueDate: string): number {
   return Math.max(0, Math.floor((hoje.getTime() - vencimento.getTime()) / (1000 * 60 * 60 * 24)));
 }
 
+export function diasParaVencer(nextDueDate: string): number {
+  const hoje = new Date();
+  hoje.setHours(12, 0, 0, 0);
+  const vencimento = new Date(nextDueDate + 'T12:00:00');
+  return Math.floor((vencimento.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24));
+}
+
 export const BillingService = {
   async getBilling(): Promise<BillingConfig | null> {
     const { data, error } = await supabase
@@ -119,12 +126,13 @@ export const BillingService = {
     return data;
   },
 
-  async getStatus(): Promise<{ status: BillingStatus; diasAtrasoNum: number; nextDueDate: string } | null> {
+  async getStatus(): Promise<{ status: BillingStatus; diasAtrasoNum: number; diasParaVencerNum: number; nextDueDate: string } | null> {
     const billing = await this.getBilling();
     if (!billing) return null;
     return {
       status: calcularStatus(billing.next_due_date),
       diasAtrasoNum: diasAtraso(billing.next_due_date),
+      diasParaVencerNum: diasParaVencer(billing.next_due_date),
       nextDueDate: billing.next_due_date,
     };
   },

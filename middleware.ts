@@ -43,8 +43,8 @@ export async function middleware(req: NextRequest) {
       .single();
 
     if (error || !authorizedUser || authorizedUser.status !== 'ativo') {
-      // Se não autorizado, desloga e redireciona para login com erro
-      await supabase.auth.signOut();
+      // Não chama signOut() aqui — o cookie não seria limpo no redirect.
+      // O cliente faz o signOut ao detectar o erro na página de login.
       const redirectUrl = new URL('/login', req.url);
       redirectUrl.searchParams.set('error', 'access_denied');
       return NextResponse.redirect(redirectUrl);
@@ -52,8 +52,17 @@ export async function middleware(req: NextRequest) {
   }
 
   if (session && isAuthPage) {
-    // Se há sessão e está na página de login, redireciona para o dashboard
-    return NextResponse.redirect(new URL('/dashboard', req.url));
+    // Só redireciona pro dashboard se o usuário ainda está ativo.
+    // Caso contrário, deixa o login renderizar normalmente.
+    const { data: authorizedUser } = await supabase
+      .from('authorized_users')
+      .select('status')
+      .eq('user_id', session.user.id)
+      .single();
+
+    if (authorizedUser?.status === 'ativo') {
+      return NextResponse.redirect(new URL('/dashboard', req.url));
+    }
   }
 
   return res;
