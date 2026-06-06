@@ -5,6 +5,7 @@ import { useState, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Image from 'next/image';
 import { Toaster, toast } from 'react-hot-toast';
+import { supabase } from '@/lib/supabase/client';
 import { CompanyService, CompanyData } from '@/services/company.service';
 import { UserService, AuthorizedUser } from '@/services/user.service';
 import {
@@ -113,6 +114,7 @@ function ConfiguracoesContent() {
     return 'loja';
   });
   const [isLoading, setIsLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [progresso, setProgresso] = useState({ loja: 0, usuarios: 0 });
   const [modalAberto, setModalAberto] = useState(false);
   const [usuarioEditando, setUsuarioEditando] = useState<UsuarioParaEdicao | null>(null);
@@ -239,7 +241,8 @@ function ConfiguracoesContent() {
 
   const handleSalvarUsuario = async (dadosUsuario: any) => {
     if (modoModal === 'criacao') {
-      const response = await fetch('/api/create-user', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: dadosUsuario.email, password: dadosUsuario.senha, name: dadosUsuario.nome, role: dadosUsuario.cargo }) });
+      const { data: { session } } = await supabase.auth.getSession();
+      const response = await fetch('/api/create-user', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session?.access_token ?? ''}` }, body: JSON.stringify({ email: dadosUsuario.email, password: dadosUsuario.senha, name: dadosUsuario.nome, role: dadosUsuario.cargo }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Falha ao criar usuário.');
       toast.success('Usuário criado!');
@@ -434,6 +437,20 @@ function ConfiguracoesContent() {
     setProgresso(prev => ({ ...prev, usuarios: Math.min(100, (ativos / Math.max(usuarios.length, 1)) * 100) }));
   }, [usuarios]);
 
+  useEffect(() => {
+    async function loadCurrentUserRole() {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+      const { data: profile } = await supabase
+        .from('authorized_users')
+        .select('role')
+        .eq('user_id', authUser.id)
+        .single();
+      setIsAdmin(profile?.role === 'admin');
+    }
+    loadCurrentUserRole();
+  }, []);
+
   useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); }, []);
 
   const loadCompanyData = async () => {
@@ -492,7 +509,7 @@ function ConfiguracoesContent() {
             {isLoading ? 'Salvando' : 'Salvar Alterações'}
           </button>
         )}
-        {activeTab === 'pagamento' && (
+        {activeTab === 'pagamento' && isAdmin && (
           <button onClick={handleSalvarBilling} disabled={salvandoBilling} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
             {salvandoBilling ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {salvandoBilling ? 'Salvando' : 'Salvar Configuração'}
@@ -767,7 +784,8 @@ function ConfiguracoesContent() {
                     </div>
                     <button
                       onClick={handleRegistrarPagamento}
-                      disabled={registrandoPagamento || !billing}
+                      disabled={registrandoPagamento || !billing || !isAdmin}
+                      title={!isAdmin ? 'Apenas administradores podem registrar pagamentos' : undefined}
                       className="flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-emerald-100 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
                     >
                       {registrandoPagamento ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
@@ -853,8 +871,9 @@ function ConfiguracoesContent() {
                           {(['monthly', 'annual'] as const).map((type) => (
                             <button
                               key={type}
-                              onClick={() => setFormBilling(p => ({ ...p, plan_type: type }))}
-                              className={`flex-1 py-3 px-4 rounded-2xl border-2 text-sm font-bold transition-all flex items-center justify-center gap-2 ${
+                              onClick={() => isAdmin && setFormBilling(p => ({ ...p, plan_type: type }))}
+                              disabled={!isAdmin}
+                              className={`flex-1 py-3 px-4 rounded-2xl border-2 text-sm font-bold transition-all flex items-center justify-center gap-2 disabled:cursor-not-allowed ${
                                 formBilling.plan_type === type
                                   ? 'border-indigo-500 bg-indigo-50 text-indigo-700'
                                   : 'border-zinc-100 bg-zinc-50 text-zinc-500 hover:border-zinc-200'
@@ -874,7 +893,8 @@ function ConfiguracoesContent() {
                           type="date"
                           value={formBilling.billing_start_date}
                           onChange={e => setFormBilling(p => ({ ...p, billing_start_date: e.target.value }))}
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all"
+                          disabled={!isAdmin}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                         />
                       </div>
 
@@ -888,7 +908,8 @@ function ConfiguracoesContent() {
                             max={28}
                             value={formBilling.due_day}
                             onChange={e => setFormBilling(p => ({ ...p, due_day: Number(e.target.value) }))}
-                            className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all"
+                            disabled={!isAdmin}
+                            className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl px-4 py-2.5 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all disabled:opacity-60 disabled:cursor-not-allowed"
                           />
                         </div>
                       )}
@@ -911,7 +932,8 @@ function ConfiguracoesContent() {
                           value={formBilling.pix_code}
                           onChange={e => setFormBilling(p => ({ ...p, pix_code: e.target.value }))}
                           rows={3}
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-mono focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none"
+                          disabled={!isAdmin}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-mono focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none disabled:opacity-60 disabled:cursor-not-allowed"
                           placeholder="Cole aqui o código PIX completo..."
                         />
                         <p className="text-[10px] text-zinc-400 mt-1 ml-1">O QR Code será gerado automaticamente a partir deste código.</p>
@@ -924,7 +946,8 @@ function ConfiguracoesContent() {
                           value={formBilling.notes}
                           onChange={e => setFormBilling(p => ({ ...p, notes: e.target.value }))}
                           rows={2}
-                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none"
+                          disabled={!isAdmin}
+                          className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none disabled:opacity-60 disabled:cursor-not-allowed"
                           placeholder="Notas sobre o pagamento, forma de pagamento, etc..."
                         />
                       </div>
@@ -955,7 +978,7 @@ function ConfiguracoesContent() {
       </div>
 
       {/* MODAL USUÁRIO */}
-      <UsuarioModal isOpen={modalAberto} onClose={() => setModalAberto(false)} onSave={handleSalvarUsuario} usuarioParaEditar={usuarioEditando} modo={modoModal} />
+      <UsuarioModal isOpen={modalAberto} onClose={() => setModalAberto(false)} onSave={handleSalvarUsuario} isAdmin={isAdmin} usuarioParaEditar={usuarioEditando} modo={modoModal} />
 
       {/* MODAL CATEGORIA */}
       {modalCategoriaAberto && (
