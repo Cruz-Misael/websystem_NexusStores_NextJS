@@ -46,7 +46,8 @@ export async function POST(req: NextRequest) {
       })),
       payer: {
         name: customer.name,
-        email: customer.email || 'comprador@teste.com',
+        ...(customer.email ? { email: customer.email } : {}),
+        ...(customer.phone ? { phone: { number: customer.phone.replace(/\D/g, '') } } : {}),
       },
       back_urls: {
         success: `${origin}/loja/${slug}/sucesso?order=${order?.id}`,
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest) {
       },
       auto_return: 'approved',
       external_reference: order?.id,
+      statement_descriptor: config.store_name?.slice(0, 22) || 'LOJA ONLINE',
     },
   });
 
