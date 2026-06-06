@@ -43,8 +43,7 @@ function CheckoutContent({ slug }: { slug: string }) {
       });
       const data = await res.json();
       if (data.error) { setError(data.error); setLoading(false); return; }
-      // Redirect to MercadoPago — use sandbox_init_point for test credentials
-      window.location.href = data.sandbox_init_point || data.init_point;
+      window.location.href = data.init_point || data.sandbox_init_point;
     } catch {
       setError('Erro ao conectar com o gateway de pagamento');
       setLoading(false);
