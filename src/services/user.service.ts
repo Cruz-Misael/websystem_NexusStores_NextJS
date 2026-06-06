@@ -42,13 +42,18 @@ export class UserService {
   }
 
   static async updateAuthorizedUser(userId: string, updates: Partial<AuthorizedUser>): Promise<void> {
-    const { error } = await supabase
-      .from('authorized_users')
-      .update(updates)
-      .eq('id', userId);
-
-    if (error) {
-      throw error;
+    const { data: { session } } = await supabase.auth.getSession();
+    const response = await fetch('/api/update-user', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token ?? ''}`,
+      },
+      body: JSON.stringify({ id: userId, ...updates }),
+    });
+    if (!response.ok) {
+      const result = await response.json();
+      throw new Error(result.error || 'Falha ao atualizar usuário.');
     }
   }
 
@@ -79,10 +84,12 @@ export class UserService {
   }
 
   static async updateUserPassword(userId: string, password: string): Promise<void> {
+    const { data: { session } } = await supabase.auth.getSession();
     const response = await fetch('/api/update-user-password', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token ?? ''}`,
       },
       body: JSON.stringify({ userId, password }),
     });

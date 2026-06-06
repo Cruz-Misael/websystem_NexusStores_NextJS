@@ -3,6 +3,7 @@
 import { useSearchParams } from 'next/navigation';
 import { useEffect } from 'react';
 import { toast } from 'react-hot-toast';
+import { supabase } from '@/lib/supabase/client';
 
 // Este componente isola a lógica que depende do `useSearchParams`
 export function LoginClientLogic() {
@@ -11,7 +12,9 @@ export function LoginClientLogic() {
   useEffect(() => {
     const error = searchParams.get('error');
     if (error === 'access_denied') {
-      toast.error('Acesso negado. Faça login para continuar.');
+      // Limpa a sessão no cliente (o middleware não consegue fazer isso pelo redirect)
+      supabase.auth.signOut();
+      toast.error('Seu acesso foi revogado. Entre em contato com o administrador.');
     }
   }, [searchParams]);
 
