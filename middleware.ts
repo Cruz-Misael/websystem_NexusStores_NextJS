@@ -29,13 +29,14 @@ export async function middleware(req: NextRequest) {
   const isAuthPage = req.nextUrl.pathname.startsWith('/login');
   const isLandingPage = req.nextUrl.pathname === '/';
   const isStorePage = req.nextUrl.pathname.startsWith('/loja');
+  const isAuthCallback = req.nextUrl.pathname.startsWith('/auth/callback');
 
-  if (!session && !isAuthPage && !isLandingPage && !isStorePage) {
+  if (!session && !isAuthPage && !isLandingPage && !isStorePage && !isAuthCallback) {
     // Se não há sessão e não é página pública, redireciona para login
     return NextResponse.redirect(new URL('/login', req.url));
   }
 
-  if (session && !isAuthPage && !isLandingPage && !isStorePage) {
+  if (session && !isAuthPage && !isLandingPage && !isStorePage && !isAuthCallback) {
     // Se há sessão e não é página pública, verifica autorização
     const { data: authorizedUser, error } = await supabase
       .from('authorized_users')

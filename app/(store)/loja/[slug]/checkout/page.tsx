@@ -1,7 +1,9 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Loader2, User, Mail, Phone, ShoppingBag } from 'lucide-react';
+import { ArrowLeft, Loader2, ShoppingBag, LogOut, User } from 'lucide-react';
 import { CartProvider, useCart } from '@/components/loja/CartContext';
+import { supabase } from '@/src/lib/supabase/client';
+import type { User as SupabaseUser } from '@supabase/supabase-js';
 
 interface StoreConfig {
   slug: string;
@@ -12,8 +14,9 @@ interface StoreConfig {
 
 function CheckoutContent({ slug }: { slug: string }) {
   const [config, setConfig] = useState<StoreConfig | null>(null);
+  const [user, setUser] = useState<SupabaseUser | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
   const [name, setName] = useState('');
-  const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -24,6 +27,26 @@ function CheckoutContent({ slug }: { slug: string }) {
       .then(r => r.json())
       .then(data => { if (data.config) setConfig(data.config); });
   }, [slug]);
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        window.location.href = `/loja/${slug}/login?next=/loja/${slug}/checkout`;
+        return;
+      }
+      setUser(session.user);
+      // Pré-preenche nome a partir do perfil do Google
+      const meta = session.user.user_metadata;
+      const googleName = meta?.full_name || meta?.name || '';
+      if (googleName) setName(googleName);
+      setAuthChecked(true);
+    });
+  }, [slug]);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.href = `/loja/${slug}/login?next=/loja/${slug}/checkout`;
+  };
 
   const handlePay = async () => {
     if (!name.trim()) { setError('Informe seu nome'); return; }
@@ -38,7 +61,7 @@ function CheckoutContent({ slug }: { slug: string }) {
         body: JSON.stringify({
           slug,
           items: items.map(i => ({ sku: i.sku, name: i.name, unit_price: i.unit_price, quantity: i.quantity })),
-          customer: { name, email, phone },
+          customer: { name, email: user?.email, phone },
         }),
       });
       const data = await res.json();
@@ -52,6 +75,15 @@ function CheckoutContent({ slug }: { slug: string }) {
 
   const color = config?.primary_color || '#6366f1';
 
+  // Aguarda verificação de auth
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-zinc-50">
+        <Loader2 size={28} className="animate-spin text-zinc-300" />
+      </div>
+    );
+  }
+
   if (items.length === 0 && config) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-zinc-50">
@@ -61,6 +93,9 @@ function CheckoutContent({ slug }: { slug: string }) {
       </div>
     );
   }
+
+  const avatarUrl = user?.user_metadata?.avatar_url;
+  const displayName = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email || '';
 
   return (
     <div className="min-h-screen bg-zinc-50 font-sans">
@@ -77,7 +112,30 @@ function CheckoutContent({ slug }: { slug: string }) {
       <main className="max-w-2xl mx-auto px-4 py-8 space-y-4">
         <h1 className="text-lg font-black text-zinc-900">Finalizar Pedido</h1>
 
-        {/* Order summary */}
+        {/* Card do usuário logado */}
+        <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-4 flex items-center gap-3">
+          {avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={avatarUrl} alt={displayName} className="w-9 h-9 rounded-full object-cover" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="w-9 h-9 rounded-full bg-zinc-100 flex items-center justify-center">
+              <User size={16} className="text-zinc-400" />
+            </div>
+          )}
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-bold text-zinc-800 truncate">{displayName}</p>
+            <p className="text-[11px] text-zinc-400 truncate">{user?.email}</p>
+          </div>
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 text-[11px] font-bold text-zinc-400 hover:text-red-500 transition-colors"
+          >
+            <LogOut size={13} />
+            Sair
+          </button>
+        </div>
+
+        {/* Resumo do pedido */}
         <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5 space-y-3">
           <p className="text-xs font-black uppercase tracking-widest text-zinc-400">Resumo</p>
           {items.map(item => (
@@ -100,51 +158,39 @@ function CheckoutContent({ slug }: { slug: string }) {
           )}
         </div>
 
-        {/* Customer form */}
+        {/* Dados do cliente */}
         <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5 space-y-4">
-          <p className="text-xs font-black uppercase tracking-widest text-zinc-400">Seus dados</p>
+          <p className="text-xs font-black uppercase tracking-widest text-zinc-400">Confirmar dados</p>
 
           <div className="space-y-1">
             <label className="text-xs font-semibold text-zinc-600">Nome *</label>
-            <div className="relative">
-              <User size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-              <input
-                value={name}
-                onChange={e => setName(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ '--tw-ring-color': color } as React.CSSProperties}
-                placeholder="Seu nome completo"
-              />
-            </div>
+            <input
+              value={name}
+              onChange={e => setName(e.target.value)}
+              className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent"
+              style={{ '--tw-ring-color': color } as React.CSSProperties}
+              placeholder="Seu nome completo"
+            />
           </div>
 
           <div className="space-y-1">
             <label className="text-xs font-semibold text-zinc-600">E-mail</label>
-            <div className="relative">
-              <Mail size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="w-full pl-9 pr-3 py-2.5 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ '--tw-ring-color': color } as React.CSSProperties}
-                placeholder="seu@email.com"
-              />
-            </div>
+            <input
+              value={user?.email || ''}
+              disabled
+              className="w-full px-3 py-2.5 text-sm border border-zinc-100 rounded-xl bg-zinc-50 text-zinc-500 cursor-not-allowed"
+            />
           </div>
 
           <div className="space-y-1">
             <label className="text-xs font-semibold text-zinc-600">WhatsApp</label>
-            <div className="relative">
-              <Phone size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-              <input
-                value={phone}
-                onChange={e => setPhone(e.target.value.replace(/\D/g, '').replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2').slice(0, 15))}
-                className="w-full pl-9 pr-3 py-2.5 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent"
-                style={{ '--tw-ring-color': color } as React.CSSProperties}
-                placeholder="(00) 00000-0000"
-              />
-            </div>
+            <input
+              value={phone}
+              onChange={e => setPhone(e.target.value.replace(/\D/g, '').replace(/(\d{2})(\d)/, '($1) $2').replace(/(\d{5})(\d)/, '$1-$2').slice(0, 15))}
+              className="w-full px-3 py-2.5 text-sm border border-zinc-200 rounded-xl focus:outline-none focus:ring-2 focus:border-transparent"
+              style={{ '--tw-ring-color': color } as React.CSSProperties}
+              placeholder="(00) 00000-0000"
+            />
           </div>
         </div>
 
