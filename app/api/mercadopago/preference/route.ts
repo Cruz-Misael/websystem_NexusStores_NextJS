@@ -52,7 +52,7 @@ export async function POST(req: NextRequest) {
       back_urls: {
         success: `${origin}/loja/${slug}/sucesso?order=${order?.id}`,
         failure: `${origin}/loja/${slug}/erro`,
-        pending: `${origin}/loja/${slug}/pendente`,
+        pending: `${origin}/loja/${slug}/pendente?order=${order?.id}`,
       },
       auto_return: 'approved',
       external_reference: order?.id,
