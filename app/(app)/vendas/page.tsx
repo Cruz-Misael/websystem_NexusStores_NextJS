@@ -22,6 +22,7 @@ import {
   CreditCard,
   ShoppingCart,
   ShoppingBag,
+  Globe,
   User,
   Loader2,
   RefreshCw,
@@ -690,7 +691,14 @@ export default function HistoricoVendasCompacto() {
                   }`}
               >
                 <div className="flex justify-between items-center mb-1">
-                  <span className="font-mono font-medium text-gray-600 text-xs">#{venda.id}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono font-medium text-gray-600 text-xs">#{venda.id}</span>
+                    {venda.source === 'site' && (
+                      <span className="text-[9px] bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-black flex items-center gap-0.5">
+                        <Globe size={8} /> SITE
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5">
                     {estaAtrasado(venda) && (
                       <span className="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-black animate-pulse">
@@ -753,6 +761,11 @@ export default function HistoricoVendasCompacto() {
                   <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold shrink-0 ${getStatusColor(selecionada)}`}>
                     {getStatusFromVenda(selecionada)}
                   </span>
+                  {selecionada.source === 'site' && (
+                    <span className="text-[10px] bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-black flex items-center gap-1 shrink-0">
+                      <Globe size={10} /> Loja Online
+                    </span>
+                  )}
 
                   <div className="w-px h-4 bg-zinc-200 shrink-0" />
 

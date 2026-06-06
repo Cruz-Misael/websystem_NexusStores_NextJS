@@ -51,10 +51,16 @@ import {
   RefreshCw,
   Copy,
   QrCode,
+  Store,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Palette,
 } from 'lucide-react';
 import { BillingService, BillingConfig, calcularProximoVencimento, calcularStatus } from '@/src/services/billing.service';
+import { getWebsiteConfig, upsertWebsiteConfig, uploadBanner, WebsiteConfig } from '@/src/services/website.service';
 
-type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento';
+type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'meusite';
 type UsuarioCargo = 'admin' | 'gerente' | 'colaborador';
 type UsuarioStatus = 'ativo' | 'inativo' | 'pendente';
 
@@ -110,7 +116,7 @@ function ConfiguracoesContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores') return tab;
+    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'meusite') return tab;
     return 'loja';
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -159,6 +165,21 @@ function ConfiguracoesContent() {
   const [pixCopiado, setPixCopiado] = useState(false);
   const [salvandoBilling, setSalvandoBilling] = useState(false);
   const [registrandoPagamento, setRegistrandoPagamento] = useState(false);
+
+  // --- Meu Site ---
+  const [websiteConfig, setWebsiteConfig] = useState<WebsiteConfig | null>(null);
+  const [formSite, setFormSite] = useState({
+    slug: '', store_name: '', tagline: '', description: '',
+    primary_color: '#6366f1', whatsapp_number: '', instagram_url: '',
+    show_prices: true, mercadopago_access_token: '', mercadopago_public_key: '',
+    is_published: false,
+  });
+  const [produtosSite, setProdutosSite] = useState<any[]>([]);
+  const [salvandoSite, setSalvandoSite] = useState(false);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState('');
+  const [bannerRemoved, setBannerRemoved] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   // ========== LOJA ==========
 
@@ -420,6 +441,59 @@ function ConfiguracoesContent() {
     return { label: 'Bloqueado', color: 'bg-red-100 text-red-700', icon: Lock };
   };
 
+  // ========== MEU SITE ==========
+
+  const loadWebsiteConfig = async () => {
+    try {
+      const cfg = await getWebsiteConfig();
+      if (cfg) {
+        setWebsiteConfig(cfg);
+        setBannerPreview(cfg.banner_url || '');
+        setBannerRemoved(false);
+        setFormSite({
+          slug: cfg.slug, store_name: cfg.store_name, tagline: cfg.tagline || '',
+          description: cfg.description || '', primary_color: cfg.primary_color || '#6366f1',
+          whatsapp_number: cfg.whatsapp_number || '', instagram_url: cfg.instagram_url || '',
+          show_prices: cfg.show_prices, mercadopago_access_token: cfg.mercadopago_access_token || '',
+          mercadopago_public_key: cfg.mercadopago_public_key || '', is_published: cfg.is_published,
+        });
+      }
+    } catch { toast.error('Erro ao carregar configurações do site'); }
+  };
+
+  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Imagem deve ter no máximo 5MB'); return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast.error('Formato inválido. Use JPG, PNG ou WebP'); return; }
+    setBannerFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setBannerPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSalvarSite = async () => {
+    if (!formSite.slug.trim()) { toast.error('Defina o endereço do site'); return; }
+    const slugLimpo = formSite.slug.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    if (!slugLimpo) { toast.error('Endereço inválido'); return; }
+    setSalvandoSite(true);
+    try {
+      let bannerUrl = bannerRemoved ? '' : (websiteConfig?.banner_url || '');
+      if (bannerFile) bannerUrl = await uploadBanner(bannerFile);
+      const saved = await upsertWebsiteConfig({ ...websiteConfig, ...formSite, slug: slugLimpo, banner_url: bannerUrl } as any);
+      setWebsiteConfig(saved);
+      setBannerFile(null);
+      setBannerRemoved(false);
+      setFormSite(f => ({ ...f, slug: slugLimpo }));
+      toast.success('Configurações do site salvas!');
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao salvar');
+    } finally {
+      setSalvandoSite(false);
+    }
+  };
+
+
   // ========== EFEITOS ==========
 
   useEffect(() => {
@@ -451,7 +525,7 @@ function ConfiguracoesContent() {
     loadCurrentUserRole();
   }, []);
 
-  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); }, []);
+  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); loadWebsiteConfig(); }, []);
 
   const loadCompanyData = async () => {
     try {
@@ -487,6 +561,7 @@ function ConfiguracoesContent() {
     { id: 'categorias', label: 'Categorias', icon: Layers, desc: 'Categorias de produtos' },
     { id: 'operadores', label: 'Operadores', icon: UserCog, desc: 'Operadores do caixa' },
     { id: 'pagamento', label: 'Pagamento', icon: CreditCard, desc: 'Assinatura e vencimento' },
+    ...(isAdmin ? [{ id: 'meusite', label: 'Meu Site', icon: Store, desc: 'Loja virtual pública' }] : []),
   ];
 
   return (
@@ -513,6 +588,12 @@ function ConfiguracoesContent() {
           <button onClick={handleSalvarBilling} disabled={salvandoBilling} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
             {salvandoBilling ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {salvandoBilling ? 'Salvando' : 'Salvar Configuração'}
+          </button>
+        )}
+        {activeTab === 'meusite' && (
+          <button onClick={handleSalvarSite} disabled={salvandoSite} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
+            {salvandoSite ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {salvandoSite ? 'Salvando' : 'Salvar Site'}
           </button>
         )}
       </header>
@@ -972,6 +1053,169 @@ function ConfiguracoesContent() {
                 </div>
               );
             })()}
+
+            {/* ===== ABA MEU SITE ===== */}
+            {activeTab === 'meusite' && (
+              <div className="space-y-6 animate-in fade-in duration-400">
+
+                {/* Preview link */}
+                {websiteConfig?.is_published && websiteConfig.slug && (
+                  <div className="flex items-center justify-between bg-emerald-50 border border-emerald-100 px-5 py-3 rounded-2xl">
+                    <div className="flex items-center gap-2 text-emerald-700 text-xs font-medium">
+                      <CheckCircle2 size={15} />
+                      Site publicado
+                    </div>
+                    <a href={`/loja/${websiteConfig.slug}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-black text-emerald-700 hover:text-emerald-900 transition-colors">
+                      Visitar site <ExternalLink size={13} />
+                    </a>
+                  </div>
+                )}
+
+                {/* Config geral */}
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm space-y-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><Store size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Configurações do Site</h3>
+                      <p className="text-[11px] text-zinc-400">Identidade e endereço da sua loja virtual</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Endereço do site *</label>
+                      <div className="flex items-center border border-zinc-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500">
+                        <span className="px-3 py-2.5 bg-zinc-50 text-xs text-zinc-400 border-r border-zinc-200 whitespace-nowrap">/loja/</span>
+                        <input
+                          value={formSite.slug}
+                          onChange={e => setFormSite(p => ({ ...p, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
+                          className="flex-1 px-3 py-2.5 text-xs font-mono focus:outline-none bg-white"
+                          placeholder="minha-loja"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Nome da loja *</label>
+                      <input value={formSite.store_name} onChange={e => setFormSite(p => ({ ...p, store_name: e.target.value }))} className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="Nome que aparece no site" />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Tagline</label>
+                      <input value={formSite.tagline} onChange={e => setFormSite(p => ({ ...p, tagline: e.target.value }))} className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="Frase de impacto da loja" />
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Descrição</label>
+                      <textarea value={formSite.description} onChange={e => setFormSite(p => ({ ...p, description: e.target.value }))} rows={2} className="w-full px-3 py-2 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none" placeholder="Sobre a loja..." />
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1.5 block">Imagem de fundo (banner)</label>
+                      <input ref={bannerInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleBannerUpload} />
+                      {bannerPreview ? (
+                        <div className="relative rounded-xl overflow-hidden border border-zinc-200 h-32">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={bannerPreview} alt="Banner" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center gap-3 opacity-0 hover:opacity-100 transition-opacity">
+                            <button onClick={() => bannerInputRef.current?.click()} className="px-3 py-1.5 bg-white text-zinc-800 rounded-lg text-xs font-bold hover:bg-zinc-100 flex items-center gap-1.5"><Upload size={12} /> Trocar</button>
+                            <button onClick={() => { setBannerPreview(''); setBannerFile(null); setBannerRemoved(true); }} className="px-3 py-1.5 bg-white text-red-600 rounded-lg text-xs font-bold hover:bg-red-50 flex items-center gap-1.5"><X size={12} /> Remover</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => bannerInputRef.current?.click()} className="w-full h-24 border-2 border-dashed border-zinc-200 rounded-xl flex flex-col items-center justify-center gap-2 text-zinc-400 hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50/30 transition-all">
+                          <Upload size={20} />
+                          <span className="text-xs font-medium">Clique para adicionar uma imagem de fundo</span>
+                          <span className="text-[10px]">JPG, PNG ou WebP · máx. 5MB</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block flex items-center gap-1.5"><Palette size={11} /> Cor principal</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={formSite.primary_color} onChange={e => setFormSite(p => ({ ...p, primary_color: e.target.value }))} className="h-9 w-16 border border-zinc-200 rounded-xl cursor-pointer p-1" />
+                        <span className="text-xs font-mono text-zinc-500">{formSite.primary_color}</span>
+                        <div className="flex gap-1 ml-auto">
+                          {['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#1d4ed8'].map(c => (
+                            <button key={c} onClick={() => setFormSite(p => ({ ...p, primary_color: c }))} className={`w-5 h-5 rounded-full border-2 transition-all ${formSite.primary_color === c ? 'border-zinc-800 scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">WhatsApp</label>
+                      <input value={formSite.whatsapp_number} onChange={e => setFormSite(p => ({ ...p, whatsapp_number: e.target.value.replace(/\D/g, '') }))} className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="5511999999999 (com DDI)" />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Instagram (URL)</label>
+                      <input value={formSite.instagram_url} onChange={e => setFormSite(p => ({ ...p, instagram_url: e.target.value }))} className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="https://instagram.com/sua_loja" />
+                    </div>
+
+                    <div className="col-span-2 flex items-center gap-6">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <div onClick={() => setFormSite(p => ({ ...p, show_prices: !p.show_prices }))} className={`w-9 h-5 rounded-full transition-colors relative ${formSite.show_prices ? 'bg-indigo-600' : 'bg-zinc-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${formSite.show_prices ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        </div>
+                        <span className="text-xs text-zinc-700 flex items-center gap-1">{formSite.show_prices ? <Eye size={13} /> : <EyeOff size={13} />} Exibir preços no site</span>
+                      </label>
+
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <div onClick={() => setFormSite(p => ({ ...p, is_published: !p.is_published }))} className={`w-9 h-5 rounded-full transition-colors relative ${formSite.is_published ? 'bg-emerald-500' : 'bg-zinc-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${formSite.is_published ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        </div>
+                        <span className="text-xs text-zinc-700">Publicar site</span>
+                      </label>
+                    </div>
+                  </div>
+                </section>
+
+                {/* MercadoPago */}
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><CreditCard size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">MercadoPago</h3>
+                      <p className="text-[11px] text-zinc-400">Credenciais para receber pagamentos online</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-700 space-y-1">
+                    <p className="font-bold">Como obter as credenciais:</p>
+                    <ol className="list-decimal list-inside space-y-0.5 text-blue-600">
+                      <li>Acesse <span className="font-mono">mercadopago.com.br/developers</span></li>
+                      <li>Crie uma aplicação</li>
+                      <li>Em credenciais de teste, copie o <span className="font-bold">Access Token</span> e a <span className="font-bold">Public Key</span></li>
+                    </ol>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Access Token (servidor)</label>
+                      <input
+                        type="password"
+                        value={formSite.mercadopago_access_token}
+                        onChange={e => setFormSite(p => ({ ...p, mercadopago_access_token: e.target.value }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="TEST-..."
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Public Key (cliente)</label>
+                      <input
+                        value={formSite.mercadopago_public_key}
+                        onChange={e => setFormSite(p => ({ ...p, mercadopago_public_key: e.target.value }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="TEST-..."
+                      />
+                    </div>
+                  </div>
+                </section>
+
+              </div>
+            )}
 
           </div>
         </main>
