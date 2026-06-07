@@ -95,7 +95,7 @@ export async function POST(req: NextRequest) {
           address: {
             zip_code: recipient.cep,
             street_name: recipient.street || '',
-            street_number: recipient.number ? parseInt(recipient.number, 10) || 0 : 0,
+            street_number: recipient.number || '0',
           },
         } : {}),
       },
