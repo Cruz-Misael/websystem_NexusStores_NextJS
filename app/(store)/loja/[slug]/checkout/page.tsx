@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, useCallback } from 'react';
-import { ArrowLeft, Loader2, ShoppingBag, LogOut, User, MapPin, Truck, Tag, X, CheckCircle, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Loader2, ShoppingBag, LogOut, User, MapPin, Truck, Tag, X, CheckCircle } from 'lucide-react';
 import { CartProvider, useCart } from '@/components/loja/CartContext';
 import { supabase } from '@/src/lib/supabase/client';
 import type { User as SupabaseUser } from '@supabase/supabase-js';
@@ -28,6 +28,16 @@ interface ShippingOption {
   delivery_time: number | null;
   free: boolean;
 }
+
+const PICKUP_OPTION: ShippingOption = {
+  id: -1,
+  name: 'Retirar na Loja',
+  company: 'Retirada',
+  price: 0,
+  original_price: 0,
+  delivery_time: null,
+  free: true,
+};
 
 interface CouponResult {
   valid: boolean;
@@ -70,7 +80,7 @@ function CheckoutContent({ slug }: { slug: string }) {
 
   // Shipping
   const [shippingOptions, setShippingOptions] = useState<ShippingOption[]>([]);
-  const [selectedShipping, setSelectedShipping] = useState<ShippingOption | null>(null);
+  const [selectedShipping, setSelectedShipping] = useState<ShippingOption>(PICKUP_OPTION);
   const [shippingLoading, setShippingLoading] = useState(false);
   const [hasShippingConfig, setHasShippingConfig] = useState(false);
 
@@ -138,7 +148,6 @@ function CheckoutContent({ slug }: { slug: string }) {
     const cleaned = rawCep.replace(/\D/g, '');
     if (cleaned.length !== 8 || !hasShippingConfig) return;
     setShippingLoading(true);
-    setSelectedShipping(null);
     setShippingOptions([]);
     try {
       const r = await fetch('/api/loja/calcular-frete', {
@@ -149,7 +158,7 @@ function CheckoutContent({ slug }: { slug: string }) {
       const data = await r.json();
       if (data.options?.length > 0) {
         setShippingOptions(data.options);
-        setSelectedShipping(data.options[0]);
+        // Don't auto-select carrier — pickup is the default choice
       }
     } catch {
       // silently fail — user can still proceed without shipping calc
@@ -204,14 +213,14 @@ function CheckoutContent({ slug }: { slug: string }) {
   })();
   const autoDiscountAmount = Math.round((total * autoDiscountPercent) / 100 * 100) / 100;
   const couponDiscount = (couponResult?.valid && couponResult.discount_amount) ? couponResult.discount_amount : 0;
-  const shippingCost = selectedShipping?.price ?? 0;
+  const shippingCost = selectedShipping.price;
   const finalTotal = Math.max(0, total - autoDiscountAmount - couponDiscount + shippingCost);
 
   const handlePay = async () => {
+    const isPickup = selectedShipping?.id === -1;
     if (!name.trim()) { setError('Informe seu nome'); return; }
     if (items.length === 0) { setError('Carrinho vazio'); return; }
-    if (hasShippingConfig && !cep.replace(/\D/g, '').length) { setError('Informe seu CEP para calcular o frete'); return; }
-    if (hasShippingConfig && shippingOptions.length > 0 && !selectedShipping) { setError('Selecione uma opção de frete'); return; }
+    if (!isPickup && hasShippingConfig && !cep.replace(/\D/g, '').length) { setError('Informe seu CEP para calcular o frete'); return; }
     setError('');
     setLoading(true);
 
@@ -224,14 +233,14 @@ function CheckoutContent({ slug }: { slug: string }) {
           items: items.map(i => ({ sku: i.sku, name: i.name, unit_price: i.unit_price, quantity: i.quantity })),
           customer: { name, email: user?.email, phone },
           user_id: user?.id || null,
-          shipping: selectedShipping ? {
+          shipping: {
             cost: selectedShipping.price,
             method: selectedShipping.name,
-            carrier: selectedShipping.company,
-          } : null,
+            carrier: isPickup ? null : selectedShipping.company,
+          },
           discount: autoDiscountAmount + couponDiscount,
           coupon_code: couponResult?.valid ? couponCode.toUpperCase().trim() : null,
-          recipient: { cep: cep.replace(/\D/g, ''), street, number, complement, city, state },
+          recipient: isPickup ? null : { cep: cep.replace(/\D/g, ''), street, number, complement, city, state },
         }),
       });
       const data = await res.json();
@@ -349,43 +358,58 @@ function CheckoutContent({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Shipping options */}
-        {hasShippingConfig && (
-          <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5 space-y-3">
-            <p className="text-xs font-black uppercase tracking-widest text-zinc-400 flex items-center gap-2"><Truck size={13} /> Frete</p>
-            {shippingLoading ? (
-              <div className="flex items-center gap-2 text-zinc-400 text-sm py-3">
-                <Loader2 size={16} className="animate-spin" /> Calculando fretes...
-              </div>
-            ) : shippingOptions.length > 0 ? (
-              <div className="space-y-2">
-                {shippingOptions.map(opt => (
-                  <label key={opt.id} className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${selectedShipping?.id === opt.id ? 'border-indigo-500 bg-indigo-50/50' : 'border-zinc-100 hover:border-zinc-200'}`} style={selectedShipping?.id === opt.id ? { borderColor: color } : {}}>
-                    <input type="radio" name="shipping" value={opt.id} checked={selectedShipping?.id === opt.id} onChange={() => setSelectedShipping(opt)} className="hidden" />
-                    <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${selectedShipping?.id === opt.id ? 'border-indigo-500' : 'border-zinc-300'}`} style={selectedShipping?.id === opt.id ? { borderColor: color } : {}}>
-                      {selectedShipping?.id === opt.id && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />}
-                    </div>
-                    <div className="flex-1">
-                      <p className="text-sm font-bold text-zinc-800">{opt.company} — {opt.name}</p>
-                      {opt.delivery_time && <p className="text-[11px] text-zinc-400">{opt.delivery_time} dias úteis</p>}
-                    </div>
-                    <div className="text-right">
-                      {opt.free ? (
-                        <span className="text-sm font-black text-emerald-600">Grátis</span>
-                      ) : (
-                        <span className="text-sm font-bold text-zinc-800">{opt.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
-                      )}
-                    </div>
-                  </label>
-                ))}
-              </div>
-            ) : cep.replace(/\D/g, '').length === 8 ? (
-              <p className="text-sm text-zinc-400 py-2">Nenhuma opção de frete disponível para este CEP</p>
-            ) : (
-              <p className="text-sm text-zinc-400 py-2">Informe o CEP para calcular o frete</p>
+        {/* Shipping options — pickup always available */}
+        <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5 space-y-3">
+          <p className="text-xs font-black uppercase tracking-widest text-zinc-400 flex items-center gap-2"><Truck size={13} /> Entrega / Retirada</p>
+          <div className="space-y-2">
+
+            {/* Pickup option — always first */}
+            {[PICKUP_OPTION, ...shippingOptions].map(opt => {
+              const isSelected = selectedShipping?.id === opt.id;
+              const isPickupOpt = opt.id === -1;
+              return (
+                <label
+                  key={opt.id}
+                  className={`flex items-center gap-3 p-3 rounded-xl border-2 cursor-pointer transition-all ${isSelected ? 'bg-indigo-50/50' : 'border-zinc-100 hover:border-zinc-200'}`}
+                  style={isSelected ? { borderColor: color } : {}}
+                >
+                  <input type="radio" name="shipping" value={opt.id} checked={isSelected} onChange={() => setSelectedShipping(opt)} className="hidden" />
+                  <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${isSelected ? '' : 'border-zinc-300'}`} style={isSelected ? { borderColor: color } : {}}>
+                    {isSelected && <div className="w-2 h-2 rounded-full" style={{ backgroundColor: color }} />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-bold text-zinc-800">
+                      {isPickupOpt ? 'Retirar na loja' : `${opt.company} — ${opt.name}`}
+                    </p>
+                    {isPickupOpt ? (
+                      <p className="text-[11px] text-zinc-400">Combine o horário pelo WhatsApp</p>
+                    ) : opt.delivery_time ? (
+                      <p className="text-[11px] text-zinc-400">{opt.delivery_time} dias úteis</p>
+                    ) : null}
+                  </div>
+                  <div className="text-right">
+                    {(opt.free || opt.price === 0) ? (
+                      <span className="text-sm font-black text-emerald-600">Grátis</span>
+                    ) : (
+                      <span className="text-sm font-bold text-zinc-800">{opt.price.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
+                    )}
+                  </div>
+                </label>
+              );
+            })}
+
+            {/* Carrier loading / hint */}
+            {hasShippingConfig && (
+              shippingLoading ? (
+                <div className="flex items-center gap-2 text-zinc-400 text-sm py-1 px-3">
+                  <Loader2 size={14} className="animate-spin" /> Calculando opções de entrega...
+                </div>
+              ) : shippingOptions.length === 0 && cep.replace(/\D/g, '').length < 8 ? (
+                <p className="text-[11px] text-zinc-400 px-3 pb-1">Informe o CEP acima para ver opções de entrega por transportadora</p>
+              ) : null
             )}
           </div>
-        )}
+        </div>
 
         {/* Coupon */}
         <div className="bg-white rounded-2xl border border-zinc-100 shadow-sm p-5 space-y-3">
@@ -451,9 +475,9 @@ function CheckoutContent({ slug }: { slug: string }) {
                   <span>{shippingCost.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</span>
                 </div>
               )}
-              {shippingCost === 0 && selectedShipping && (
+              {shippingCost === 0 && (
                 <div className="flex justify-between text-sm text-emerald-600">
-                  <span>Frete ({selectedShipping.name})</span>
+                  <span>{selectedShipping?.id === -1 ? 'Retirar na loja' : `Frete (${selectedShipping?.name})`}</span>
                   <span>Grátis</span>
                 </div>
               )}
