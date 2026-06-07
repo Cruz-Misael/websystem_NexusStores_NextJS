@@ -21,7 +21,11 @@
       "Bash(mkdir -p \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\\\\api\\\\loja\\\\calcular-frete\" && mkdir -p \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\\\\api\\\\loja\\\\validar-cupom\" && mkdir -p \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\\\\api\\\\pedidos\\\\[id]\")",
       "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\" -Filter \"*store*\" -Recurse)",
       "Bash(Select-Object FullName)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Bash(git status *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)"
     ],
     "additionalDirectories": [
       "c:\\Users\\misael.cruz\\Desktop\\4 - VSCode\\NexusStores_IntimaSeducao\\app\\api\\pedidos"
