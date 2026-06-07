@@ -14,6 +14,18 @@ export interface WebsiteConfig {
   mercadopago_access_token?: string;
   mercadopago_public_key?: string;
   is_published: boolean;
+  // Shipping
+  melhor_envio_token?: string;
+  shipping_origin_cep?: string;
+  package_default_weight?: number;
+  package_default_height?: number;
+  package_default_width?: number;
+  package_default_length?: number;
+  free_shipping_min_amount?: number | null;
+  // Discounts
+  discount_global_percent?: number;
+  discount_min_order_amount?: number | null;
+  discount_min_order_percent?: number;
   created_at?: string;
   updated_at?: string;
 }

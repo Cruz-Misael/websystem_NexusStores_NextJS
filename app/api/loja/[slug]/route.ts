@@ -21,7 +21,7 @@ export async function GET(
     return NextResponse.json({ error: 'Loja não está publicada' }, { status: 403 });
   }
 
-  const [{ data: products }, { data: company }] = await Promise.all([
+  const [{ data: products }, { data: company }, { data: categories }] = await Promise.all([
     supabaseAdmin
       .from('products')
       .select('sku, name, description, price, imagem, category, stock_quantity, color, size')
@@ -33,10 +33,16 @@ export async function GET(
       .select('logo_url')
       .limit(1)
       .maybeSingle(),
+    supabaseAdmin
+      .from('product_categories')
+      .select('name, color, image_url')
+      .eq('is_active', true)
+      .order('name'),
   ]);
 
   return NextResponse.json({
     config: { ...config, logo_url: company?.logo_url ?? null },
     products: products || [],
+    categories: categories || [],
   });
 }
