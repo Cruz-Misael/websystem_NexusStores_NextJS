@@ -1,7 +1,11 @@
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
 const FROM = process.env.FROM_EMAIL || 'Pedidos <onboarding@resend.dev>';
+
+function getResend() {
+  if (!process.env.RESEND_API_KEY) return null;
+  return new Resend(process.env.RESEND_API_KEY);
+}
 
 const STATUS_LABELS: Record<string, string> = {
   preparing: 'Em Preparo',
@@ -87,7 +91,8 @@ function buildHtml(params: OrderStatusEmailParams): string {
 }
 
 export async function sendOrderStatusEmail(params: OrderStatusEmailParams): Promise<void> {
-  if (!process.env.RESEND_API_KEY) return;
+  const resend = getResend();
+  if (!resend) return;
 
   const emoji = STATUS_EMOJIS[params.newStatus] || '📦';
   const label = STATUS_LABELS[params.newStatus] || params.newStatus;
