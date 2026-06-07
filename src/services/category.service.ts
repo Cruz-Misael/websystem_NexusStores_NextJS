@@ -5,9 +5,19 @@ export interface ProductCategory {
   name: string;
   description: string | null;
   color: string;
+  image_url: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
+}
+
+export async function uploadCategoryImage(file: File): Promise<string> {
+  const ext = file.name.split('.').pop();
+  const filePath = `category-${Date.now()}.${ext}`;
+  const { error } = await supabase.storage.from('logos').upload(filePath, file);
+  if (error) throw new Error(error.message);
+  const { data } = supabase.storage.from('logos').getPublicUrl(filePath);
+  return data.publicUrl;
 }
 
 export async function listarCategorias(): Promise<ProductCategory[]> {
@@ -33,6 +43,7 @@ export async function criarCategoria(categoria: {
   name: string;
   description?: string;
   color?: string;
+  image_url?: string | null;
 }): Promise<ProductCategory> {
   const { data, error } = await supabase
     .from("product_categories")

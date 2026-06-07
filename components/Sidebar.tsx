@@ -20,6 +20,8 @@ import {
   ChevronDown,
   ChevronUp,
   BarChart2,
+  ShoppingBag,
+  Globe,
 } from "lucide-react";
 
 const ROLE_LABELS: Record<string, string> = {
@@ -76,12 +78,13 @@ export default function Sidebar() {
   };
 
   const menuItems = [
-    { name: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    { name: "Caixa / PDV", icon: CreditCard, href: "/caixa" },
-    { name: "Vendas", icon: ShoppingCart, href: "/vendas" },
-    { name: "Estoque", icon: Package, href: "/produtos" },
-    { name: "Clientes", icon: Users, href: "/clientes" },
-    { name: "Relatórios", icon: BarChart2, href: "/relatorios" },
+    { name: "Dashboard",      icon: LayoutDashboard, href: "/dashboard", onlineStore: false, adminOnly: false },
+    { name: "Pedidos Online", icon: ShoppingBag,      href: "/pedidos",   onlineStore: true,  adminOnly: true  },
+    { name: "Caixa / PDV",   icon: CreditCard,       href: "/caixa",     onlineStore: false, adminOnly: false },
+    { name: "Vendas",         icon: ShoppingCart,     href: "/vendas",    onlineStore: false, adminOnly: false },
+    { name: "Estoque",        icon: Package,          href: "/produtos",  onlineStore: false, adminOnly: false },
+    { name: "Clientes",       icon: Users,            href: "/clientes",  onlineStore: false, adminOnly: false },
+    { name: "Relatórios",    icon: BarChart2,         href: "/relatorios",onlineStore: false, adminOnly: false },
   ];
 
   return (
@@ -110,6 +113,40 @@ export default function Sidebar() {
         {menuItems.map((item) => {
           const isActive = pathname === item.href;
           const isEstoque = item.href === "/produtos";
+          const isDisabled = item.adminOnly && user !== null && user.role !== 'admin';
+
+          const itemContent = (
+            <>
+              <item.icon size={18} className={isActive && !isDisabled ? "text-white" : "text-zinc-400"} />
+              <span className="flex-1">{item.name}</span>
+              {isEstoque && totalCount > 0 && (
+                <span className={`
+                  text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center leading-none
+                  ${criticalCount > 0 ? "bg-red-500 text-white" : "bg-amber-500 text-white"}
+                `}>
+                  {totalCount}
+                </span>
+              )}
+              {item.onlineStore && (
+                <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-violet-900/40 text-violet-300 border border-violet-700/50 flex items-center gap-0.5 shrink-0">
+                  <Globe size={7} />
+                  Online
+                </span>
+              )}
+            </>
+          );
+
+          if (isDisabled) {
+            return (
+              <div
+                key={item.href}
+                title="Disponível apenas para administradores"
+                className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium opacity-40 cursor-not-allowed text-zinc-400"
+              >
+                {itemContent}
+              </div>
+            );
+          }
 
           return (
             <Link
@@ -123,19 +160,7 @@ export default function Sidebar() {
                 }
               `}
             >
-              <item.icon size={18} className={isActive ? "text-white" : "text-zinc-400"} />
-              <span className="flex-1">{item.name}</span>
-              {isEstoque && totalCount > 0 && (
-                <span className={`
-                  text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center leading-none
-                  ${criticalCount > 0
-                    ? "bg-red-500 text-white"
-                    : "bg-amber-500 text-white"
-                  }
-                `}>
-                  {totalCount}
-                </span>
-              )}
+              {itemContent}
             </Link>
           );
         })}
