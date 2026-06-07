@@ -79,11 +79,11 @@ export default function Sidebar() {
 
   const menuItems = [
     { name: "Dashboard",      icon: LayoutDashboard, href: "/dashboard", onlineStore: false, adminOnly: false },
-    { name: "Pedidos Online", icon: ShoppingBag,      href: "/pedidos",   onlineStore: true,  adminOnly: true  },
     { name: "Caixa / PDV",   icon: CreditCard,       href: "/caixa",     onlineStore: false, adminOnly: false },
     { name: "Vendas",         icon: ShoppingCart,     href: "/vendas",    onlineStore: false, adminOnly: false },
     { name: "Estoque",        icon: Package,          href: "/produtos",  onlineStore: false, adminOnly: false },
     { name: "Clientes",       icon: Users,            href: "/clientes",  onlineStore: false, adminOnly: false },
+    { name: "Pedidos Online", icon: ShoppingBag,      href: "/pedidos",   onlineStore: true,  adminOnly: true  },
     { name: "Relatórios",    icon: BarChart2,         href: "/relatorios",onlineStore: false, adminOnly: false },
   ];
 
