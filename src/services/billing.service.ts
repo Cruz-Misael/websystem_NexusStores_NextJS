@@ -49,7 +49,7 @@ export function calcularStatus(nextDueDate: string): BillingStatus {
   const diasAtraso = Math.floor((hoje.getTime() - vencimento.getTime()) / (1000 * 60 * 60 * 24));
 
   if (diasAtraso <= 0) return 'active';
-  if (diasAtraso <= 10) return 'overdue';
+  if (diasAtraso <= 5) return 'overdue';
   return 'locked';
 }
 
