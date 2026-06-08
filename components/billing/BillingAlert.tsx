@@ -29,7 +29,7 @@ export default function BillingAlert({ diasAtraso, nextDueDate }: Props) {
             : `Pagamento em atraso há ${diasAtraso} dia${diasAtraso > 1 ? 's' : ''} — venceu em ${vencimento}.`}
           {" "}
           <span className="font-normal text-amber-700">
-            Regularize antes de {diasAtraso >= 9 ? "amanhã" : `${10 - diasAtraso} dia${10 - diasAtraso > 1 ? 's' : ''}`} para evitar o bloqueio do sistema.
+            Regularize antes de {diasAtraso >= 4 ? "amanhã" : `${5 - diasAtraso} dia${5 - diasAtraso > 1 ? 's' : ''}`} para evitar o bloqueio do sistema.
           </span>
         </p>
       </div>
