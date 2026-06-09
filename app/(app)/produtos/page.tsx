@@ -6,6 +6,7 @@ import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import ImpressaoEtiquetasModal from "@/components/estoque/ImpressaoEtiquetasModal";
 import { listarProdutosPaginado, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import { 
   Search,
@@ -149,6 +150,7 @@ const converterParaBanco = (produtoForm: any) => {
 };
 
 export default function GestaoEstoqueCompacto() {
+  const searchParams = useSearchParams();
   const [selecionado, setSelecionado] = useState<Produto | null>(null);
   const [listaProdutos, setListaProdutos] = useState<Produto[]>([]);
   const [busca, setBusca] = useState("");
@@ -164,7 +166,7 @@ export default function GestaoEstoqueCompacto() {
   const [carregandoAcao, setCarregandoAcao] = useState(false);
   const [erro, setErro] = useState<string | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
-  const [filtrarCriticos, setFiltrarCriticos] = useState(false);
+  const [filtrarCriticos, setFiltrarCriticos] = useState(searchParams.get("criticos") === "true");
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
   const [totalProdutos, setTotalProdutos] = useState(0);
