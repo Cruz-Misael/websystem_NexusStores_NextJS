@@ -5,7 +5,7 @@ import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import ImpressaoEtiquetasModal from "@/components/estoque/ImpressaoEtiquetasModal";
 import { listarProdutosPaginado, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import { 
@@ -149,7 +149,7 @@ const converterParaBanco = (produtoForm: any) => {
   };
 };
 
-export default function GestaoEstoqueCompacto() {
+function GestaoEstoqueCompacto() {
   const searchParams = useSearchParams();
   const [selecionado, setSelecionado] = useState<Produto | null>(null);
   const [listaProdutos, setListaProdutos] = useState<Produto[]>([]);
@@ -1133,5 +1133,13 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
         duracao={3000}
       />
     </div>
+  );
+}
+
+export default function ProdutosPage() {
+  return (
+    <Suspense>
+      <GestaoEstoqueCompacto />
+    </Suspense>
   );
 }
