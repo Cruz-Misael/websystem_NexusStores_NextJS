@@ -250,6 +250,31 @@ export async function atualizarVendaConsignado(
   return { success: true, data };
 }
 
+export async function atualizarDataAcertoConsignado(saleId: number, novaData: string) {
+  const { data: venda, error: fetchError } = await supabase
+    .from("sales")
+    .select("observation")
+    .eq("id", saleId)
+    .single();
+
+  if (fetchError || !venda) {
+    return { error: fetchError || new Error("Venda não encontrada") };
+  }
+
+  const observacaoAtualizada = (venda.observation || "").replace(
+    /Pagamento previsto: \d{4}-\d{2}-\d{2}/,
+    `Pagamento previsto: ${novaData}`
+  );
+
+  const { error } = await supabase
+    .from("sales")
+    .update({ observation: observacaoAtualizada })
+    .eq("id", saleId);
+
+  if (error) return { error };
+  return { success: true, observation: observacaoAtualizada };
+}
+
 export async function atualizarQuantidadeItemVenda(itemId: number, novaQuantidade: number) {
   console.log(`Atualizando quantidade do item ${itemId} para ${novaQuantidade}`);
 
