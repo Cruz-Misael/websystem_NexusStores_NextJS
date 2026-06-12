@@ -25,7 +25,11 @@
       "Bash(git status *)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(cat tailwind.config.ts)",
+      "Bash(cat tailwind.config.js)",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('next:', p.dependencies?.next, 'supabase-js:', p.dependencies?.['@supabase/supabase-js']\\)\")",
+      "PowerShell(git push origin staging)"
     ],
     "additionalDirectories": [
       "c:\\Users\\misael.cruz\\Desktop\\4 - VSCode\\NexusStores_IntimaSeducao\\app\\api\\pedidos"
