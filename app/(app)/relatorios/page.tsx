@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import {
   getTopProductsByCustomer,
   ProdutoPorRevendedor,
@@ -11,131 +11,254 @@ import {
   Search,
   ChevronUp,
   ChevronDown,
+  ChevronRight,
   Loader2,
   Users,
   Package,
   ShoppingCart,
   TrendingUp,
+  Settings2,
+  User,
+  X,
 } from "lucide-react";
 
-type SortKey = keyof Pick<
-  ProdutoPorRevendedor,
-  "clienteNome" | "produtoNome" | "quantidadeTotal" | "receitaTotal" | "numeroPedidos"
->;
+/* ─── Types ──────────────────────────────────────────────────── */
+type ViewMode = "cliente" | "produto";
+type ClienteSortKey = "clienteNome" | "totalItens" | "totalReceita" | "totalPedidos" | "ticketMedio";
+type ProdutoSortKey = "clienteNome" | "produtoNome" | "quantidadeTotal" | "receitaTotal" | "numeroPedidos";
 
+interface ClienteResumo {
+  clienteId: number;
+  clienteNome: string;
+  totalItens: number;
+  totalReceita: number;
+  totalPedidos: number;
+  ticketMedio: number;
+  produtos: ProdutoPorRevendedor[];
+}
+
+interface ColDef {
+  key: string;
+  label: string;
+  defaultVisible: boolean;
+}
+
+/* ─── Constants ──────────────────────────────────────────────── */
 const PERIODOS = [
-  { label: "Últimos 30 dias", days: 30 },
-  { label: "Últimos 60 dias", days: 60 },
-  { label: "Últimos 90 dias", days: 90 },
+  { label: "Este mês", days: 30 },
+  { label: "60 dias", days: 60 },
+  { label: "90 dias", days: 90 },
   { label: "Este ano", days: 365 },
 ];
 
+const COLUNAS_CLIENTE: ColDef[] = [
+  { key: "totalItens",  label: "Itens",        defaultVisible: true },
+  { key: "totalPedidos",label: "Pedidos",      defaultVisible: true },
+  { key: "totalReceita",label: "Valor Total",  defaultVisible: true },
+  { key: "ticketMedio", label: "Ticket Médio", defaultVisible: true },
+];
+
+const COLUNAS_PRODUTO: ColDef[] = [
+  { key: "clienteNome",     label: "Cliente",  defaultVisible: true  },
+  { key: "produtoNome",     label: "Produto",  defaultVisible: true  },
+  { key: "produtoSku",      label: "SKU",      defaultVisible: false },
+  { key: "quantidadeTotal", label: "Qtd.",     defaultVisible: true  },
+  { key: "numeroPedidos",   label: "Pedidos",  defaultVisible: true  },
+  { key: "receitaTotal",    label: "Receita",  defaultVisible: true  },
+];
+
+/* ─── Helpers ────────────────────────────────────────────────── */
 function buildPeriodo(days: number) {
   const fim = new Date();
   const inicio = new Date();
   inicio.setDate(inicio.getDate() - days);
-  return {
-    inicio: inicio.toISOString(),
-    fim: fim.toISOString(),
-  };
+  return { inicio: inicio.toISOString(), fim: fim.toISOString() };
 }
 
 const money = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
+function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
+  if (!active) return <ChevronUp size={11} className="text-zinc-300" />;
+  return asc
+    ? <ChevronUp size={11} className="text-indigo-500" />
+    : <ChevronDown size={11} className="text-indigo-500" />;
+}
+
+/* ─── Main Component ─────────────────────────────────────────── */
 export default function RelatoriosPage() {
+  /* Data state */
   const [dados, setDados] = useState<ProdutoPorRevendedor[]>([]);
   const [carregando, setCarregando] = useState(true);
+
+  /* Filter state */
   const [periodoDays, setPeriodoDays] = useState(30);
   const [busca, setBusca] = useState("");
   const [filtroCliente, setFiltroCliente] = useState("todos");
-  const [sortKey, setSortKey] = useState<SortKey>("receitaTotal");
-  const [sortAsc, setSortAsc] = useState(false);
 
+  /* View / sort / columns */
+  const [viewMode, setViewMode] = useState<ViewMode>("cliente");
+  const [sortCliente, setSortCliente] = useState<{ key: ClienteSortKey; asc: boolean }>({ key: "totalReceita", asc: false });
+  const [sortProduto, setSortProduto] = useState<{ key: ProdutoSortKey; asc: boolean }>({ key: "receitaTotal", asc: false });
+  const [visColsCliente, setVisColsCliente] = useState<Set<string>>(
+    () => new Set(COLUNAS_CLIENTE.filter((c) => c.defaultVisible).map((c) => c.key))
+  );
+  const [visColsProduto, setVisColsProduto] = useState<Set<string>>(
+    () => new Set(COLUNAS_PRODUTO.filter((c) => c.defaultVisible).map((c) => c.key))
+  );
+  const [expanded, setExpanded] = useState<Set<number>>(new Set());
+  const [colPickerOpen, setColPickerOpen] = useState(false);
+  const colPickerRef = useRef<HTMLDivElement>(null);
+
+  /* Load data */
   useEffect(() => {
     setCarregando(true);
+    setExpanded(new Set());
     getTopProductsByCustomer(buildPeriodo(periodoDays))
       .then(setDados)
       .catch(console.error)
       .finally(() => setCarregando(false));
   }, [periodoDays]);
 
-  const clientes = useMemo(() => {
-    const nomes = [...new Set(dados.map((d) => d.clienteNome))].sort();
-    return nomes;
-  }, [dados]);
-
-  const dadosFiltrados = useMemo(() => {
-    let result = dados;
-
-    if (filtroCliente !== "todos") {
-      result = result.filter((d) => d.clienteNome === filtroCliente);
+  /* Close col picker on outside click */
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (colPickerRef.current && !colPickerRef.current.contains(e.target as Node)) {
+        setColPickerOpen(false);
+      }
     }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
+  /* Derived: list of clients for filter select */
+  const clientes = useMemo(
+    () => [...new Set(dados.map((d) => d.clienteNome))].sort(),
+    [dados]
+  );
+
+  /* Filtered flat data */
+  const dadosFiltrados = useMemo(() => {
+    let r = dados;
+    if (filtroCliente !== "todos") r = r.filter((d) => d.clienteNome === filtroCliente);
     if (busca.trim()) {
       const q = busca.toLowerCase();
-      result = result.filter(
+      r = r.filter(
         (d) =>
           d.clienteNome.toLowerCase().includes(q) ||
           d.produtoNome.toLowerCase().includes(q) ||
           d.produtoSku.toLowerCase().includes(q)
       );
     }
+    return r;
+  }, [dados, filtroCliente, busca]);
 
-    return [...result].sort((a, b) => {
-      const av = a[sortKey];
-      const bv = b[sortKey];
-      if (typeof av === "string" && typeof bv === "string") {
-        return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+  /* Aggregate into customer-level summaries */
+  const resumoClientes = useMemo((): ClienteResumo[] => {
+    const map = new Map<number, ClienteResumo>();
+    dadosFiltrados.forEach((row) => {
+      const ex = map.get(row.clienteId);
+      if (ex) {
+        ex.totalItens += row.quantidadeTotal;
+        ex.totalReceita += row.receitaTotal;
+        ex.totalPedidos = Math.max(ex.totalPedidos, row.numeroPedidos);
+        ex.produtos.push(row);
+      } else {
+        map.set(row.clienteId, {
+          clienteId: row.clienteId,
+          clienteNome: row.clienteNome,
+          totalItens: row.quantidadeTotal,
+          totalReceita: row.receitaTotal,
+          totalPedidos: row.numeroPedidos,
+          ticketMedio: 0,
+          produtos: [row],
+        });
       }
-      return sortAsc ? (av as number) - (bv as number) : (bv as number) - (av as number);
     });
-  }, [dados, filtroCliente, busca, sortKey, sortAsc]);
+    return Array.from(map.values())
+      .map((c) => ({ ...c, ticketMedio: c.totalPedidos > 0 ? c.totalReceita / c.totalPedidos : 0 }))
+      .sort((a, b) => {
+        const av = a[sortCliente.key];
+        const bv = b[sortCliente.key];
+        if (typeof av === "string" && typeof bv === "string")
+          return sortCliente.asc ? av.localeCompare(bv) : bv.localeCompare(av);
+        return sortCliente.asc ? (av as number) - (bv as number) : (bv as number) - (av as number);
+      });
+  }, [dadosFiltrados, sortCliente]);
 
-  // KPIs derivados
-  const totalRevendedores = useMemo(
-    () => new Set(dadosFiltrados.map((d) => d.clienteId)).size,
-    [dadosFiltrados]
-  );
-  const totalProdutos = useMemo(
-    () => new Set(dadosFiltrados.map((d) => d.produtoSku)).size,
-    [dadosFiltrados]
-  );
-  const totalReceita = useMemo(
-    () => dadosFiltrados.reduce((s, d) => s + d.receitaTotal, 0),
-    [dadosFiltrados]
-  );
-  const totalItens = useMemo(
-    () => dadosFiltrados.reduce((s, d) => s + d.quantidadeTotal, 0),
-    [dadosFiltrados]
-  );
+  /* Sorted product rows */
+  const dadosProduto = useMemo(() => {
+    return [...dadosFiltrados].sort((a, b) => {
+      const av = a[sortProduto.key as keyof ProdutoPorRevendedor];
+      const bv = b[sortProduto.key as keyof ProdutoPorRevendedor];
+      if (typeof av === "string" && typeof bv === "string")
+        return sortProduto.asc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return sortProduto.asc ? (av as number) - (bv as number) : (bv as number) - (av as number);
+    });
+  }, [dadosFiltrados, sortProduto]);
 
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortAsc((v) => !v);
-    } else {
-      setSortKey(key);
-      setSortAsc(false);
-    }
-  };
+  /* KPIs */
+  const kpis = useMemo(() => ({
+    clientes: resumoClientes.length,
+    produtos: new Set(dadosFiltrados.map((d) => d.produtoSku)).size,
+    itens: dadosFiltrados.reduce((s, d) => s + d.quantidadeTotal, 0),
+    receita: dadosFiltrados.reduce((s, d) => s + d.receitaTotal, 0),
+  }), [dadosFiltrados, resumoClientes]);
 
+  /* Interactions */
+  const toggleExpand = (id: number) =>
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const handleSortCliente = (key: ClienteSortKey) =>
+    setSortCliente((p) => p.key === key ? { key, asc: !p.asc } : { key, asc: false });
+
+  const handleSortProduto = (key: ProdutoSortKey) =>
+    setSortProduto((p) => p.key === key ? { key, asc: !p.asc } : { key, asc: false });
+
+  const toggleColCliente = (key: string) =>
+    setVisColsCliente((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  const toggleColProduto = (key: string) =>
+    setVisColsProduto((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  /* Export CSV */
   const exportarCSV = () => {
-    const header = [
-      "Revendedor",
-      "Produto",
-      "SKU",
-      "Qtd. Vendida",
-      "Receita Total",
-      "Nº Pedidos",
-    ];
-    const linhas = dadosFiltrados.map((d) => [
-      d.clienteNome,
-      d.produtoNome,
-      d.produtoSku,
-      d.quantidadeTotal,
-      d.receitaTotal.toFixed(2).replace(".", ","),
-      d.numeroPedidos,
-    ]);
+    let header: string[];
+    let linhas: (string | number)[][];
+
+    if (viewMode === "cliente") {
+      header = ["Cliente", "Itens", "Pedidos", "Valor Total (R$)", "Ticket Médio (R$)"];
+      linhas = resumoClientes.map((c) => [
+        c.clienteNome,
+        c.totalItens,
+        c.totalPedidos,
+        c.totalReceita.toFixed(2).replace(".", ","),
+        c.ticketMedio.toFixed(2).replace(".", ","),
+      ]);
+    } else {
+      header = ["Cliente", "Produto", "SKU", "Qtd.", "Pedidos", "Receita (R$)"];
+      linhas = dadosProduto.map((d) => [
+        d.clienteNome,
+        d.produtoNome,
+        d.produtoSku,
+        d.quantidadeTotal,
+        d.numeroPedidos,
+        d.receitaTotal.toFixed(2).replace(".", ","),
+      ]);
+    }
+
     const csv = [header, ...linhas]
       .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
       .join("\n");
@@ -143,53 +266,28 @@ export default function RelatoriosPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `produtos_por_revendedor_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `relatorio_vendas_${viewMode}_${new Date().toISOString().split("T")[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const SortIcon = ({ col }: { col: SortKey }) => {
-    if (sortKey !== col) return <ChevronUp size={12} className="text-zinc-300" />;
-    return sortAsc ? (
-      <ChevronUp size={12} className="text-indigo-500" />
-    ) : (
-      <ChevronDown size={12} className="text-indigo-500" />
-    );
-  };
+  const activeCols = viewMode === "cliente" ? COLUNAS_CLIENTE : COLUNAS_PRODUTO;
+  const visActive = viewMode === "cliente" ? visColsCliente : visColsProduto;
+  const toggleActive = viewMode === "cliente" ? toggleColCliente : toggleColProduto;
 
-  const ThSortable = ({
-    col,
-    children,
-    align = "left",
-  }: {
-    col: SortKey;
-    children: React.ReactNode;
-    align?: "left" | "right";
-  }) => (
-    <th
-      onClick={() => handleSort(col)}
-      className={`px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap ${
-        align === "right" ? "text-right" : "text-left"
-      }`}
-    >
-      <span className="inline-flex items-center gap-1">
-        {children}
-        <SortIcon col={col} />
-      </span>
-    </th>
-  );
-
+  /* ─── Render ── */
   return (
     <div className="space-y-6">
-      {/* Header */}
+
+      {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-black text-zinc-900 tracking-tight flex items-center gap-2">
             <BarChart2 size={22} className="text-indigo-600" />
-            Relatório de Revendedores
+            Relatório de Vendas por Cliente
           </h1>
           <p className="text-sm text-zinc-500 mt-0.5">
-            Produtos mais comprados por cada revendedor
+            Tabela dinâmica — personalize a visualização conforme sua necessidade
           </p>
         </div>
         <button
@@ -202,75 +300,162 @@ export default function RelatoriosPage() {
         </button>
       </div>
 
-      {/* Filtros */}
-      <div className="bg-white rounded-xl border border-zinc-200 p-4 flex flex-wrap gap-3">
-        {/* Período */}
-        <div className="flex gap-1.5">
-          {PERIODOS.map((p) => (
-            <button
-              key={p.days}
-              onClick={() => setPeriodoDays(p.days)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                periodoDays === p.days
-                  ? "bg-indigo-600 text-white"
-                  : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
-              }`}
-            >
-              {p.label}
-            </button>
-          ))}
+      {/* ── Controles ── */}
+      <div className="bg-white rounded-xl border border-zinc-200 p-4 space-y-3">
+        {/* Linha 1: Período + Cliente + Busca */}
+        <div className="flex flex-wrap gap-3 items-center">
+          <div className="flex gap-1.5">
+            {PERIODOS.map((p) => (
+              <button
+                key={p.days}
+                onClick={() => setPeriodoDays(p.days)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  periodoDays === p.days
+                    ? "bg-indigo-600 text-white"
+                    : "bg-zinc-100 text-zinc-600 hover:bg-zinc-200"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="h-7 w-px bg-zinc-200 self-center hidden sm:block" />
+
+          <select
+            value={filtroCliente}
+            onChange={(e) => setFiltroCliente(e.target.value)}
+            className="h-8 px-3 text-xs border border-zinc-200 rounded-lg bg-white text-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400"
+          >
+            <option value="todos">Todos os clientes</option>
+            {clientes.map((c) => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+
+          <div className="relative ml-auto">
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="text"
+              placeholder="Buscar cliente ou produto..."
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              className="h-8 pl-8 pr-8 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 w-56"
+            />
+            {busca && (
+              <button onClick={() => setBusca("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600">
+                <X size={12} />
+              </button>
+            )}
+          </div>
         </div>
 
-        <div className="h-8 w-px bg-zinc-200 self-center" />
+        {/* Linha 2: Modo de visualização + Colunas */}
+        <div className="flex flex-wrap gap-3 items-center border-t border-zinc-100 pt-3">
+          {/* Toggle de modo */}
+          <div className="flex items-center gap-1 bg-zinc-100 rounded-lg p-1">
+            <button
+              onClick={() => setViewMode("cliente")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+                viewMode === "cliente"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700"
+              }`}
+            >
+              <User size={12} />
+              Por Cliente
+            </button>
+            <button
+              onClick={() => setViewMode("produto")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+                viewMode === "produto"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700"
+              }`}
+            >
+              <Package size={12} />
+              Detalhe por Produto
+            </button>
+          </div>
 
-        {/* Filtro por revendedor */}
-        <select
-          value={filtroCliente}
-          onChange={(e) => setFiltroCliente(e.target.value)}
-          className="h-8 px-3 text-xs border border-zinc-200 rounded-lg bg-white text-zinc-700 focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400"
-        >
-          <option value="todos">Todos os revendedores</option>
-          {clientes.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
+          {/* Column picker */}
+          <div className="relative" ref={colPickerRef}>
+            <button
+              onClick={() => setColPickerOpen((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg border transition-colors ${
+                colPickerOpen
+                  ? "bg-indigo-50 border-indigo-300 text-indigo-700"
+                  : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50"
+              }`}
+            >
+              <Settings2 size={13} />
+              Colunas
+              <span className="ml-0.5 inline-flex items-center justify-center w-4 h-4 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black">
+                {visActive.size}
+              </span>
+            </button>
 
-        {/* Busca livre */}
-        <div className="relative ml-auto">
-          <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
-          <input
-            type="text"
-            placeholder="Buscar produto ou revendedor..."
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            className="h-8 pl-8 pr-3 text-xs border border-zinc-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400/20 focus:border-indigo-400 w-60"
-          />
+            {colPickerOpen && (
+              <div className="absolute top-full left-0 mt-1.5 bg-white border border-zinc-200 rounded-xl shadow-xl p-3 z-20 min-w-[190px]">
+                <p className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider mb-2 px-1">
+                  {viewMode === "cliente" ? "Métricas visíveis" : "Colunas visíveis"}
+                </p>
+                {activeCols.map((col) => (
+                  <label
+                    key={col.key}
+                    className="flex items-center gap-2.5 px-1 py-1.5 rounded-lg hover:bg-zinc-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={visActive.has(col.key)}
+                      onChange={() => toggleActive(col.key)}
+                      className="w-3.5 h-3.5 rounded accent-indigo-600"
+                    />
+                    <span className="text-xs font-medium text-zinc-700">{col.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {viewMode === "cliente" && (
+            <button
+              onClick={() =>
+                setExpanded(
+                  expanded.size === resumoClientes.length
+                    ? new Set()
+                    : new Set(resumoClientes.map((c) => c.clienteId))
+                )
+              }
+              className="ml-auto text-xs text-indigo-600 hover:text-indigo-800 font-semibold flex items-center gap-1"
+            >
+              {expanded.size === resumoClientes.length ? "Recolher todos" : "Expandir todos"}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* KPIs */}
+      {/* ── KPIs ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Revendedores", value: totalRevendedores, icon: Users, color: "text-indigo-600", bg: "bg-indigo-50" },
-          { label: "Produtos distintos", value: totalProdutos, icon: Package, color: "text-violet-600", bg: "bg-violet-50" },
-          { label: "Itens vendidos", value: totalItens.toLocaleString("pt-BR"), icon: ShoppingCart, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Receita total", value: money(totalReceita), icon: TrendingUp, color: "text-amber-600", bg: "bg-amber-50" },
-        ].map((kpi) => (
-          <div key={kpi.label} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-3">
-            <div className={`w-10 h-10 rounded-xl ${kpi.bg} flex items-center justify-center shrink-0`}>
-              <kpi.icon size={18} className={kpi.color} />
+          { label: "Clientes",        value: kpis.clientes,                              icon: Users,        color: "text-indigo-600",  bg: "bg-indigo-50"  },
+          { label: "Produtos distintos", value: kpis.produtos,                           icon: Package,      color: "text-violet-600",  bg: "bg-violet-50"  },
+          { label: "Itens vendidos",   value: kpis.itens.toLocaleString("pt-BR"),        icon: ShoppingCart, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Receita total",    value: money(kpis.receita),                       icon: TrendingUp,   color: "text-amber-600",   bg: "bg-amber-50"   },
+        ].map((k) => (
+          <div key={k.label} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-3">
+            <div className={`w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center shrink-0`}>
+              <k.icon size={18} className={k.color} />
             </div>
             <div>
-              <p className="text-[11px] text-zinc-500 font-medium">{kpi.label}</p>
-              <p className="text-lg font-black text-zinc-900 leading-tight">{kpi.value}</p>
+              <p className="text-[11px] text-zinc-500 font-medium">{k.label}</p>
+              <p className="text-lg font-black text-zinc-900 leading-tight">{k.value}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* Tabela */}
+      {/* ── Tabela ── */}
       <div className="bg-white rounded-xl border border-zinc-200 overflow-hidden">
         <div className="overflow-x-auto">
           {carregando ? (
@@ -283,51 +468,209 @@ export default function RelatoriosPage() {
               <p className="text-sm font-medium">Nenhum dado encontrado</p>
               <p className="text-xs mt-1">Tente ampliar o período ou remover filtros</p>
             </div>
-          ) : (
+          ) : viewMode === "cliente" ? (
+            /* ─── Tabela Por Cliente (expansível) ─── */
             <table className="w-full text-sm">
               <thead className="bg-zinc-50 border-b border-zinc-200">
                 <tr>
-                  <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-zinc-500 text-left w-6">
-                    #
+                  <th className="w-8 px-3 py-3" />
+                  <th
+                    onClick={() => handleSortCliente("clienteNome")}
+                    className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none"
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      Cliente
+                      <SortIcon active={sortCliente.key === "clienteNome"} asc={sortCliente.asc} />
+                    </span>
                   </th>
-                  <ThSortable col="clienteNome">Revendedor</ThSortable>
-                  <ThSortable col="produtoNome">Produto</ThSortable>
-                  <th className="px-4 py-3 text-[11px] font-bold uppercase tracking-wider text-zinc-500 text-left">
-                    SKU
-                  </th>
-                  <ThSortable col="quantidadeTotal" align="right">
-                    Qtd. Vendida
-                  </ThSortable>
-                  <ThSortable col="receitaTotal" align="right">
-                    Receita
-                  </ThSortable>
-                  <ThSortable col="numeroPedidos" align="right">
-                    Pedidos
-                  </ThSortable>
+                  {visColsCliente.has("totalItens") && (
+                    <th onClick={() => handleSortCliente("totalItens")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Itens <SortIcon active={sortCliente.key === "totalItens"} asc={sortCliente.asc} /></span>
+                    </th>
+                  )}
+                  {visColsCliente.has("totalPedidos") && (
+                    <th onClick={() => handleSortCliente("totalPedidos")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Pedidos <SortIcon active={sortCliente.key === "totalPedidos"} asc={sortCliente.asc} /></span>
+                    </th>
+                  )}
+                  {visColsCliente.has("totalReceita") && (
+                    <th onClick={() => handleSortCliente("totalReceita")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Valor Total <SortIcon active={sortCliente.key === "totalReceita"} asc={sortCliente.asc} /></span>
+                    </th>
+                  )}
+                  {visColsCliente.has("ticketMedio") && (
+                    <th onClick={() => handleSortCliente("ticketMedio")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Ticket Médio <SortIcon active={sortCliente.key === "ticketMedio"} asc={sortCliente.asc} /></span>
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody>
+                {resumoClientes.map((cliente, idx) => {
+                  const isOpen = expanded.has(cliente.clienteId);
+                  const produtosOrdenados = [...cliente.produtos].sort(
+                    (a, b) => b.receitaTotal - a.receitaTotal
+                  );
+                  return (
+                    <Fragment key={`grupo_${cliente.clienteId}`}>
+                      {/* Linha do cliente */}
+                      <tr
+                        onClick={() => toggleExpand(cliente.clienteId)}
+                        className={`cursor-pointer transition-colors border-t border-zinc-100 ${
+                          isOpen ? "bg-indigo-50/60" : idx % 2 === 0 ? "bg-white hover:bg-zinc-50" : "bg-zinc-50/40 hover:bg-zinc-100/60"
+                        }`}
+                      >
+                        <td className="px-3 py-3 text-zinc-400">
+                          <ChevronRight
+                            size={15}
+                            className={`transition-transform duration-200 ${isOpen ? "rotate-90 text-indigo-500" : ""}`}
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center text-xs font-black shrink-0">
+                              {cliente.clienteNome.charAt(0).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="font-semibold text-zinc-800 text-sm leading-tight">{cliente.clienteNome}</p>
+                              <p className="text-[10px] text-zinc-400">{cliente.produtos.length} produto{cliente.produtos.length !== 1 ? "s" : ""} distintos</p>
+                            </div>
+                          </div>
+                        </td>
+                        {visColsCliente.has("totalItens") && (
+                          <td className="px-4 py-3 text-right">
+                            <span className="inline-flex items-center justify-center min-w-[32px] px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
+                              {cliente.totalItens}
+                            </span>
+                          </td>
+                        )}
+                        {visColsCliente.has("totalPedidos") && (
+                          <td className="px-4 py-3 text-right text-xs text-zinc-500">
+                            {cliente.totalPedidos}
+                          </td>
+                        )}
+                        {visColsCliente.has("totalReceita") && (
+                          <td className="px-4 py-3 text-right font-black text-zinc-900">
+                            {money(cliente.totalReceita)}
+                          </td>
+                        )}
+                        {visColsCliente.has("ticketMedio") && (
+                          <td className="px-4 py-3 text-right text-zinc-600 font-medium">
+                            {money(cliente.ticketMedio)}
+                          </td>
+                        )}
+                      </tr>
+
+                      {/* Linhas de produto (expansível) */}
+                      {isOpen && produtosOrdenados.map((prod) => (
+                        <tr
+                          key={`p_${cliente.clienteId}_${prod.produtoSku}_d`}
+                          className="bg-indigo-50/30 border-t border-indigo-100/50"
+                        >
+                          <td className="px-3 py-2.5">
+                            <div className="w-4 border-l-2 border-b-2 border-indigo-200 h-3 ml-1 rounded-bl" />
+                          </td>
+                          <td className="px-4 py-2.5 pl-8">
+                            <div>
+                              <p className="text-xs font-medium text-zinc-700">{prod.produtoNome}</p>
+                              <p className="text-[10px] text-zinc-400 font-mono">{prod.produtoSku}</p>
+                            </div>
+                          </td>
+                          {visColsCliente.has("totalItens") && (
+                            <td className="px-4 py-2.5 text-right">
+                              <span className="text-xs text-zinc-500">{prod.quantidadeTotal} un.</span>
+                            </td>
+                          )}
+                          {visColsCliente.has("totalPedidos") && (
+                            <td className="px-4 py-2.5 text-right text-xs text-zinc-400">
+                              {prod.numeroPedidos}
+                            </td>
+                          )}
+                          {visColsCliente.has("totalReceita") && (
+                            <td className="px-4 py-2.5 text-right text-xs font-semibold text-zinc-700">
+                              {money(prod.receitaTotal)}
+                            </td>
+                          )}
+                          {visColsCliente.has("ticketMedio") && (
+                            <td className="px-4 py-2.5 text-right text-xs text-zinc-400">
+                              {prod.numeroPedidos > 0 ? money(prod.receitaTotal / prod.numeroPedidos) : "—"}
+                            </td>
+                          )}
+                        </tr>
+                      ))}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          ) : (
+            /* ─── Tabela Detalhe por Produto ─── */
+            <table className="w-full text-sm">
+              <thead className="bg-zinc-50 border-b border-zinc-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 w-6">#</th>
+                  {visColsProduto.has("clienteNome") && (
+                    <th onClick={() => handleSortProduto("clienteNome")} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">Cliente <SortIcon active={sortProduto.key === "clienteNome"} asc={sortProduto.asc} /></span>
+                    </th>
+                  )}
+                  {visColsProduto.has("produtoNome") && (
+                    <th onClick={() => handleSortProduto("produtoNome")} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">Produto <SortIcon active={sortProduto.key === "produtoNome"} asc={sortProduto.asc} /></span>
+                    </th>
+                  )}
+                  {visColsProduto.has("produtoSku") && (
+                    <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 whitespace-nowrap">SKU</th>
+                  )}
+                  {visColsProduto.has("quantidadeTotal") && (
+                    <th onClick={() => handleSortProduto("quantidadeTotal")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Qtd. <SortIcon active={sortProduto.key === "quantidadeTotal"} asc={sortProduto.asc} /></span>
+                    </th>
+                  )}
+                  {visColsProduto.has("numeroPedidos") && (
+                    <th onClick={() => handleSortProduto("numeroPedidos")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Pedidos <SortIcon active={sortProduto.key === "numeroPedidos"} asc={sortProduto.asc} /></span>
+                    </th>
+                  )}
+                  {visColsProduto.has("receitaTotal") && (
+                    <th onClick={() => handleSortProduto("receitaTotal")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Receita <SortIcon active={sortProduto.key === "receitaTotal"} asc={sortProduto.asc} /></span>
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-zinc-100">
-                {dadosFiltrados.map((row, idx) => (
+                {dadosProduto.map((row, idx) => (
                   <tr key={`${row.clienteId}_${row.produtoSku}`} className="hover:bg-zinc-50 transition-colors">
                     <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{idx + 1}</td>
-                    <td className="px-4 py-3">
-                      <span className="font-semibold text-zinc-800">{row.clienteNome}</span>
-                    </td>
-                    <td className="px-4 py-3 text-zinc-700 max-w-[220px] truncate">
-                      {row.produtoNome}
-                    </td>
-                    <td className="px-4 py-3 font-mono text-xs text-zinc-500">{row.produtoSku}</td>
-                    <td className="px-4 py-3 text-right">
-                      <span className="inline-flex items-center justify-center min-w-[32px] px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
-                        {row.quantidadeTotal}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right font-bold text-zinc-900">
-                      {money(row.receitaTotal)}
-                    </td>
-                    <td className="px-4 py-3 text-right text-zinc-500 text-xs">
-                      {row.numeroPedidos} {row.numeroPedidos === 1 ? "pedido" : "pedidos"}
-                    </td>
+                    {visColsProduto.has("clienteNome") && (
+                      <td className="px-4 py-3">
+                        <span className="font-semibold text-zinc-800">{row.clienteNome}</span>
+                      </td>
+                    )}
+                    {visColsProduto.has("produtoNome") && (
+                      <td className="px-4 py-3 text-zinc-700 max-w-[220px] truncate">{row.produtoNome}</td>
+                    )}
+                    {visColsProduto.has("produtoSku") && (
+                      <td className="px-4 py-3 font-mono text-xs text-zinc-500">{row.produtoSku}</td>
+                    )}
+                    {visColsProduto.has("quantidadeTotal") && (
+                      <td className="px-4 py-3 text-right">
+                        <span className="inline-flex items-center justify-center min-w-[32px] px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-bold rounded-full">
+                          {row.quantidadeTotal}
+                        </span>
+                      </td>
+                    )}
+                    {visColsProduto.has("numeroPedidos") && (
+                      <td className="px-4 py-3 text-right text-zinc-500 text-xs">
+                        {row.numeroPedidos}
+                      </td>
+                    )}
+                    {visColsProduto.has("receitaTotal") && (
+                      <td className="px-4 py-3 text-right font-bold text-zinc-900">
+                        {money(row.receitaTotal)}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -335,10 +678,15 @@ export default function RelatoriosPage() {
           )}
         </div>
 
+        {/* Footer da tabela */}
         {dadosFiltrados.length > 0 && (
           <div className="px-4 py-3 border-t border-zinc-100 flex items-center justify-between text-xs text-zinc-400">
-            <span>{dadosFiltrados.length} combinação{dadosFiltrados.length !== 1 ? "ões" : ""} revendedor × produto</span>
-            <span>Clique nos cabeçalhos para ordenar</span>
+            <span>
+              {viewMode === "cliente"
+                ? `${resumoClientes.length} cliente${resumoClientes.length !== 1 ? "s" : ""} · ${dadosFiltrados.length} combinações produto×cliente`
+                : `${dadosProduto.length} linha${dadosProduto.length !== 1 ? "s" : ""}`}
+            </span>
+            <span>Clique nos cabeçalhos para ordenar · Use "Colunas" para personalizar</span>
           </div>
         )}
       </div>
