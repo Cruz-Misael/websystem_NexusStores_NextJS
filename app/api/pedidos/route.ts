@@ -1,7 +1,11 @@
 import { supabaseAdmin } from '@/src/lib/supabase/admin';
+import { requireOperator } from '@/src/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(req: NextRequest) {
+  const auth = await requireOperator();
+  if (!auth) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   const { searchParams } = new URL(req.url);
   const payment_status = searchParams.get('payment_status');
   const shipping_status = searchParams.get('shipping_status');

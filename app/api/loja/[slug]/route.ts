@@ -40,9 +40,14 @@ export async function GET(
       .order('name'),
   ]);
 
-  return NextResponse.json({
+  const res = NextResponse.json({
     config: { ...config, logo_url: company?.logo_url ?? null },
     products: products || [],
     categories: categories || [],
   });
+
+  // Catálogo público: cache de 60s no CDN/proxy + serve versão antiga enquanto
+  // revalida por até 5min. Reduz drasticamente hits no banco sem atrasar updates.
+  res.headers.set('Cache-Control', 'public, s-maxage=60, stale-while-revalidate=300');
+  return res;
 }
