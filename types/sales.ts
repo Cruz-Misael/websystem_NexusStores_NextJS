@@ -51,6 +51,8 @@ export interface Sale {
   // Objetos aninhados
   customer: NestedCustomer | null;
   items: SaleItem[];
+  // Canal de origem
+  source?: 'loja' | 'site';
 }
 
 // Breakdown de itens para fechamento de consignado

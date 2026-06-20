@@ -157,8 +157,11 @@ export default function DashboardExecutive() {
   }, []);
 
   // Componente de Card KPI (Refinado)
-  const KpiCard = ({ title, value, subtext, icon: Icon, trend, trendValue, colorClass, isLoading }: any) => (
-    <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm flex flex-col justify-between hover:border-indigo-300 transition-colors group">
+  const KpiCard = ({ title, value, subtext, icon: Icon, trend, trendValue, colorClass, isLoading, onClick }: any) => (
+    <div
+      className={`bg-white p-5 rounded-xl border border-zinc-200 shadow-sm flex flex-col justify-between hover:border-indigo-300 transition-colors group${onClick ? " cursor-pointer" : ""}`}
+      onClick={onClick}
+    >
       <div className="flex justify-between items-start mb-2">
         <div className={`p-2 rounded-lg border ${colorClass} bg-opacity-10 group-hover:scale-110 transition-transform`}>
           <Icon size={20} className={colorClass.replace("bg-", "text-").replace("/10", "")} />
@@ -267,6 +270,7 @@ export default function DashboardExecutive() {
               ? "bg-rose-100 text-rose-700"
               : "bg-emerald-100 text-emerald-700"}
             isLoading={loading}
+            onClick={() => router.push("/produtos?criticos=true")}
           />
         </div>
 

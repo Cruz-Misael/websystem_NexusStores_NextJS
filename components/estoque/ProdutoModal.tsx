@@ -42,6 +42,7 @@ interface ProdutoForm {
   size: string;
   units_type: string;
   is_active: boolean;
+  show_on_website: boolean;
 }
 
 interface Props {
@@ -70,6 +71,7 @@ const estadoInicial: ProdutoForm = {
   size: "",
   units_type: "un",
   is_active: true,
+  show_on_website: true,
 };
 
 // Função para converter do formato do formulário para o formato do banco
@@ -106,6 +108,7 @@ const converterParaBanco = (form: ProdutoForm) => {
     imagem: form.imagem || null,
     units_type: form.units_type,
     is_active: form.is_active,
+    show_on_website: form.show_on_website,
   };
 };
 
@@ -131,6 +134,7 @@ const converterDoBancoParaForm = (produtoDB: any): ProdutoForm => {
     size: produtoDB.size || "",
     units_type: produtoDB.units_type || "un",
     is_active: produtoDB.is_active ?? true,
+    show_on_website: produtoDB.show_on_website ?? true,
   };
 };
 
@@ -726,22 +730,39 @@ export default function ProdutoModal({ aberto, mode, produto, onClose, onSave }:
                   />
                 </div>
                 
-                {/* Status Ativo (apenas para edição) */}
+                {/* Visibilidade */}
                 {mode === "edit" && (
-                  <div className="mt-4 flex items-center gap-2 p-3 bg-zinc-50 rounded-lg border border-zinc-200">
-                    <input
-                      type="checkbox"
-                      id="is_active"
-                      checked={form.is_active}
-                      onChange={(e) => handleInputChange("is_active", e.target.checked)}
-                      className="h-4 w-4 text-indigo-600 rounded focus:ring-indigo-500"
-                    />
-                    <label htmlFor="is_active" className="text-xs font-medium text-zinc-700">
-                      Produto ativo no sistema
-                    </label>
-                    <span className="text-xs text-zinc-500 ml-auto">
-                      {form.is_active ? "✓ Disponível" : "✗ Indisponível"}
-                    </span>
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center gap-2 p-3 bg-zinc-50 rounded-lg border border-zinc-200">
+                      <input
+                        type="checkbox"
+                        id="is_active"
+                        checked={form.is_active}
+                        onChange={(e) => handleInputChange("is_active", e.target.checked)}
+                        className="h-4 w-4 text-indigo-600 rounded focus:ring-indigo-500"
+                      />
+                      <label htmlFor="is_active" className="text-xs font-medium text-zinc-700">
+                        Produto ativo no sistema
+                      </label>
+                      <span className="text-xs text-zinc-500 ml-auto">
+                        {form.is_active ? "✓ Disponível" : "✗ Indisponível"}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 p-3 bg-zinc-50 rounded-lg border border-zinc-200">
+                      <input
+                        type="checkbox"
+                        id="show_on_website"
+                        checked={form.show_on_website}
+                        onChange={(e) => handleInputChange("show_on_website", e.target.checked)}
+                        className="h-4 w-4 text-indigo-600 rounded focus:ring-indigo-500"
+                      />
+                      <label htmlFor="show_on_website" className="text-xs font-medium text-zinc-700">
+                        Exibir na loja virtual
+                      </label>
+                      <span className="text-xs text-zinc-500 ml-auto">
+                        {form.show_on_website ? "✓ Visível no site" : "✗ Oculto no site"}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>

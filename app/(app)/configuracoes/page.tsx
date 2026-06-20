@@ -13,6 +13,7 @@ import {
   criarCategoria,
   atualizarCategoria,
   deletarCategoria,
+  uploadCategoryImage,
   ProductCategory,
 } from '@/src/services/category.service';
 import {
@@ -51,10 +52,20 @@ import {
   RefreshCw,
   Copy,
   QrCode,
+  Store,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Palette,
+  Truck,
+  Tag,
+  Percent,
+  ToggleLeft,
 } from 'lucide-react';
 import { BillingService, BillingConfig, calcularProximoVencimento, calcularStatus } from '@/src/services/billing.service';
+import { getWebsiteConfig, upsertWebsiteConfig, uploadBanner, WebsiteConfig } from '@/src/services/website.service';
 
-type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento';
+type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'meusite' | 'frete' | 'descontos';
 type UsuarioCargo = 'admin' | 'gerente' | 'colaborador';
 type UsuarioStatus = 'ativo' | 'inativo' | 'pendente';
 
@@ -110,7 +121,7 @@ function ConfiguracoesContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores') return tab;
+    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'meusite' || tab === 'frete' || tab === 'descontos') return tab as TabType;
     return 'loja';
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -137,8 +148,11 @@ function ConfiguracoesContent() {
   const [categorias, setCategorias] = useState<ProductCategory[]>([]);
   const [categoriaEditando, setCategoriaEditando] = useState<ProductCategory | null>(null);
   const [modalCategoriaAberto, setModalCategoriaAberto] = useState(false);
-  const [formCategoria, setFormCategoria] = useState({ name: '', description: '', color: '#6366f1' });
+  const [formCategoria, setFormCategoria] = useState({ name: '', description: '', color: '#6366f1', image_url: '' });
   const [salvandoCategoria, setSalvandoCategoria] = useState(false);
+  const [categoryImageFile, setCategoryImageFile] = useState<File | null>(null);
+  const [categoryImagePreview, setCategoryImagePreview] = useState('');
+  const categoryImageRef = useRef<HTMLInputElement>(null);
 
   // --- Operadores ---
   const [operadores, setOperadores] = useState<Operator[]>([]);
@@ -159,6 +173,59 @@ function ConfiguracoesContent() {
   const [pixCopiado, setPixCopiado] = useState(false);
   const [salvandoBilling, setSalvandoBilling] = useState(false);
   const [registrandoPagamento, setRegistrandoPagamento] = useState(false);
+
+  // --- Frete ---
+  const [formFrete, setFormFrete] = useState({
+    melhor_envio_token: '',
+    shipping_origin_cep: '',
+    package_default_weight: '0.5',
+    package_default_height: '10',
+    package_default_width: '15',
+    package_default_length: '20',
+    free_shipping_min_amount: '',
+  });
+  const [salvandoFrete, setSalvandoFrete] = useState(false);
+
+  // --- Descontos ---
+  const [formDescontos, setFormDescontos] = useState({
+    discount_global_percent: '0',
+    discount_min_order_amount: '',
+    discount_min_order_percent: '0',
+  });
+  const [salvandoDescontos, setSalvandoDescontos] = useState(false);
+
+  // --- Cupons ---
+  interface StoreCoupon {
+    id: string;
+    code: string;
+    type: 'percentage' | 'fixed';
+    value: number;
+    min_order_amount: number | null;
+    max_uses: number | null;
+    uses_count: number;
+    is_active: boolean;
+    expires_at: string | null;
+    created_at: string;
+  }
+  const [cupons, setCupons] = useState<StoreCoupon[]>([]);
+  const [formCupom, setFormCupom] = useState({ code: '', type: 'percentage' as 'percentage' | 'fixed', value: '', min_order_amount: '', max_uses: '', expires_at: '' });
+  const [modalCupomAberto, setModalCupomAberto] = useState(false);
+  const [salvandoCupom, setSalvandoCupom] = useState(false);
+
+  // --- Meu Site ---
+  const [websiteConfig, setWebsiteConfig] = useState<WebsiteConfig | null>(null);
+  const [formSite, setFormSite] = useState({
+    slug: '', store_name: '', tagline: '', description: '',
+    primary_color: '#6366f1', whatsapp_number: '', instagram_url: '',
+    show_prices: true, mercadopago_access_token: '', mercadopago_public_key: '',
+    is_published: false,
+  });
+  const [produtosSite, setProdutosSite] = useState<any[]>([]);
+  const [salvandoSite, setSalvandoSite] = useState(false);
+  const [bannerFile, setBannerFile] = useState<File | null>(null);
+  const [bannerPreview, setBannerPreview] = useState('');
+  const [bannerRemoved, setBannerRemoved] = useState(false);
+  const bannerInputRef = useRef<HTMLInputElement>(null);
 
   // ========== LOJA ==========
 
@@ -268,25 +335,43 @@ function ConfiguracoesContent() {
 
   const abrirModalNovaCategoria = () => {
     setCategoriaEditando(null);
-    setFormCategoria({ name: '', description: '', color: '#6366f1' });
+    setFormCategoria({ name: '', description: '', color: '#6366f1', image_url: '' });
+    setCategoryImageFile(null);
+    setCategoryImagePreview('');
     setModalCategoriaAberto(true);
   };
 
   const abrirModalEditarCategoria = (cat: ProductCategory) => {
     setCategoriaEditando(cat);
-    setFormCategoria({ name: cat.name, description: cat.description || '', color: cat.color });
+    setFormCategoria({ name: cat.name, description: cat.description || '', color: cat.color, image_url: cat.image_url || '' });
+    setCategoryImageFile(null);
+    setCategoryImagePreview(cat.image_url || '');
     setModalCategoriaAberto(true);
+  };
+
+  const handleCategoryImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 3 * 1024 * 1024) { toast.error('Imagem deve ter no máximo 3MB'); return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast.error('Formato inválido. Use JPG, PNG ou WebP'); return; }
+    setCategoryImageFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setCategoryImagePreview(reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const handleSalvarCategoria = async () => {
     if (!formCategoria.name.trim()) { toast.error('Nome é obrigatório'); return; }
     setSalvandoCategoria(true);
     try {
+      let imageUrl: string | null = formCategoria.image_url || null;
+      if (categoryImageFile) imageUrl = await uploadCategoryImage(categoryImageFile);
+      const payload = { ...formCategoria, image_url: imageUrl };
       if (categoriaEditando) {
-        await atualizarCategoria(categoriaEditando.id, formCategoria);
+        await atualizarCategoria(categoriaEditando.id, payload);
         toast.success('Categoria atualizada!');
       } else {
-        await criarCategoria(formCategoria);
+        await criarCategoria(payload);
         toast.success('Categoria criada!');
       }
       await loadCategorias();
@@ -420,6 +505,157 @@ function ConfiguracoesContent() {
     return { label: 'Bloqueado', color: 'bg-red-100 text-red-700', icon: Lock };
   };
 
+  // ========== FRETE ==========
+
+  const handleSalvarFrete = async () => {
+    if (!websiteConfig?.id) { toast.error('Salve as configurações do site primeiro'); return; }
+    setSalvandoFrete(true);
+    try {
+      await upsertWebsiteConfig({
+        ...websiteConfig,
+        melhor_envio_token: formFrete.melhor_envio_token || undefined,
+        shipping_origin_cep: formFrete.shipping_origin_cep || undefined,
+        package_default_weight: formFrete.package_default_weight ? Number(formFrete.package_default_weight) : undefined,
+        package_default_height: formFrete.package_default_height ? Number(formFrete.package_default_height) : undefined,
+        package_default_width: formFrete.package_default_width ? Number(formFrete.package_default_width) : undefined,
+        package_default_length: formFrete.package_default_length ? Number(formFrete.package_default_length) : undefined,
+        free_shipping_min_amount: formFrete.free_shipping_min_amount ? Number(formFrete.free_shipping_min_amount) : null,
+      });
+      toast.success('Configurações de frete salvas!');
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao salvar');
+    } finally {
+      setSalvandoFrete(false);
+    }
+  };
+
+  // ========== DESCONTOS ==========
+
+  const loadCupons = async () => {
+    const { data } = await supabase.from('store_coupons').select('*').order('created_at', { ascending: false });
+    setCupons(data || []);
+  };
+
+  const handleSalvarDescontos = async () => {
+    if (!websiteConfig?.id) { toast.error('Salve as configurações do site primeiro'); return; }
+    setSalvandoDescontos(true);
+    try {
+      await upsertWebsiteConfig({
+        ...websiteConfig,
+        discount_global_percent: Number(formDescontos.discount_global_percent) || 0,
+        discount_min_order_amount: formDescontos.discount_min_order_amount ? Number(formDescontos.discount_min_order_amount) : null,
+        discount_min_order_percent: Number(formDescontos.discount_min_order_percent) || 0,
+      });
+      toast.success('Descontos salvos!');
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao salvar');
+    } finally {
+      setSalvandoDescontos(false);
+    }
+  };
+
+  const handleCriarCupom = async () => {
+    if (!formCupom.code.trim() || !formCupom.value) { toast.error('Código e valor são obrigatórios'); return; }
+    setSalvandoCupom(true);
+    try {
+      const { error } = await supabase.from('store_coupons').insert([{
+        code: formCupom.code.toUpperCase().trim(),
+        type: formCupom.type,
+        value: Number(formCupom.value),
+        min_order_amount: formCupom.min_order_amount ? Number(formCupom.min_order_amount) : null,
+        max_uses: formCupom.max_uses ? Number(formCupom.max_uses) : null,
+        expires_at: formCupom.expires_at || null,
+      }]);
+      if (error) throw new Error(error.message);
+      toast.success('Cupom criado!');
+      setFormCupom({ code: '', type: 'percentage', value: '', min_order_amount: '', max_uses: '', expires_at: '' });
+      setModalCupomAberto(false);
+      await loadCupons();
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao criar cupom');
+    } finally {
+      setSalvandoCupom(false);
+    }
+  };
+
+  const handleToggleCupom = async (id: string, is_active: boolean) => {
+    await supabase.from('store_coupons').update({ is_active }).eq('id', id);
+    await loadCupons();
+  };
+
+  const handleDeleteCupom = async (id: string) => {
+    await supabase.from('store_coupons').delete().eq('id', id);
+    await loadCupons();
+    toast.success('Cupom removido');
+  };
+
+  // ========== MEU SITE ==========
+
+  const loadWebsiteConfig = async () => {
+    try {
+      const cfg = await getWebsiteConfig();
+      if (cfg) {
+        setWebsiteConfig(cfg);
+        setBannerPreview(cfg.banner_url || '');
+        setBannerRemoved(false);
+        setFormSite({
+          slug: cfg.slug, store_name: cfg.store_name, tagline: cfg.tagline || '',
+          description: cfg.description || '', primary_color: cfg.primary_color || '#6366f1',
+          whatsapp_number: cfg.whatsapp_number || '', instagram_url: cfg.instagram_url || '',
+          show_prices: cfg.show_prices, mercadopago_access_token: cfg.mercadopago_access_token || '',
+          mercadopago_public_key: cfg.mercadopago_public_key || '', is_published: cfg.is_published,
+        });
+        setFormFrete({
+          melhor_envio_token: cfg.melhor_envio_token || '',
+          shipping_origin_cep: cfg.shipping_origin_cep || '',
+          package_default_weight: String(cfg.package_default_weight ?? '0.5'),
+          package_default_height: String(cfg.package_default_height ?? '10'),
+          package_default_width: String(cfg.package_default_width ?? '15'),
+          package_default_length: String(cfg.package_default_length ?? '20'),
+          free_shipping_min_amount: cfg.free_shipping_min_amount != null ? String(cfg.free_shipping_min_amount) : '',
+        });
+        setFormDescontos({
+          discount_global_percent: String(cfg.discount_global_percent ?? '0'),
+          discount_min_order_amount: cfg.discount_min_order_amount != null ? String(cfg.discount_min_order_amount) : '',
+          discount_min_order_percent: String(cfg.discount_min_order_percent ?? '0'),
+        });
+      }
+    } catch { toast.error('Erro ao carregar configurações do site'); }
+  };
+
+  const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast.error('Imagem deve ter no máximo 5MB'); return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast.error('Formato inválido. Use JPG, PNG ou WebP'); return; }
+    setBannerFile(file);
+    const reader = new FileReader();
+    reader.onloadend = () => setBannerPreview(reader.result as string);
+    reader.readAsDataURL(file);
+  };
+
+  const handleSalvarSite = async () => {
+    if (!formSite.slug.trim()) { toast.error('Defina o endereço do site'); return; }
+    const slugLimpo = formSite.slug.toLowerCase().replace(/[^a-z0-9-]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '');
+    if (!slugLimpo) { toast.error('Endereço inválido'); return; }
+    setSalvandoSite(true);
+    try {
+      let bannerUrl = bannerRemoved ? '' : (websiteConfig?.banner_url || '');
+      if (bannerFile) bannerUrl = await uploadBanner(bannerFile);
+      const saved = await upsertWebsiteConfig({ ...websiteConfig, ...formSite, slug: slugLimpo, banner_url: bannerUrl } as any);
+      setWebsiteConfig(saved);
+      setBannerFile(null);
+      setBannerRemoved(false);
+      setFormSite(f => ({ ...f, slug: slugLimpo }));
+      toast.success('Configurações do site salvas!');
+    } catch (e: any) {
+      toast.error(e.message || 'Erro ao salvar');
+    } finally {
+      setSalvandoSite(false);
+    }
+  };
+
+
   // ========== EFEITOS ==========
 
   useEffect(() => {
@@ -451,7 +687,7 @@ function ConfiguracoesContent() {
     loadCurrentUserRole();
   }, []);
 
-  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); }, []);
+  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); loadWebsiteConfig(); loadCupons(); }, []);
 
   const loadCompanyData = async () => {
     try {
@@ -482,11 +718,14 @@ function ConfiguracoesContent() {
   const getRoleColor = (role: string) => ({ operator: 'bg-gray-100 text-gray-800 border-gray-200', supervisor: 'bg-blue-100 text-blue-800 border-blue-200', manager: 'bg-purple-100 text-purple-800 border-purple-200' }[role] ?? 'bg-gray-100 text-gray-700 border-gray-200');
 
   const tabs = [
-    { id: 'loja', label: 'Dados da Loja', icon: Building, desc: 'Identidade e CNPJ' },
-    { id: 'usuarios', label: 'Usuários', icon: Users, desc: 'Equipe e permissões' },
-    { id: 'categorias', label: 'Categorias', icon: Layers, desc: 'Categorias de produtos' },
-    { id: 'operadores', label: 'Operadores', icon: UserCog, desc: 'Operadores do caixa' },
-    { id: 'pagamento', label: 'Pagamento', icon: CreditCard, desc: 'Assinatura e vencimento' },
+    { id: 'loja' as TabType, label: 'Dados da Loja', icon: Building, desc: 'Identidade e CNPJ', onlineStore: false, disabled: false },
+    { id: 'usuarios' as TabType, label: 'Usuários', icon: Users, desc: 'Equipe e permissões', onlineStore: false, disabled: false },
+    { id: 'categorias' as TabType, label: 'Categorias', icon: Layers, desc: 'Categorias de produtos', onlineStore: false, disabled: false },
+    { id: 'operadores' as TabType, label: 'Operadores', icon: UserCog, desc: 'Operadores do caixa', onlineStore: false, disabled: false },
+    { id: 'pagamento' as TabType, label: 'Pagamento', icon: CreditCard, desc: 'Assinatura e vencimento', onlineStore: false, disabled: false },
+    { id: 'meusite' as TabType, label: 'Meu Site', icon: Store, desc: 'Loja virtual pública', onlineStore: true, disabled: !isAdmin },
+    { id: 'frete' as TabType, label: 'Frete', icon: Truck, desc: 'Envio e Melhor Envio', onlineStore: true, disabled: !isAdmin },
+    { id: 'descontos' as TabType, label: 'Descontos', icon: Tag, desc: 'Cupons e promoções', onlineStore: true, disabled: !isAdmin },
   ];
 
   return (
@@ -515,21 +754,61 @@ function ConfiguracoesContent() {
             {salvandoBilling ? 'Salvando' : 'Salvar Configuração'}
           </button>
         )}
+        {activeTab === 'meusite' && (
+          <button onClick={handleSalvarSite} disabled={salvandoSite} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
+            {salvandoSite ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {salvandoSite ? 'Salvando' : 'Salvar Site'}
+          </button>
+        )}
+        {activeTab === 'frete' && (
+          <button onClick={handleSalvarFrete} disabled={salvandoFrete} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
+            {salvandoFrete ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {salvandoFrete ? 'Salvando' : 'Salvar Frete'}
+          </button>
+        )}
+        {activeTab === 'descontos' && (
+          <button onClick={handleSalvarDescontos} disabled={salvandoDescontos} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
+            {salvandoDescontos ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {salvandoDescontos ? 'Salvando' : 'Salvar Descontos'}
+          </button>
+        )}
       </header>
 
       <div className="flex flex-1 overflow-hidden min-h-0">
         <aside className="w-64 border-r border-zinc-200 bg-white flex flex-col shrink-0 min-h-0">
-          <nav className="p-4 space-y-2">
+          <nav className="p-4 space-y-2 flex-1 overflow-y-auto">
             {tabs.map((tab) => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id as TabType)}
-                className={`w-full p-3 rounded-2xl transition-all flex items-center gap-3 group border-2 ${activeTab === tab.id ? 'bg-indigo-50 border-indigo-100 text-indigo-600' : 'bg-transparent border-transparent text-zinc-500 hover:bg-zinc-50'}`}>
-                <div className={`p-2 rounded-xl ${activeTab === tab.id ? 'bg-indigo-600 text-white shadow-md' : 'bg-zinc-100 group-hover:bg-zinc-200'}`}>
-                  <tab.icon size={18} strokeWidth={activeTab === tab.id ? 2.5 : 2} />
+              <button
+                key={tab.id}
+                onClick={() => !tab.disabled && setActiveTab(tab.id)}
+                disabled={tab.disabled}
+                title={tab.disabled ? 'Disponível apenas para administradores' : undefined}
+                className={`w-full p-3 rounded-2xl transition-all flex items-center gap-3 group border-2 ${
+                  tab.disabled
+                    ? 'opacity-40 cursor-not-allowed border-transparent text-zinc-400'
+                    : activeTab === tab.id
+                      ? 'bg-indigo-50 border-indigo-100 text-indigo-600'
+                      : 'bg-transparent border-transparent text-zinc-500 hover:bg-zinc-50'
+                }`}>
+                <div className={`p-2 rounded-xl ${
+                  tab.disabled
+                    ? 'bg-zinc-100'
+                    : activeTab === tab.id
+                      ? 'bg-indigo-600 text-white shadow-md'
+                      : 'bg-zinc-100 group-hover:bg-zinc-200'
+                }`}>
+                  <tab.icon size={18} strokeWidth={!tab.disabled && activeTab === tab.id ? 2.5 : 2} />
                 </div>
-                <div className="text-left">
+                <div className="text-left flex-1 min-w-0">
                   <p className="text-xs font-black uppercase tracking-tight leading-none">{tab.label}</p>
                   <p className="text-[10px] font-medium opacity-60 mt-1">{tab.desc}</p>
                 </div>
+                {tab.onlineStore && (
+                  <span className="text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 border border-violet-200 flex items-center gap-0.5 shrink-0">
+                    <Globe size={7} />
+                    Online
+                  </span>
+                )}
               </button>
             ))}
           </nav>
@@ -670,7 +949,14 @@ function ConfiguracoesContent() {
                           <tr key={cat.id} className="hover:bg-indigo-50/20 transition-colors group">
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-3">
-                                <div className="w-4 h-4 rounded-full shrink-0" style={{ backgroundColor: cat.color }} />
+                                {cat.image_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={cat.image_url} alt={cat.name} className="w-10 h-10 rounded-xl object-cover shrink-0 border border-zinc-100 shadow-sm" />
+                                ) : (
+                                  <div className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center border border-zinc-100" style={{ backgroundColor: cat.color + '20' }}>
+                                    <div className="w-4 h-4 rounded-full" style={{ backgroundColor: cat.color }} />
+                                  </div>
+                                )}
                                 <span className="font-bold text-zinc-800">{cat.name}</span>
                               </div>
                             </td>
@@ -973,6 +1259,372 @@ function ConfiguracoesContent() {
               );
             })()}
 
+            {/* ===== ABA MEU SITE ===== */}
+            {activeTab === 'meusite' && (
+              <div className="space-y-6 animate-in fade-in duration-400">
+
+                {/* Preview link */}
+                {websiteConfig?.is_published && websiteConfig.slug && (
+                  <div className="flex items-center justify-between bg-emerald-50 border border-emerald-100 px-5 py-3 rounded-2xl">
+                    <div className="flex items-center gap-2 text-emerald-700 text-xs font-medium">
+                      <CheckCircle2 size={15} />
+                      Site publicado
+                    </div>
+                    <a href={`/loja/${websiteConfig.slug}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs font-black text-emerald-700 hover:text-emerald-900 transition-colors">
+                      Visitar site <ExternalLink size={13} />
+                    </a>
+                  </div>
+                )}
+
+                {/* Config geral */}
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm space-y-5">
+                  <div className="flex items-center gap-3 mb-2">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><Store size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Configurações do Site</h3>
+                      <p className="text-[11px] text-zinc-400">Identidade e endereço da sua loja virtual</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Endereço do site *</label>
+                      <div className="flex items-center border border-zinc-200 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-indigo-500/20 focus-within:border-indigo-500">
+                        <span className="px-3 py-2.5 bg-zinc-50 text-xs text-zinc-400 border-r border-zinc-200 whitespace-nowrap">/loja/</span>
+                        <input
+                          value={formSite.slug}
+                          onChange={e => setFormSite(p => ({ ...p, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '-') }))}
+                          className="flex-1 px-3 py-2.5 text-xs font-mono focus:outline-none bg-white"
+                          placeholder="minha-loja"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Nome da loja *</label>
+                      <input value={formSite.store_name} onChange={e => setFormSite(p => ({ ...p, store_name: e.target.value }))} className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="Nome que aparece no site" />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Tagline</label>
+                      <input value={formSite.tagline} onChange={e => setFormSite(p => ({ ...p, tagline: e.target.value }))} className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="Frase de impacto da loja" />
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Descrição</label>
+                      <textarea value={formSite.description} onChange={e => setFormSite(p => ({ ...p, description: e.target.value }))} rows={2} className="w-full px-3 py-2 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 resize-none" placeholder="Sobre a loja..." />
+                    </div>
+
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1.5 block">Imagem de fundo (banner)</label>
+                      <input ref={bannerInputRef} type="file" accept="image/jpeg,image/png,image/webp" className="hidden" onChange={handleBannerUpload} />
+                      {bannerPreview ? (
+                        <div className="relative rounded-xl overflow-hidden border border-zinc-200 h-32">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={bannerPreview} alt="Banner" className="w-full h-full object-cover" />
+                          <div className="absolute inset-0 bg-black/30 flex items-center justify-center gap-3 opacity-0 hover:opacity-100 transition-opacity">
+                            <button onClick={() => bannerInputRef.current?.click()} className="px-3 py-1.5 bg-white text-zinc-800 rounded-lg text-xs font-bold hover:bg-zinc-100 flex items-center gap-1.5"><Upload size={12} /> Trocar</button>
+                            <button onClick={() => { setBannerPreview(''); setBannerFile(null); setBannerRemoved(true); }} className="px-3 py-1.5 bg-white text-red-600 rounded-lg text-xs font-bold hover:bg-red-50 flex items-center gap-1.5"><X size={12} /> Remover</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button onClick={() => bannerInputRef.current?.click()} className="w-full h-24 border-2 border-dashed border-zinc-200 rounded-xl flex flex-col items-center justify-center gap-2 text-zinc-400 hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50/30 transition-all">
+                          <Upload size={20} />
+                          <span className="text-xs font-medium">Clique para adicionar uma imagem de fundo</span>
+                          <span className="text-[10px]">JPG, PNG ou WebP · máx. 5MB</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block flex items-center gap-1.5"><Palette size={11} /> Cor principal</label>
+                      <div className="flex items-center gap-2">
+                        <input type="color" value={formSite.primary_color} onChange={e => setFormSite(p => ({ ...p, primary_color: e.target.value }))} className="h-9 w-16 border border-zinc-200 rounded-xl cursor-pointer p-1" />
+                        <span className="text-xs font-mono text-zinc-500">{formSite.primary_color}</span>
+                        <div className="flex gap-1 ml-auto">
+                          {['#6366f1', '#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#8b5cf6', '#1d4ed8'].map(c => (
+                            <button key={c} onClick={() => setFormSite(p => ({ ...p, primary_color: c }))} className={`w-5 h-5 rounded-full border-2 transition-all ${formSite.primary_color === c ? 'border-zinc-800 scale-110' : 'border-transparent'}`} style={{ backgroundColor: c }} />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">WhatsApp</label>
+                      <input value={formSite.whatsapp_number} onChange={e => setFormSite(p => ({ ...p, whatsapp_number: e.target.value.replace(/\D/g, '') }))} className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="5511999999999 (com DDI)" />
+                    </div>
+
+                    <div className="col-span-2 sm:col-span-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Instagram (URL)</label>
+                      <input value={formSite.instagram_url} onChange={e => setFormSite(p => ({ ...p, instagram_url: e.target.value }))} className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="https://instagram.com/sua_loja" />
+                    </div>
+
+                    <div className="col-span-2 flex items-center gap-6">
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <div onClick={() => setFormSite(p => ({ ...p, show_prices: !p.show_prices }))} className={`w-9 h-5 rounded-full transition-colors relative ${formSite.show_prices ? 'bg-indigo-600' : 'bg-zinc-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${formSite.show_prices ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        </div>
+                        <span className="text-xs text-zinc-700 flex items-center gap-1">{formSite.show_prices ? <Eye size={13} /> : <EyeOff size={13} />} Exibir preços no site</span>
+                      </label>
+
+                      <label className="flex items-center gap-2.5 cursor-pointer">
+                        <div onClick={() => setFormSite(p => ({ ...p, is_published: !p.is_published }))} className={`w-9 h-5 rounded-full transition-colors relative ${formSite.is_published ? 'bg-emerald-500' : 'bg-zinc-200'}`}>
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${formSite.is_published ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                        </div>
+                        <span className="text-xs text-zinc-700">Publicar site</span>
+                      </label>
+                    </div>
+                  </div>
+                </section>
+
+                {/* MercadoPago */}
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm space-y-4">
+                  <div className="flex items-center gap-3 mb-1">
+                    <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center"><CreditCard size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">MercadoPago</h3>
+                      <p className="text-[11px] text-zinc-400">Credenciais para receber pagamentos online</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-700 space-y-1">
+                    <p className="font-bold">Como configurar o MercadoPago:</p>
+                    <ol className="list-decimal list-inside space-y-0.5 text-blue-600">
+                      <li>Acesse <span className="font-mono">mercadopago.com.br/developers</span></li>
+                      <li>Crie uma aplicação</li>
+                      <li>Em <span className="font-bold">credenciais de produção</span>, copie o <span className="font-bold">Access Token</span> e a <span className="font-bold">Public Key</span></li>
+                      <li>Em <span className="font-bold">Webhooks</span>, cadastre a URL: <span className="font-mono break-all select-all">{typeof window !== 'undefined' ? window.location.origin : ''}/api/mercadopago/webhook</span></li>
+                    </ol>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-4">
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Access Token (servidor)</label>
+                      <input
+                        type="password"
+                        value={formSite.mercadopago_access_token}
+                        onChange={e => setFormSite(p => ({ ...p, mercadopago_access_token: e.target.value }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="APP_USR-..."
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Public Key (cliente)</label>
+                      <input
+                        value={formSite.mercadopago_public_key}
+                        onChange={e => setFormSite(p => ({ ...p, mercadopago_public_key: e.target.value }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="APP_USR-..."
+                      />
+                    </div>
+                  </div>
+                </section>
+
+              </div>
+            )}
+
+            {/* ===== ABA FRETE ===== */}
+            {activeTab === 'frete' && (
+              <div className="space-y-6 animate-in fade-in duration-400">
+
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><Truck size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Melhor Envio</h3>
+                      <p className="text-[11px] text-zinc-400">Calcule fretes automaticamente no checkout</p>
+                    </div>
+                  </div>
+
+                  <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 text-xs text-blue-700 mb-5 space-y-1">
+                    <p className="font-bold">Como configurar:</p>
+                    <ol className="list-decimal list-inside space-y-0.5 text-blue-600">
+                      <li>Crie uma conta gratuita em <span className="font-mono">melhorenvio.com.br</span></li>
+                      <li>Acesse <span className="font-bold">Preferências → Tokens → Gerar token</span></li>
+                      <li>Selecione as permissões de <span className="font-bold">Frete</span> e cole o token abaixo</li>
+                    </ol>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-5">
+                    <div className="col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Token Melhor Envio</label>
+                      <input
+                        type="password"
+                        value={formFrete.melhor_envio_token}
+                        onChange={e => setFormFrete(p => ({ ...p, melhor_envio_token: e.target.value }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="Seu token de acesso"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">CEP de Origem *</label>
+                      <input
+                        value={formFrete.shipping_origin_cep}
+                        onChange={e => setFormFrete(p => ({ ...p, shipping_origin_cep: e.target.value.replace(/\D/g, '').replace(/(\d{5})(\d)/, '$1-$2').slice(0, 9) }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="00000-000"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">CEP do local de onde você envia os pedidos</p>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Frete Grátis acima de (R$)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        step={0.01}
+                        value={formFrete.free_shipping_min_amount}
+                        onChange={e => setFormFrete(p => ({ ...p, free_shipping_min_amount: e.target.value }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="Ex: 200 (deixe vazio para desativar)"
+                      />
+                    </div>
+                  </div>
+                </section>
+
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-5">
+                    <div className="w-1 h-4 bg-indigo-500 rounded-full" />
+                    <h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px]">Dimensões Padrão do Pacote</h3>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mb-4">Usadas para calcular o frete quando o produto não tem dimensões específicas.</p>
+                  <div className="grid grid-cols-4 gap-4">
+                    {[
+                      { label: 'Peso (kg)', key: 'package_default_weight', step: '0.1', placeholder: '0.5' },
+                      { label: 'Altura (cm)', key: 'package_default_height', step: '1', placeholder: '10' },
+                      { label: 'Largura (cm)', key: 'package_default_width', step: '1', placeholder: '15' },
+                      { label: 'Comprimento (cm)', key: 'package_default_length', step: '1', placeholder: '20' },
+                    ].map(field => (
+                      <div key={field.key}>
+                        <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">{field.label}</label>
+                        <input
+                          type="number"
+                          min={0}
+                          step={field.step}
+                          value={(formFrete as any)[field.key]}
+                          onChange={e => setFormFrete(p => ({ ...p, [field.key]: e.target.value }))}
+                          className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                          placeholder={field.placeholder}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {/* ===== ABA DESCONTOS ===== */}
+            {activeTab === 'descontos' && (
+              <div className="space-y-6 animate-in fade-in duration-400">
+
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><Percent size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Descontos Automáticos</h3>
+                      <p className="text-[11px] text-zinc-400">Aplicados automaticamente no checkout</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Desconto Global no Site (%)</label>
+                      <div className="relative">
+                        <input
+                          type="number" min={0} max={100} step={1}
+                          value={formDescontos.discount_global_percent}
+                          onChange={e => setFormDescontos(p => ({ ...p, discount_global_percent: e.target.value }))}
+                          className="w-full h-9 pl-3 pr-8 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                          placeholder="0"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">%</span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-1">Desconto aplicado a todos os pedidos (0 = desativado)</p>
+                    </div>
+
+                    <div />
+
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Pedido Mínimo para Desconto (R$)</label>
+                      <input
+                        type="number" min={0} step={0.01}
+                        value={formDescontos.discount_min_order_amount}
+                        onChange={e => setFormDescontos(p => ({ ...p, discount_min_order_amount: e.target.value }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                        placeholder="Ex: 300 (deixe vazio para desativar)"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Desconto para Pedido Mínimo (%)</label>
+                      <div className="relative">
+                        <input
+                          type="number" min={0} max={100} step={1}
+                          value={formDescontos.discount_min_order_percent}
+                          onChange={e => setFormDescontos(p => ({ ...p, discount_min_order_percent: e.target.value }))}
+                          className="w-full h-9 pl-3 pr-8 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                          placeholder="0"
+                        />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 text-xs">%</span>
+                      </div>
+                      <p className="text-[10px] text-zinc-400 mt-1">Desconto ao atingir o valor mínimo (0 = desativado)</p>
+                    </div>
+                  </div>
+                </section>
+
+                {/* Cupons */}
+                <div className="flex justify-between items-center bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-4">
+                    <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-2xl flex items-center justify-center shadow-inner"><Tag size={22} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Cupons de Desconto</h3>
+                      <p className="text-[11px] font-medium text-zinc-400">{cupons.length} cupom{cupons.length !== 1 ? 'ns' : ''} cadastrado{cupons.length !== 1 ? 's' : ''}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setModalCupomAberto(true)} className="px-5 py-2.5 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-[2px] shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all flex items-center gap-2"><Plus size={14} /> Novo Cupom</button>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
+                  {cupons.length === 0 ? (
+                    <div className="p-12 text-center"><Tag className="mx-auto mb-3 text-zinc-300" size={40} /><p className="text-zinc-500 text-sm">Nenhum cupom cadastrado</p><button onClick={() => setModalCupomAberto(true)} className="mt-4 text-indigo-600 text-sm font-medium hover:underline">Criar primeiro cupom</button></div>
+                  ) : (
+                    <table className="w-full text-left">
+                      <thead className="bg-zinc-50/80 text-[10px] font-black text-zinc-400 uppercase border-b border-zinc-100">
+                        <tr><th className="px-6 py-4 tracking-widest">Código</th><th className="px-6 py-4 tracking-widest">Desconto</th><th className="px-6 py-4 tracking-widest">Pedido Mín.</th><th className="px-6 py-4 tracking-widest">Usos</th><th className="px-6 py-4 tracking-widest">Status</th><th className="px-6 py-4 tracking-widest text-right">Ações</th></tr>
+                      </thead>
+                      <tbody className="divide-y divide-zinc-50 text-xs">
+                        {cupons.map(c => (
+                          <tr key={c.id} className="hover:bg-indigo-50/20 transition-colors group">
+                            <td className="px-6 py-4 font-mono font-bold text-zinc-800">{c.code}</td>
+                            <td className="px-6 py-4 font-bold text-indigo-600">
+                              {c.type === 'percentage' ? `${c.value}%` : `R$ ${Number(c.value).toFixed(2)}`}
+                            </td>
+                            <td className="px-6 py-4 text-zinc-500">
+                              {c.min_order_amount ? `R$ ${Number(c.min_order_amount).toFixed(2)}` : '—'}
+                            </td>
+                            <td className="px-6 py-4 text-zinc-500">
+                              {c.uses_count}{c.max_uses ? `/${c.max_uses}` : ''}
+                            </td>
+                            <td className="px-6 py-4">
+                              <button onClick={() => handleToggleCupom(c.id, !c.is_active)} className={`text-[9px] font-black uppercase px-2 py-1 rounded-md border transition-colors ${c.is_active ? 'bg-green-100 text-green-800 border-green-200' : 'bg-zinc-100 text-zinc-500 border-zinc-200'}`}>
+                                {c.is_active ? 'Ativo' : 'Inativo'}
+                              </button>
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button onClick={() => handleDeleteCupom(c.id)} className="p-2 text-zinc-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"><Trash2 size={14} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              </div>
+            )}
+
           </div>
         </main>
       </div>
@@ -1001,6 +1653,26 @@ function ConfiguracoesContent() {
                 <input value={formCategoria.description} onChange={e => setFormCategoria(p => ({ ...p, description: e.target.value }))} className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="Opcional..." />
               </div>
               <div>
+                <label className="text-xs font-semibold text-zinc-600 mb-1.5 block">Imagem da Categoria</label>
+                <input ref={categoryImageRef} type="file" className="hidden" accept="image/png,image/jpeg,image/webp" onChange={handleCategoryImageUpload} />
+                {categoryImagePreview ? (
+                  <div className="relative rounded-xl overflow-hidden border border-zinc-200 h-28">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={categoryImagePreview} alt="Preview" className="w-full h-full object-cover" />
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center gap-3 opacity-0 hover:opacity-100 transition-opacity">
+                      <button type="button" onClick={() => categoryImageRef.current?.click()} className="px-3 py-1.5 bg-white text-zinc-800 rounded-lg text-xs font-bold hover:bg-zinc-100 flex items-center gap-1.5"><Upload size={12} /> Trocar</button>
+                      <button type="button" onClick={() => { setCategoryImagePreview(''); setCategoryImageFile(null); setFormCategoria(p => ({ ...p, image_url: '' })); if (categoryImageRef.current) categoryImageRef.current.value = ''; }} className="px-3 py-1.5 bg-white text-red-600 rounded-lg text-xs font-bold hover:bg-red-50 flex items-center gap-1.5"><X size={12} /> Remover</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => categoryImageRef.current?.click()} className="w-full h-20 border-2 border-dashed border-zinc-200 rounded-xl flex flex-col items-center justify-center gap-1.5 text-zinc-400 hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50/30 transition-all">
+                    <Upload size={18} />
+                    <span className="text-xs font-medium">Adicionar imagem</span>
+                    <span className="text-[10px]">JPG, PNG ou WebP · máx. 3MB</span>
+                  </button>
+                )}
+              </div>
+              <div>
                 <label className="text-xs font-semibold text-zinc-600 mb-1.5 block">Cor de Identificação</label>
                 <div className="flex items-center gap-3">
                   <input type="color" value={formCategoria.color} onChange={e => setFormCategoria(p => ({ ...p, color: e.target.value }))} className="h-10 w-14 border border-zinc-300 rounded-lg cursor-pointer p-1" />
@@ -1018,6 +1690,59 @@ function ConfiguracoesContent() {
               <button onClick={handleSalvarCategoria} disabled={salvandoCategoria} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 flex items-center gap-2 disabled:opacity-50">
                 {salvandoCategoria ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
                 {categoriaEditando ? 'Atualizar' : 'Criar Categoria'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL CUPOM */}
+      {modalCupomAberto && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-100 flex justify-between items-center bg-zinc-50">
+              <div className="flex items-center gap-2">
+                <div className="bg-indigo-100 p-2 rounded-lg"><Tag className="text-indigo-600" size={18} /></div>
+                <h2 className="text-base font-bold text-zinc-900">Novo Cupom</h2>
+              </div>
+              <button onClick={() => setModalCupomAberto(false)} className="p-2 text-zinc-400 hover:text-zinc-700 hover:bg-zinc-100 rounded-full"><X size={18} /></button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className="text-xs font-semibold text-zinc-600 mb-1.5 block">Código do Cupom *</label>
+                  <input value={formCupom.code} onChange={e => setFormCupom(p => ({ ...p, code: e.target.value.toUpperCase().replace(/\s/g, '') }))} className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm font-mono uppercase focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="EX: DESCONTO10" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1.5 block">Tipo</label>
+                  <select value={formCupom.type} onChange={e => setFormCupom(p => ({ ...p, type: e.target.value as 'percentage' | 'fixed' }))} className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500">
+                    <option value="percentage">Percentual (%)</option>
+                    <option value="fixed">Fixo (R$)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1.5 block">Valor *</label>
+                  <input type="number" min={0} step={formCupom.type === 'percentage' ? 1 : 0.01} value={formCupom.value} onChange={e => setFormCupom(p => ({ ...p, value: e.target.value }))} className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder={formCupom.type === 'percentage' ? '10' : '50'} />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1.5 block">Pedido Mínimo (R$)</label>
+                  <input type="number" min={0} step={0.01} value={formCupom.min_order_amount} onChange={e => setFormCupom(p => ({ ...p, min_order_amount: e.target.value }))} className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="Sem mínimo" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1.5 block">Máximo de Usos</label>
+                  <input type="number" min={1} value={formCupom.max_uses} onChange={e => setFormCupom(p => ({ ...p, max_uses: e.target.value }))} className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" placeholder="Ilimitado" />
+                </div>
+                <div>
+                  <label className="text-xs font-semibold text-zinc-600 mb-1.5 block">Expira em</label>
+                  <input type="datetime-local" value={formCupom.expires_at} onChange={e => setFormCupom(p => ({ ...p, expires_at: e.target.value }))} className="w-full h-10 px-3 border border-zinc-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500" />
+                </div>
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-100 flex justify-end gap-3">
+              <button onClick={() => setModalCupomAberto(false)} className="px-4 py-2 border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50">Cancelar</button>
+              <button onClick={handleCriarCupom} disabled={salvandoCupom} className="px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 flex items-center gap-2 disabled:opacity-50">
+                {salvandoCupom ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+                Criar Cupom
               </button>
             </div>
           </div>

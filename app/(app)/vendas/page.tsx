@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import DevolucaoTrocaModal from "@/components/troca/DevolucaoTrocaModal";
 import Recibo from "@/components/vendas/Recibo";
-import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda } from "@/src/services/sales.service";
+import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
@@ -22,6 +22,7 @@ import {
   CreditCard,
   ShoppingCart,
   ShoppingBag,
+  Globe,
   User,
   Loader2,
   RefreshCw,
@@ -77,6 +78,11 @@ export default function HistoricoVendasCompacto() {
   const [carregandoCliente, setCarregandoCliente] = useState(false);
   const [salvandoCliente, setSalvandoCliente] = useState(false);
   const clienteInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Edição de data do consignado ──
+  const [editandoDataConsignado, setEditandoDataConsignado] = useState(false);
+  const [novaDataConsignado, setNovaDataConsignado] = useState("");
+  const [salvandoDataConsignado, setSalvandoDataConsignado] = useState(false);
 
   const [vendaConsignadoRecibo, setVendaConsignadoRecibo] = useState<{
     venda: Sale;
@@ -157,6 +163,25 @@ export default function HistoricoVendasCompacto() {
     }
   };
 
+  const handleAlterarDataConsignado = async () => {
+    if (!selecionada || !novaDataConsignado) return;
+    setSalvandoDataConsignado(true);
+    try {
+      const result = await atualizarDataAcertoConsignado(selecionada.id, novaDataConsignado);
+      if (result.error) throw new Error((result.error as any).message || "Erro ao atualizar data");
+      const novaObs = result.observation!;
+      const atualizada = { ...selecionada, observation: novaObs };
+      setSelecionada(atualizada);
+      setVendas(prev => prev.map(v => v.id === selecionada.id ? { ...v, observation: novaObs } : v));
+      setEditandoDataConsignado(false);
+      mostrarToast("Data do acerto atualizada com sucesso!", "sucesso");
+    } catch (e: any) {
+      mostrarToast(e.message || "Erro ao atualizar data", "erro");
+    } finally {
+      setSalvandoDataConsignado(false);
+    }
+  };
+
   // Carregar vendas do backend
   const carregarVendas = async () => {
     try {
@@ -186,6 +211,8 @@ export default function HistoricoVendasCompacto() {
     setEditandoCliente(false);
     setBuscaCliente("");
     setResultadosCliente([]);
+    setEditandoDataConsignado(false);
+    setNovaDataConsignado("");
   }, [selecionada?.id]);
 
   // Cancelar venda
@@ -690,7 +717,14 @@ export default function HistoricoVendasCompacto() {
                   }`}
               >
                 <div className="flex justify-between items-center mb-1">
-                  <span className="font-mono font-medium text-gray-600 text-xs">#{venda.id}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="font-mono font-medium text-gray-600 text-xs">#{venda.id}</span>
+                    {venda.source === 'site' && (
+                      <span className="text-[9px] bg-indigo-100 text-indigo-700 border border-indigo-200 px-1.5 py-0.5 rounded-full font-black flex items-center gap-0.5">
+                        <Globe size={8} /> SITE
+                      </span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1.5">
                     {estaAtrasado(venda) && (
                       <span className="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-black animate-pulse">
@@ -753,6 +787,11 @@ export default function HistoricoVendasCompacto() {
                   <span className={`text-[10px] px-2 py-0.5 rounded-full border font-semibold shrink-0 ${getStatusColor(selecionada)}`}>
                     {getStatusFromVenda(selecionada)}
                   </span>
+                  {selecionada.source === 'site' && (
+                    <span className="text-[10px] bg-indigo-100 text-indigo-700 border border-indigo-200 px-2 py-0.5 rounded-full font-black flex items-center gap-1 shrink-0">
+                      <Globe size={10} /> Loja Online
+                    </span>
+                  )}
 
                   <div className="w-px h-4 bg-zinc-200 shrink-0" />
 
@@ -823,11 +862,49 @@ export default function HistoricoVendasCompacto() {
                       return (
                         <>
                           <span className="text-zinc-200">·</span>
-                          <span className={`shrink-0 font-semibold flex items-center gap-1 ${atrasado ? 'text-red-500' : 'text-orange-500'}`}>
-                            <Calendar size={10} />
-                            {new Date(dp + 'T12:00:00').toLocaleDateString('pt-BR')}
-                            {atrasado && <span className="bg-red-500 text-white text-[9px] font-black px-1 py-px rounded">ATRASADO</span>}
-                          </span>
+                          {editandoDataConsignado ? (
+                            <span className="flex items-center gap-1 shrink-0">
+                              <input
+                                type="date"
+                                value={novaDataConsignado}
+                                onChange={e => setNovaDataConsignado(e.target.value)}
+                                className="text-xs border border-orange-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400 bg-white"
+                              />
+                              <button
+                                onClick={handleAlterarDataConsignado}
+                                disabled={salvandoDataConsignado || !novaDataConsignado}
+                                title="Salvar nova data"
+                                className="text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                              >
+                                {salvandoDataConsignado ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                              </button>
+                              <button
+                                onClick={() => setEditandoDataConsignado(false)}
+                                title="Cancelar"
+                                className="text-zinc-400 hover:text-red-500"
+                              >
+                                <X size={12} />
+                              </button>
+                            </span>
+                          ) : (
+                            <span className={`shrink-0 font-semibold flex items-center gap-1 ${atrasado ? 'text-red-500' : 'text-orange-500'}`}>
+                              <Calendar size={10} />
+                              {new Date(dp + 'T12:00:00').toLocaleDateString('pt-BR')}
+                              {atrasado && <span className="bg-red-500 text-white text-[9px] font-black px-1 py-px rounded">ATRASADO</span>}
+                              {selecionada.payment_status === 'pending' && (
+                                <button
+                                  onClick={() => {
+                                    setNovaDataConsignado(dp);
+                                    setEditandoDataConsignado(true);
+                                  }}
+                                  title="Alterar data do acerto"
+                                  className="text-orange-400 hover:text-orange-600 ml-0.5"
+                                >
+                                  <Pencil size={10} />
+                                </button>
+                              )}
+                            </span>
+                          )}
                         </>
                       );
                     })()}

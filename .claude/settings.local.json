@@ -8,7 +8,31 @@
       "Bash(Select-Object -ExpandProperty FullName)",
       "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\websystem_NexusStores_NextJS\" -Force)",
       "Bash(Select-Object Name, FullName)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(Get-ChildItem -Path \"app\\\\\\(store\\)\\\\loja\" -Recurse -Force)",
+      "Bash(Select-Object FullName, PSIsContainer)",
+      "Bash(Sort-Object FullName)",
+      "Bash(Format-Table -AutoSize)",
+      "Bash(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\\\\api\\\\loja\\\\conta\\\\pedidos\")",
+      "Bash(Out-Null)",
+      "Bash(New-Item -ItemType Directory -Force \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\\\\\\(store\\)\\\\loja\\\\[slug]\\\\conta\")",
+      "Bash(Write-Output \"ok\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\" -Directory)",
+      "Bash(mkdir -p \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\\\\api\\\\loja\\\\calcular-frete\" && mkdir -p \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\\\\api\\\\loja\\\\validar-cupom\" && mkdir -p \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\\\\api\\\\pedidos\\\\[id]\")",
+      "Bash(Get-ChildItem -Path \"c:\\\\Users\\\\misael.cruz\\\\Desktop\\\\4 - VSCode\\\\NexusStores_IntimaSeducao\\\\app\" -Filter \"*store*\" -Recurse)",
+      "Bash(Select-Object FullName)",
+      "Bash(npm install *)",
+      "Bash(git status *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(cat tailwind.config.ts)",
+      "Bash(cat tailwind.config.js)",
+      "Bash(node -e \"const p = require\\('./package.json'\\); console.log\\('next:', p.dependencies?.next, 'supabase-js:', p.dependencies?.['@supabase/supabase-js']\\)\")",
+      "PowerShell(git push origin staging)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\misael.cruz\\Desktop\\4 - VSCode\\NexusStores_IntimaSeducao\\app\\api\\pedidos"
     ]
   }
 }
