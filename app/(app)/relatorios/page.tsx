@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import {
   getTopProductsByCustomer,
   ProdutoPorRevendedor,
+  getConsignadosFechados,
+  ConsignadoFechado,
 } from "@/src/services/sales.service";
 import {
   BarChart2,
@@ -19,13 +21,18 @@ import {
   TrendingUp,
   Settings2,
   User,
+  Receipt,
+  HandCoins,
   X,
 } from "lucide-react";
 
 /* ─── Types ──────────────────────────────────────────────────── */
-type ViewMode = "cliente" | "produto";
+type ViewMode = "cliente" | "produto" | "consignado";
 type ClienteSortKey = "clienteNome" | "totalItens" | "totalReceita" | "totalPedidos" | "ticketMedio";
 type ProdutoSortKey = "clienteNome" | "produtoNome" | "quantidadeTotal" | "receitaTotal" | "numeroPedidos";
+type ConsignadoSortKey =
+  | "mes" | "clienteNome" | "valorKit" | "valorVendas" | "percentualVendas"
+  | "comissaoValor" | "comissaoPercent" | "liquidoRecebido" | "dataAceite";
 
 interface ClienteResumo {
   clienteId: number;
@@ -67,6 +74,18 @@ const COLUNAS_PRODUTO: ColDef[] = [
   { key: "receitaTotal",    label: "Receita",  defaultVisible: true  },
 ];
 
+const COLUNAS_CONSIGNADO: ColDef[] = [
+  { key: "mes",              label: "Mês",              defaultVisible: true },
+  { key: "clienteNome",      label: "Cliente",          defaultVisible: true },
+  { key: "valorKit",         label: "Valor do Kit",     defaultVisible: true },
+  { key: "valorVendas",      label: "Valor das Vendas", defaultVisible: true },
+  { key: "percentualVendas", label: "% de Vendas",      defaultVisible: true },
+  { key: "comissaoValor",    label: "Comissão Paga",    defaultVisible: true },
+  { key: "comissaoPercent",  label: "% Comissão",       defaultVisible: true },
+  { key: "liquidoRecebido",  label: "Líquido Recebido", defaultVisible: true },
+  { key: "dataAceite",       label: "Data do Aceite",   defaultVisible: true },
+];
+
 /* ─── Helpers ────────────────────────────────────────────────── */
 function buildPeriodo(days: number) {
   const fim = new Date();
@@ -77,6 +96,14 @@ function buildPeriodo(days: number) {
 
 const money = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+const pct = (v: number) => `${v.toFixed(1).replace(".", ",")}%`;
+
+const formatarData = (d: string | null) => {
+  if (!d) return "—";
+  const [ano, mes, dia] = d.split("-");
+  return `${dia}/${mes}/${ano}`;
+};
 
 function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
   if (!active) return <ChevronUp size={11} className="text-zinc-300" />;
@@ -89,6 +116,7 @@ function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
 export default function RelatoriosPage() {
   /* Data state */
   const [dados, setDados] = useState<ProdutoPorRevendedor[]>([]);
+  const [consignados, setConsignados] = useState<ConsignadoFechado[]>([]);
   const [carregando, setCarregando] = useState(true);
 
   /* Filter state */
@@ -100,11 +128,15 @@ export default function RelatoriosPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("cliente");
   const [sortCliente, setSortCliente] = useState<{ key: ClienteSortKey; asc: boolean }>({ key: "totalReceita", asc: false });
   const [sortProduto, setSortProduto] = useState<{ key: ProdutoSortKey; asc: boolean }>({ key: "receitaTotal", asc: false });
+  const [sortConsignado, setSortConsignado] = useState<{ key: ConsignadoSortKey; asc: boolean }>({ key: "dataAceite", asc: false });
   const [visColsCliente, setVisColsCliente] = useState<Set<string>>(
     () => new Set(COLUNAS_CLIENTE.filter((c) => c.defaultVisible).map((c) => c.key))
   );
   const [visColsProduto, setVisColsProduto] = useState<Set<string>>(
     () => new Set(COLUNAS_PRODUTO.filter((c) => c.defaultVisible).map((c) => c.key))
+  );
+  const [visColsConsignado, setVisColsConsignado] = useState<Set<string>>(
+    () => new Set(COLUNAS_CONSIGNADO.filter((c) => c.defaultVisible).map((c) => c.key))
   );
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [colPickerOpen, setColPickerOpen] = useState(false);
@@ -114,8 +146,15 @@ export default function RelatoriosPage() {
   useEffect(() => {
     setCarregando(true);
     setExpanded(new Set());
-    getTopProductsByCustomer(buildPeriodo(periodoDays))
-      .then(setDados)
+    const periodo = buildPeriodo(periodoDays);
+    Promise.all([
+      getTopProductsByCustomer(periodo),
+      getConsignadosFechados(periodo),
+    ])
+      .then(([prod, cons]) => {
+        setDados(prod);
+        setConsignados(cons);
+      })
       .catch(console.error)
       .finally(() => setCarregando(false));
   }, [periodoDays]);
@@ -132,10 +171,12 @@ export default function RelatoriosPage() {
   }, []);
 
   /* Derived: list of clients for filter select */
-  const clientes = useMemo(
-    () => [...new Set(dados.map((d) => d.clienteNome))].sort(),
-    [dados]
-  );
+  const clientes = useMemo(() => {
+    const set = new Set<string>();
+    dados.forEach((d) => set.add(d.clienteNome));
+    consignados.forEach((c) => set.add(c.clienteNome));
+    return [...set].sort();
+  }, [dados, consignados]);
 
   /* Filtered flat data */
   const dadosFiltrados = useMemo(() => {
@@ -197,6 +238,40 @@ export default function RelatoriosPage() {
     });
   }, [dadosFiltrados, sortProduto]);
 
+  /* Filtered + sorted consignado rows */
+  const dadosConsignado = useMemo(() => {
+    let r = consignados;
+    if (filtroCliente !== "todos") r = r.filter((c) => c.clienteNome === filtroCliente);
+    if (busca.trim()) {
+      const q = busca.toLowerCase();
+      r = r.filter((c) => c.clienteNome.toLowerCase().includes(q) || c.mes.toLowerCase().includes(q));
+    }
+    return [...r].sort((a, b) => {
+      // "mes" usa mesKey (cronológico); "dataAceite" trata nulos
+      const key = sortConsignado.key;
+      if (key === "mes") {
+        return sortConsignado.asc ? a.mesKey.localeCompare(b.mesKey) : b.mesKey.localeCompare(a.mesKey);
+      }
+      const av = a[key as keyof ConsignadoFechado];
+      const bv = b[key as keyof ConsignadoFechado];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "string" && typeof bv === "string")
+        return sortConsignado.asc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return sortConsignado.asc ? (av as number) - (bv as number) : (bv as number) - (av as number);
+    });
+  }, [consignados, filtroCliente, busca, sortConsignado]);
+
+  /* KPIs do consignado */
+  const kpisConsignado = useMemo(() => ({
+    acertos: dadosConsignado.length,
+    valorKit: dadosConsignado.reduce((s, c) => s + c.valorKit, 0),
+    valorVendas: dadosConsignado.reduce((s, c) => s + c.valorVendas, 0),
+    comissao: dadosConsignado.reduce((s, c) => s + c.comissaoValor, 0),
+    liquido: dadosConsignado.reduce((s, c) => s + c.liquidoRecebido, 0),
+  }), [dadosConsignado]);
+
   /* KPIs */
   const kpis = useMemo(() => ({
     clientes: resumoClientes.length,
@@ -219,6 +294,9 @@ export default function RelatoriosPage() {
   const handleSortProduto = (key: ProdutoSortKey) =>
     setSortProduto((p) => p.key === key ? { key, asc: !p.asc } : { key, asc: false });
 
+  const handleSortConsignado = (key: ConsignadoSortKey) =>
+    setSortConsignado((p) => p.key === key ? { key, asc: !p.asc } : { key, asc: false });
+
   const toggleColCliente = (key: string) =>
     setVisColsCliente((prev) => {
       const next = new Set(prev);
@@ -228,6 +306,13 @@ export default function RelatoriosPage() {
 
   const toggleColProduto = (key: string) =>
     setVisColsProduto((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
+  const toggleColConsignado = (key: string) =>
+    setVisColsConsignado((prev) => {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       return next;
@@ -246,6 +331,22 @@ export default function RelatoriosPage() {
         c.totalPedidos,
         c.totalReceita.toFixed(2).replace(".", ","),
         c.ticketMedio.toFixed(2).replace(".", ","),
+      ]);
+    } else if (viewMode === "consignado") {
+      header = [
+        "Mês", "Cliente", "Valor do Kit (R$)", "Valor das Vendas (R$)", "% de Vendas",
+        "Comissão Paga (R$)", "% Comissão", "Líquido Recebido (R$)", "Data do Aceite",
+      ];
+      linhas = dadosConsignado.map((c) => [
+        c.mes,
+        c.clienteNome,
+        c.valorKit.toFixed(2).replace(".", ","),
+        c.valorVendas.toFixed(2).replace(".", ","),
+        c.percentualVendas.toFixed(1).replace(".", ","),
+        c.comissaoValor.toFixed(2).replace(".", ","),
+        c.comissaoPercent.toFixed(1).replace(".", ","),
+        c.liquidoRecebido.toFixed(2).replace(".", ","),
+        c.dataAceite ? formatarData(c.dataAceite) : "—",
       ]);
     } else {
       header = ["Cliente", "Produto", "SKU", "Qtd.", "Pedidos", "Receita (R$)"];
@@ -271,9 +372,22 @@ export default function RelatoriosPage() {
     URL.revokeObjectURL(url);
   };
 
-  const activeCols = viewMode === "cliente" ? COLUNAS_CLIENTE : COLUNAS_PRODUTO;
-  const visActive = viewMode === "cliente" ? visColsCliente : visColsProduto;
-  const toggleActive = viewMode === "cliente" ? toggleColCliente : toggleColProduto;
+  const activeCols =
+    viewMode === "cliente" ? COLUNAS_CLIENTE
+    : viewMode === "consignado" ? COLUNAS_CONSIGNADO
+    : COLUNAS_PRODUTO;
+  const visActive =
+    viewMode === "cliente" ? visColsCliente
+    : viewMode === "consignado" ? visColsConsignado
+    : visColsProduto;
+  const toggleActive =
+    viewMode === "cliente" ? toggleColCliente
+    : viewMode === "consignado" ? toggleColConsignado
+    : toggleColProduto;
+
+  /* dados visíveis (para empty-state / footer / export) conforme o modo */
+  const temDados =
+    viewMode === "consignado" ? dadosConsignado.length > 0 : dadosFiltrados.length > 0;
 
   /* ─── Render ── */
   return (
@@ -284,15 +398,19 @@ export default function RelatoriosPage() {
         <div>
           <h1 className="text-xl font-black text-zinc-900 tracking-tight flex items-center gap-2">
             <BarChart2 size={22} className="text-indigo-600" />
-            Relatório de Vendas por Cliente
+            {viewMode === "consignado"
+              ? "Relatório de Consignados"
+              : "Relatório de Vendas por Cliente"}
           </h1>
           <p className="text-sm text-zinc-500 mt-0.5">
-            Tabela dinâmica — personalize a visualização conforme sua necessidade
+            {viewMode === "consignado"
+              ? "Acertos de consignado fechados — kit, vendas, comissão e líquido recebido"
+              : "Tabela dinâmica — personalize a visualização conforme sua necessidade"}
           </p>
         </div>
         <button
           onClick={exportarCSV}
-          disabled={dadosFiltrados.length === 0}
+          disabled={!temDados}
           className="flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-200 disabled:text-zinc-400 text-white text-sm font-bold rounded-lg transition-colors"
         >
           <Download size={15} />
@@ -376,6 +494,17 @@ export default function RelatoriosPage() {
               <Package size={12} />
               Detalhe por Produto
             </button>
+            <button
+              onClick={() => setViewMode("consignado")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+                viewMode === "consignado"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700"
+              }`}
+            >
+              <Receipt size={12} />
+              Consignados
+            </button>
           </div>
 
           {/* Column picker */}
@@ -437,12 +566,20 @@ export default function RelatoriosPage() {
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {[
-          { label: "Clientes",        value: kpis.clientes,                              icon: Users,        color: "text-indigo-600",  bg: "bg-indigo-50"  },
-          { label: "Produtos distintos", value: kpis.produtos,                           icon: Package,      color: "text-violet-600",  bg: "bg-violet-50"  },
-          { label: "Itens vendidos",   value: kpis.itens.toLocaleString("pt-BR"),        icon: ShoppingCart, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Receita total",    value: money(kpis.receita),                       icon: TrendingUp,   color: "text-amber-600",   bg: "bg-amber-50"   },
-        ].map((k) => (
+        {(viewMode === "consignado"
+          ? [
+              { label: "Valor dos kits",   value: money(kpisConsignado.valorKit),    icon: Package,    color: "text-indigo-600",  bg: "bg-indigo-50"  },
+              { label: "Valor vendido",    value: money(kpisConsignado.valorVendas), icon: ShoppingCart, color: "text-violet-600",  bg: "bg-violet-50"  },
+              { label: "Comissão paga",    value: money(kpisConsignado.comissao),    icon: HandCoins,  color: "text-rose-600",    bg: "bg-rose-50"    },
+              { label: "Líquido recebido", value: money(kpisConsignado.liquido),     icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
+            ]
+          : [
+              { label: "Clientes",           value: kpis.clientes,                       icon: Users,        color: "text-indigo-600",  bg: "bg-indigo-50"  },
+              { label: "Produtos distintos", value: kpis.produtos,                       icon: Package,      color: "text-violet-600",  bg: "bg-violet-50"  },
+              { label: "Itens vendidos",     value: kpis.itens.toLocaleString("pt-BR"),  icon: ShoppingCart, color: "text-emerald-600", bg: "bg-emerald-50" },
+              { label: "Receita total",      value: money(kpis.receita),                 icon: TrendingUp,   color: "text-amber-600",   bg: "bg-amber-50"   },
+            ]
+        ).map((k) => (
           <div key={k.label} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center shrink-0`}>
               <k.icon size={18} className={k.color} />
@@ -462,11 +599,15 @@ export default function RelatoriosPage() {
             <div className="flex items-center justify-center py-16">
               <Loader2 size={24} className="animate-spin text-indigo-400" />
             </div>
-          ) : dadosFiltrados.length === 0 ? (
+          ) : !temDados ? (
             <div className="flex flex-col items-center justify-center py-16 text-zinc-400">
               <BarChart2 size={32} className="mb-2 opacity-40" />
               <p className="text-sm font-medium">Nenhum dado encontrado</p>
-              <p className="text-xs mt-1">Tente ampliar o período ou remover filtros</p>
+              <p className="text-xs mt-1">
+                {viewMode === "consignado"
+                  ? "Nenhum consignado fechado no período — tente ampliar o período ou remover filtros"
+                  : "Tente ampliar o período ou remover filtros"}
+              </p>
             </div>
           ) : viewMode === "cliente" ? (
             /* ─── Tabela Por Cliente (expansível) ─── */
@@ -603,6 +744,100 @@ export default function RelatoriosPage() {
                 })}
               </tbody>
             </table>
+          ) : viewMode === "consignado" ? (
+            /* ─── Tabela Consignados ─── */
+            <table className="w-full text-sm">
+              <thead className="bg-zinc-50 border-b border-zinc-200">
+                <tr>
+                  <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 w-6">#</th>
+                  {visColsConsignado.has("mes") && (
+                    <th onClick={() => handleSortConsignado("mes")} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">Mês <SortIcon active={sortConsignado.key === "mes"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                  {visColsConsignado.has("clienteNome") && (
+                    <th onClick={() => handleSortConsignado("clienteNome")} className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center gap-1">Cliente <SortIcon active={sortConsignado.key === "clienteNome"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                  {visColsConsignado.has("valorKit") && (
+                    <th onClick={() => handleSortConsignado("valorKit")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Valor do Kit <SortIcon active={sortConsignado.key === "valorKit"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                  {visColsConsignado.has("valorVendas") && (
+                    <th onClick={() => handleSortConsignado("valorVendas")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Valor das Vendas <SortIcon active={sortConsignado.key === "valorVendas"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                  {visColsConsignado.has("percentualVendas") && (
+                    <th onClick={() => handleSortConsignado("percentualVendas")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">% de Vendas <SortIcon active={sortConsignado.key === "percentualVendas"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                  {visColsConsignado.has("comissaoValor") && (
+                    <th onClick={() => handleSortConsignado("comissaoValor")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Comissão Paga <SortIcon active={sortConsignado.key === "comissaoValor"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                  {visColsConsignado.has("comissaoPercent") && (
+                    <th onClick={() => handleSortConsignado("comissaoPercent")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">% Comissão <SortIcon active={sortConsignado.key === "comissaoPercent"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                  {visColsConsignado.has("liquidoRecebido") && (
+                    <th onClick={() => handleSortConsignado("liquidoRecebido")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Líquido Recebido <SortIcon active={sortConsignado.key === "liquidoRecebido"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                  {visColsConsignado.has("dataAceite") && (
+                    <th onClick={() => handleSortConsignado("dataAceite")} className="px-4 py-3 text-right text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap">
+                      <span className="inline-flex items-center justify-end gap-1">Data do Aceite <SortIcon active={sortConsignado.key === "dataAceite"} asc={sortConsignado.asc} /></span>
+                    </th>
+                  )}
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-zinc-100">
+                {dadosConsignado.map((row, idx) => (
+                  <tr key={`cons_${row.vendaId}`} className="hover:bg-zinc-50 transition-colors">
+                    <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{idx + 1}</td>
+                    {visColsConsignado.has("mes") && (
+                      <td className="px-4 py-3 text-zinc-700 capitalize whitespace-nowrap">{row.mes}</td>
+                    )}
+                    {visColsConsignado.has("clienteNome") && (
+                      <td className="px-4 py-3">
+                        <span className="font-semibold text-zinc-800">{row.clienteNome}</span>
+                      </td>
+                    )}
+                    {visColsConsignado.has("valorKit") && (
+                      <td className="px-4 py-3 text-right text-zinc-600 font-medium whitespace-nowrap">{money(row.valorKit)}</td>
+                    )}
+                    {visColsConsignado.has("valorVendas") && (
+                      <td className="px-4 py-3 text-right font-semibold text-zinc-800 whitespace-nowrap">{money(row.valorVendas)}</td>
+                    )}
+                    {visColsConsignado.has("percentualVendas") && (
+                      <td className="px-4 py-3 text-right whitespace-nowrap">
+                        <span className="inline-flex items-center justify-center px-2 py-0.5 bg-violet-50 text-violet-700 text-xs font-bold rounded-full">
+                          {pct(row.percentualVendas)}
+                        </span>
+                      </td>
+                    )}
+                    {visColsConsignado.has("comissaoValor") && (
+                      <td className="px-4 py-3 text-right text-rose-600 font-medium whitespace-nowrap">{money(row.comissaoValor)}</td>
+                    )}
+                    {visColsConsignado.has("comissaoPercent") && (
+                      <td className="px-4 py-3 text-right text-xs text-zinc-500 whitespace-nowrap">{pct(row.comissaoPercent)}</td>
+                    )}
+                    {visColsConsignado.has("liquidoRecebido") && (
+                      <td className="px-4 py-3 text-right font-black text-emerald-700 whitespace-nowrap">{money(row.liquidoRecebido)}</td>
+                    )}
+                    {visColsConsignado.has("dataAceite") && (
+                      <td className="px-4 py-3 text-right text-xs text-zinc-500 whitespace-nowrap">{formatarData(row.dataAceite)}</td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           ) : (
             /* ─── Tabela Detalhe por Produto ─── */
             <table className="w-full text-sm">
@@ -679,11 +914,13 @@ export default function RelatoriosPage() {
         </div>
 
         {/* Footer da tabela */}
-        {dadosFiltrados.length > 0 && (
+        {temDados && (
           <div className="px-4 py-3 border-t border-zinc-100 flex items-center justify-between text-xs text-zinc-400">
             <span>
               {viewMode === "cliente"
                 ? `${resumoClientes.length} cliente${resumoClientes.length !== 1 ? "s" : ""} · ${dadosFiltrados.length} combinações produto×cliente`
+                : viewMode === "consignado"
+                ? `${dadosConsignado.length} acerto${dadosConsignado.length !== 1 ? "s" : ""} de consignado`
                 : `${dadosProduto.length} linha${dadosProduto.length !== 1 ? "s" : ""}`}
             </span>
             <span>Clique nos cabeçalhos para ordenar · Use "Colunas" para personalizar</span>
