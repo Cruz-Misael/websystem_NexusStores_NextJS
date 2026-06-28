@@ -866,6 +866,120 @@ export async function getTopProductsByCustomer(
 }
 
 /* =========================
+   RELATÓRIO: CONSIGNADOS FECHADOS (ACERTOS)
+========================= */
+export interface ConsignadoFechado {
+  vendaId: number;
+  clienteNome: string;
+  mes: string;              // ex.: "Jun/2026"
+  mesKey: string;           // ex.: "2026-06" (para ordenação)
+  dataAceite: string | null; // "Pagamento previsto" (YYYY-MM-DD)
+  valorKit: number;          // total_amount (todas as peças entregues)
+  valorVendas: number;       // saldo das peças que ficaram (net antes da comissão)
+  qtdKit: number;            // peças entregues no kit
+  qtdRetornada: number;      // peças devolvidas
+  qtdVendida: number;        // peças que ficaram (vendidas)
+  percentualVendas: number;  // sell-through: qtdVendida / qtdKit * 100
+  comissaoPercent: number;   // % de comissão (desconto de lucro)
+  comissaoValor: number;     // saldo * comissaoPercent / 100
+  liquidoRecebido: number;   // final_amount (cobrado = saldo - comissão)
+}
+
+const MESES_ABREV = ["Jan", "Fev", "Mar", "Abr", "Mai", "Jun", "Jul", "Ago", "Set", "Out", "Nov", "Dez"];
+
+// Extrai a data de "Pagamento previsto: YYYY-MM-DD" da observação
+function extrairDataPrevista(obs: string | null): string | null {
+  if (!obs) return null;
+  const m = obs.match(/Pagamento previsto: (\d{4}-\d{2}-\d{2})/);
+  return m ? m[1] : null;
+}
+
+// Soma as quantidades de uma lista no formato "Nome (x3); Outro (x1)"
+function somarQuantidades(lista: string): number {
+  if (!lista || lista === "Nenhuma") return 0;
+  return lista.split("; ").reduce((acc, e) => {
+    const m = e.match(/\(x(\d+)\)$/);
+    return acc + (m ? parseInt(m[1], 10) : 0);
+  }, 0);
+}
+
+// Extrai quantidades do kit/devolvidas/mantidas do breakdown salvo na observação
+function extrairQuantidadesConsignado(obs: string | null) {
+  if (!obs) return null;
+  const m = obs.match(/Saídas: (.+?) \| Devolvidas: (.+?) \| Mantidas: (.+?)(?:\n|$)/);
+  if (!m) return null;
+  return {
+    kit: somarQuantidades(m[1]),
+    retornada: somarQuantidades(m[2]),
+    vendida: somarQuantidades(m[3]),
+  };
+}
+
+export async function getConsignadosFechados(
+  periodo: { inicio: string; fim: string }
+): Promise<ConsignadoFechado[]> {
+  const { data, error } = await supabase
+    .from("sales")
+    .select(`
+      id,
+      sale_date,
+      total_amount,
+      final_amount,
+      observation,
+      consignado_commission_percent,
+      consignado_net_before_commission,
+      customer:people(id, name),
+      sale_items(quantity)
+    `)
+    .eq("payment_status", "paid")
+    .or("payment_method.eq.consignado,consignado_net_before_commission.not.is.null")
+    .gte("sale_date", periodo.inicio)
+    .lte("sale_date", periodo.fim);
+
+  if (error) throw new Error(error.message);
+  if (!data || data.length === 0) return [];
+
+  return (data as any[]).map((sale) => {
+    const saldo = sale.consignado_net_before_commission ?? sale.final_amount ?? 0;
+    const comissaoPercent = sale.consignado_commission_percent ?? 0;
+    const comissaoValor = (saldo * comissaoPercent) / 100;
+    const liquidoRecebido = sale.final_amount ?? (saldo - comissaoValor);
+
+    const qty = extrairQuantidadesConsignado(sale.observation);
+    const qtdKit = qty?.kit ?? 0;
+    const qtdRetornada = qty?.retornada ?? 0;
+    const qtdVendida =
+      qty?.vendida ??
+      (sale.sale_items || []).reduce((s: number, i: any) => s + (i.quantity || 0), 0);
+    const percentualVendas = qtdKit > 0 ? (qtdVendida / qtdKit) * 100 : 0;
+
+    const dataAceite = extrairDataPrevista(sale.observation);
+    const baseData = (dataAceite || sale.sale_date || "").slice(0, 10); // YYYY-MM-DD
+    const [ano, mesNum] = baseData.split("-");
+    const mesIdx = parseInt(mesNum || "1", 10) - 1;
+    const mes = `${MESES_ABREV[mesIdx] ?? mesNum}/${ano}`;
+    const mesKey = `${ano}-${mesNum}`;
+
+    return {
+      vendaId: sale.id,
+      clienteNome: sale.customer?.name || "Sem cliente",
+      mes,
+      mesKey,
+      dataAceite,
+      valorKit: sale.total_amount ?? 0,
+      valorVendas: saldo,
+      qtdKit,
+      qtdRetornada,
+      qtdVendida,
+      percentualVendas,
+      comissaoPercent,
+      comissaoValor,
+      liquidoRecebido,
+    };
+  }).sort((a, b) => b.mesKey.localeCompare(a.mesKey));
+}
+
+/* =========================
    BUSCAR VENDAS POR CLIENTE
 ========================= */
 export async function getSalesByCustomerId(customerId: number) {
