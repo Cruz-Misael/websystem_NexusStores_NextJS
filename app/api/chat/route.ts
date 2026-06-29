@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/src/lib/supabase/admin";
+import { requireOperator } from "@/src/lib/supabase/server";
 
 const SYSTEM_PROMPT = `Voce e a Nexus IA, assistente integrada ao NexusStores. Seu papel e ajudar os operadores a entender e usar o sistema e informar sobre a situacao atual da operacao com base nos dados reais da loja.
 
@@ -136,12 +137,31 @@ async function buscarContextoLoja(): Promise<string> {
   return linhas.join("\n");
 }
 
+const MAX_MESSAGES = 40;
+const MAX_MESSAGE_LENGTH = 4000;
+
 export async function POST(req: NextRequest) {
   try {
+    // O contexto carrega dados internos da operação — apenas operadores ativos
+    const auth = await requireOperator();
+    if (!auth) {
+      return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
     const { messages } = await req.json();
 
-    if (!messages || !Array.isArray(messages)) {
+    if (!messages || !Array.isArray(messages) || messages.length === 0 || messages.length > MAX_MESSAGES) {
       return NextResponse.json({ error: "Mensagens invalidas." }, { status: 400 });
+    }
+
+    for (const m of messages) {
+      if (
+        typeof m?.content !== "string" ||
+        m.content.length > MAX_MESSAGE_LENGTH ||
+        (m.role !== "user" && m.role !== "assistant")
+      ) {
+        return NextResponse.json({ error: "Mensagens invalidas." }, { status: 400 });
+      }
     }
 
     const apiKey = process.env.GEMINI_API_KEY;

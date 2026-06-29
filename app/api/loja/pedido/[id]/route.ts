@@ -8,9 +8,11 @@ export async function GET(
   const { id } = await params;
   const slug = req.nextUrl.searchParams.get('slug');
 
+  // Rota acessível sem login (página de sucesso do checkout, via link com UUID).
+  // Não expor email/telefone aqui — a UI não usa e isso reduz vazamento de PII.
   const { data: order, error } = await supabaseAdmin
     .from('website_orders')
-    .select('id, customer_name, customer_email, customer_phone, items, total_amount, payment_status, created_at, mp_status')
+    .select('id, customer_name, items, total_amount, payment_status, created_at, mp_status')
     .eq('id', id)
     .single();
 

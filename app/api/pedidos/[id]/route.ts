@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/src/lib/supabase/admin';
+import { requireOperator } from '@/src/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { sendOrderStatusEmail } from '@/src/services/email.service';
 
@@ -8,6 +9,9 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const auth = await requireOperator();
+  if (!auth) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
+
   const { id } = await params;
   const body = await req.json();
 

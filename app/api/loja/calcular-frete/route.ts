@@ -2,12 +2,24 @@ import { supabaseAdmin } from '@/src/lib/supabase/admin';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
-  const { slug, destination_cep, total_amount } = await req.json();
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Requisição inválida' }, { status: 400 });
+  }
+  const { slug, destination_cep, total_amount } = body;
 
-  const cepDestino = destination_cep?.replace(/\D/g, '');
+  if (!slug || typeof slug !== 'string') {
+    return NextResponse.json({ error: 'Loja inválida' }, { status: 400 });
+  }
+
+  const cepDestino = typeof destination_cep === 'string' ? destination_cep.replace(/\D/g, '') : '';
   if (!cepDestino || cepDestino.length !== 8) {
     return NextResponse.json({ error: 'CEP inválido' }, { status: 400 });
   }
+
+  const valorPedido = Math.max(0, Number(total_amount) || 0);
 
   const { data: config } = await supabaseAdmin
     .from('website_config')
@@ -43,7 +55,7 @@ export async function POST(req: NextRequest) {
         weight: Number(config.package_default_weight) || 0.5,
       },
       options: {
-        insurance_value: total_amount || 50,
+        insurance_value: valorPedido || 50,
         receipt: false,
         own_hand: false,
       },
@@ -57,7 +69,7 @@ export async function POST(req: NextRequest) {
   }
 
   const rates: any[] = await meResponse.json();
-  const freeShipping = config.free_shipping_min_amount != null && total_amount >= Number(config.free_shipping_min_amount);
+  const freeShipping = config.free_shipping_min_amount != null && valorPedido >= Number(config.free_shipping_min_amount);
 
   const options = rates
     .filter(r => r.price != null && !r.error)

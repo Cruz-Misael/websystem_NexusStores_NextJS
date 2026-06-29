@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/src/lib/supabase/admin";
+import { requireOperator } from "@/src/lib/supabase/server";
 
 export async function GET() {
+  const auth = await requireOperator();
+  if (!auth) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
   const { data, error } = await supabaseAdmin
     .from("notifications")
     .select("*")
@@ -14,6 +18,9 @@ export async function GET() {
 
 // Sincroniza: cria notificações para condições novas, remove as que não se aplicam mais
 export async function POST() {
+  const auth = await requireOperator();
+  if (!auth) return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+
   // Busca referências já existentes (para evitar duplicatas)
   const { data: existing } = await supabaseAdmin
     .from("notifications")

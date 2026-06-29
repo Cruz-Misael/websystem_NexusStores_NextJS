@@ -3,24 +3,45 @@ import { MercadoPagoConfig, Payment } from 'mercadopago';
 import { supabaseAdmin } from '@/src/lib/supabase/admin';
 import { createHmac } from 'crypto';
 
+// Janela máxima aceita entre o timestamp do webhook e agora (anti-replay)
+const MAX_WEBHOOK_AGE_MS = 5 * 60 * 1000;
+
 async function verificarAssinatura(req: NextRequest, dataId: string): Promise<boolean> {
   const secret = process.env.MP_WEBHOOK_SECRET;
-  if (!secret) return true; // sem secret configurado, permite (apenas em dev)
+  if (!secret) {
+    // Sem secret configurado: NUNCA aceitar em produção (fail-closed).
+    // Em dev, permite para facilitar testes locais.
+    if (process.env.NODE_ENV === 'production') {
+      console.error('MP_WEBHOOK_SECRET não configurado — webhook rejeitado.');
+      return false;
+    }
+    return true;
+  }
 
   const xSignature = req.headers.get('x-signature') || '';
   const xRequestId = req.headers.get('x-request-id') || '';
 
   // Extrai ts e v1 do header x-signature: "ts=...,v1=..."
-  const parts = Object.fromEntries(xSignature.split(',').map(p => p.split('=')));
+  const parts = Object.fromEntries(xSignature.split(',').map(p => p.trim().split('=')));
   const ts = parts['ts'];
   const v1 = parts['v1'];
   if (!ts || !v1) return false;
+
+  // Anti-replay: rejeita webhooks com timestamp fora da janela aceitável
+  const tsMs = Number(ts) * (ts.length <= 10 ? 1000 : 1); // MP envia em ms; tolera segundos
+  if (!Number.isFinite(tsMs) || Math.abs(Date.now() - tsMs) > MAX_WEBHOOK_AGE_MS) {
+    return false;
+  }
 
   // Manifesto definido pelo MercadoPago
   const manifest = `id:${dataId};request-id:${xRequestId};ts:${ts};`;
   const hmac = createHmac('sha256', secret).update(manifest).digest('hex');
 
-  return hmac === v1;
+  // Comparação em tempo constante para evitar timing attacks
+  if (hmac.length !== v1.length) return false;
+  let diff = 0;
+  for (let i = 0; i < hmac.length; i++) diff |= hmac.charCodeAt(i) ^ v1.charCodeAt(i);
+  return diff === 0;
 }
 
 export async function POST(req: NextRequest) {
