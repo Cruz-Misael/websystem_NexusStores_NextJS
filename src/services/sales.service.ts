@@ -951,7 +951,12 @@ export async function getConsignadosFechados(
     const qtdVendida =
       qty?.vendida ??
       (sale.sale_items || []).reduce((s: number, i: any) => s + (i.quantity || 0), 0);
-    const percentualVendas = qtdKit > 0 ? (qtdVendida / qtdKit) * 100 : 0;
+
+    // % de Vendas calculado pelo VALOR de fato vendido (saldo, antes da comissão)
+    // sobre o valor total do kit (total_amount) — não pela quantidade de itens,
+    // pois peças de preços diferentes distorceriam o percentual.
+    const valorKit = sale.total_amount ?? 0;
+    const percentualVendas = valorKit > 0 ? (saldo / valorKit) * 100 : 0;
 
     const dataAceite = extrairDataPrevista(sale.observation);
     const baseData = (dataAceite || sale.sale_date || "").slice(0, 10); // YYYY-MM-DD
@@ -966,7 +971,7 @@ export async function getConsignadosFechados(
       mes,
       mesKey,
       dataAceite,
-      valorKit: sale.total_amount ?? 0,
+      valorKit,
       valorVendas: saldo,
       qtdKit,
       qtdRetornada,
