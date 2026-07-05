@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 
 export interface AppNotification {
   id: string;
-  type: "stock_critical" | "sale_delayed";
+  type: "stock_critical" | "sale_delayed" | "customer_stale";
   title: string;
   message: string;
   reference_id: string | null;

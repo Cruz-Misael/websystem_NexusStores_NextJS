@@ -8,6 +8,14 @@ import {
   ConsignadoFechado,
 } from "@/src/services/sales.service";
 import {
+  getConsignadosNaRua,
+  ConsignadoNaRua,
+  getRelatorioEstoque,
+  EstoqueRow,
+  getRelatorioFinanceiroMensal,
+  FinanceiroMensal,
+} from "@/src/services/reports.service";
+import {
   BarChart2,
   Download,
   Search,
@@ -24,10 +32,14 @@ import {
   Receipt,
   HandCoins,
   X,
+  Truck,
+  Wallet,
+  Warehouse,
+  AlertTriangle,
 } from "lucide-react";
 
 /* ─── Types ──────────────────────────────────────────────────── */
-type ViewMode = "cliente" | "produto" | "consignado";
+type ViewMode = "cliente" | "produto" | "consignado" | "narua" | "estoque" | "financeiro";
 type ClienteSortKey = "clienteNome" | "totalItens" | "totalReceita" | "totalPedidos" | "ticketMedio";
 type ProdutoSortKey = "clienteNome" | "produtoNome" | "quantidadeTotal" | "receitaTotal" | "numeroPedidos";
 type ConsignadoSortKey =
@@ -86,6 +98,40 @@ const COLUNAS_CONSIGNADO: ColDef[] = [
   { key: "dataAceite",       label: "Data do Aceite",   defaultVisible: true },
 ];
 
+const COLUNAS_NARUA: ColDef[] = [
+  { key: "clienteNome",  label: "Cliente",          defaultVisible: true },
+  { key: "dataSaida",    label: "Saída do Kit",     defaultVisible: true },
+  { key: "dataPrevista", label: "Acerto Previsto",  defaultVisible: true },
+  { key: "qtdItens",     label: "Itens",            defaultVisible: true },
+  { key: "valorKit",     label: "Valor na Rua",     defaultVisible: true },
+  { key: "diasNaRua",    label: "Dias na Rua",      defaultVisible: true },
+  { key: "diasAtraso",   label: "Situação",         defaultVisible: true },
+];
+
+const COLUNAS_ESTOQUE: ColDef[] = [
+  { key: "produtoNome",    label: "Produto",           defaultVisible: true },
+  { key: "sku",            label: "SKU",               defaultVisible: false },
+  { key: "categoria",      label: "Categoria",         defaultVisible: true },
+  { key: "quantidade",     label: "Qtd.",              defaultVisible: true },
+  { key: "custoUnit",      label: "Custo Un.",         defaultVisible: true },
+  { key: "precoVenda",     label: "Preço de Venda",    defaultVisible: false },
+  { key: "valorEstoque",   label: "Valor em Estoque",  defaultVisible: true },
+  { key: "valorPotencial", label: "Venda Potencial",   defaultVisible: true },
+  { key: "margem",         label: "Margem %",          defaultVisible: true },
+];
+
+const COLUNAS_FINANCEIRO: ColDef[] = [
+  { key: "mes",           label: "Mês",             defaultVisible: true },
+  { key: "numVendas",     label: "Vendas",          defaultVisible: true },
+  { key: "receita",       label: "Receita",         defaultVisible: true },
+  { key: "custo",         label: "Custo",           defaultVisible: true },
+  { key: "lucroBruto",    label: "Lucro Bruto",     defaultVisible: true },
+  { key: "margem",        label: "Margem %",        defaultVisible: true },
+  { key: "pctPeriodo",    label: "% do Período",    defaultVisible: false },
+  { key: "despesasPagas", label: "Despesas Pagas",  defaultVisible: true },
+  { key: "resultado",     label: "Resultado",       defaultVisible: true },
+];
+
 /* ─── Helpers ────────────────────────────────────────────────── */
 function buildPeriodo(days: number) {
   const fim = new Date();
@@ -112,11 +158,67 @@ function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
     : <ChevronDown size={11} className="text-indigo-500" />;
 }
 
+/* Tabela plana genérica — mesmo visual das tabelas de consignado/produto */
+interface TabelaColuna {
+  key: string;
+  label: string;
+  align?: "left" | "right";
+  render: (row: any) => React.ReactNode;
+}
+
+function TabelaRelatorio({
+  cols, vis, sort, onSort, rows, rowKey,
+}: {
+  cols: TabelaColuna[];
+  vis: Set<string>;
+  sort: { key: string; asc: boolean };
+  onSort: (key: string) => void;
+  rows: any[];
+  rowKey: (row: any) => string;
+}) {
+  const visiveis = cols.filter((c) => vis.has(c.key));
+  return (
+    <table className="w-full text-sm">
+      <thead className="bg-zinc-50 border-b border-zinc-200">
+        <tr>
+          <th className="px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-zinc-500 w-6">#</th>
+          {visiveis.map((c) => (
+            <th
+              key={c.key}
+              onClick={() => onSort(c.key)}
+              className={`px-4 py-3 ${c.align === "right" ? "text-right" : "text-left"} text-[11px] font-bold uppercase tracking-wider text-zinc-500 cursor-pointer hover:text-zinc-800 select-none whitespace-nowrap`}
+            >
+              <span className={`inline-flex items-center gap-1 ${c.align === "right" ? "justify-end" : ""}`}>
+                {c.label} <SortIcon active={sort.key === c.key} asc={sort.asc} />
+              </span>
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-zinc-100">
+        {rows.map((row, idx) => (
+          <tr key={rowKey(row)} className="hover:bg-zinc-50 transition-colors">
+            <td className="px-4 py-3 text-xs text-zinc-400 font-mono">{idx + 1}</td>
+            {visiveis.map((c) => (
+              <td key={c.key} className={`px-4 py-3 ${c.align === "right" ? "text-right" : ""} whitespace-nowrap`}>
+                {c.render(row)}
+              </td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+
 /* ─── Main Component ─────────────────────────────────────────── */
 export default function RelatoriosPage() {
   /* Data state */
   const [dados, setDados] = useState<ProdutoPorRevendedor[]>([]);
   const [consignados, setConsignados] = useState<ConsignadoFechado[]>([]);
+  const [naRua, setNaRua] = useState<ConsignadoNaRua[]>([]);
+  const [estoque, setEstoque] = useState<EstoqueRow[]>([]);
+  const [financeiro, setFinanceiro] = useState<FinanceiroMensal[]>([]);
   const [carregando, setCarregando] = useState(true);
 
   /* Filter state */
@@ -138,6 +240,18 @@ export default function RelatoriosPage() {
   const [visColsConsignado, setVisColsConsignado] = useState<Set<string>>(
     () => new Set(COLUNAS_CONSIGNADO.filter((c) => c.defaultVisible).map((c) => c.key))
   );
+  const [sortNaRua, setSortNaRua] = useState<{ key: string; asc: boolean }>({ key: "diasAtraso", asc: false });
+  const [sortEstoque, setSortEstoque] = useState<{ key: string; asc: boolean }>({ key: "valorEstoque", asc: false });
+  const [sortFinanceiro, setSortFinanceiro] = useState<{ key: string; asc: boolean }>({ key: "mes", asc: false });
+  const [visColsNaRua, setVisColsNaRua] = useState<Set<string>>(
+    () => new Set(COLUNAS_NARUA.filter((c) => c.defaultVisible).map((c) => c.key))
+  );
+  const [visColsEstoque, setVisColsEstoque] = useState<Set<string>>(
+    () => new Set(COLUNAS_ESTOQUE.filter((c) => c.defaultVisible).map((c) => c.key))
+  );
+  const [visColsFinanceiro, setVisColsFinanceiro] = useState<Set<string>>(
+    () => new Set(COLUNAS_FINANCEIRO.filter((c) => c.defaultVisible).map((c) => c.key))
+  );
   const [expanded, setExpanded] = useState<Set<number>>(new Set());
   const [colPickerOpen, setColPickerOpen] = useState(false);
   const colPickerRef = useRef<HTMLDivElement>(null);
@@ -150,10 +264,16 @@ export default function RelatoriosPage() {
     Promise.all([
       getTopProductsByCustomer(periodo),
       getConsignadosFechados(periodo),
+      getConsignadosNaRua(),
+      getRelatorioEstoque(),
+      getRelatorioFinanceiroMensal(periodo),
     ])
-      .then(([prod, cons]) => {
+      .then(([prod, cons, rua, est, fin]) => {
         setDados(prod);
         setConsignados(cons);
+        setNaRua(rua);
+        setEstoque(est);
+        setFinanceiro(fin);
       })
       .catch(console.error)
       .finally(() => setCarregando(false));
@@ -175,8 +295,9 @@ export default function RelatoriosPage() {
     const set = new Set<string>();
     dados.forEach((d) => set.add(d.clienteNome));
     consignados.forEach((c) => set.add(c.clienteNome));
+    naRua.forEach((c) => set.add(c.clienteNome));
     return [...set].sort();
-  }, [dados, consignados]);
+  }, [dados, consignados, naRua]);
 
   /* Filtered flat data */
   const dadosFiltrados = useMemo(() => {
@@ -272,6 +393,83 @@ export default function RelatoriosPage() {
     liquido: dadosConsignado.reduce((s, c) => s + c.liquidoRecebido, 0),
   }), [dadosConsignado]);
 
+  /* Ordenação genérica (mesma semântica das demais tabelas) */
+  const ordenar = <T,>(rows: T[], sort: { key: string; asc: boolean }): T[] =>
+    [...rows].sort((a, b) => {
+      const av = (a as Record<string, unknown>)[sort.key];
+      const bv = (b as Record<string, unknown>)[sort.key];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === "string" && typeof bv === "string")
+        return sort.asc ? av.localeCompare(bv) : bv.localeCompare(av);
+      return sort.asc ? (av as number) - (bv as number) : (bv as number) - (av as number);
+    });
+
+  /* Consignados na rua: filtro + ordenação + KPIs */
+  const dadosNaRua = useMemo(() => {
+    let r = naRua;
+    if (filtroCliente !== "todos") r = r.filter((c) => c.clienteNome === filtroCliente);
+    if (busca.trim()) {
+      const q = busca.toLowerCase();
+      r = r.filter((c) => c.clienteNome.toLowerCase().includes(q));
+    }
+    const key = sortNaRua.key === "mes" ? "dataSaida" : sortNaRua.key;
+    return ordenar(r, { ...sortNaRua, key });
+  }, [naRua, filtroCliente, busca, sortNaRua]);
+
+  const kpisNaRua = useMemo(() => ({
+    valorNaRua: dadosNaRua.reduce((s, c) => s + c.valorKit, 0),
+    kits: dadosNaRua.length,
+    atrasados: dadosNaRua.filter((c) => c.atrasado).length,
+    valorAtrasado: dadosNaRua.filter((c) => c.atrasado).reduce((s, c) => s + c.valorKit, 0),
+  }), [dadosNaRua]);
+
+  /* Estoque: filtro + ordenação + KPIs */
+  const dadosEstoque = useMemo(() => {
+    let r = estoque;
+    if (busca.trim()) {
+      const q = busca.toLowerCase();
+      r = r.filter(
+        (p) =>
+          p.produtoNome.toLowerCase().includes(q) ||
+          p.categoria.toLowerCase().includes(q) ||
+          String(p.sku).includes(q)
+      );
+    }
+    return ordenar(r, sortEstoque);
+  }, [estoque, busca, sortEstoque]);
+
+  const kpisEstoque = useMemo(() => ({
+    produtos: dadosEstoque.length,
+    unidades: dadosEstoque.reduce((s, p) => s + p.quantidade, 0),
+    valorEstoque: dadosEstoque.reduce((s, p) => s + p.valorEstoque, 0),
+    valorPotencial: dadosEstoque.reduce((s, p) => s + p.valorPotencial, 0),
+  }), [dadosEstoque]);
+
+  /* Financeiro mensal: ordenação + KPIs */
+  const dadosFinanceiro = useMemo(() => {
+    let r = financeiro;
+    if (busca.trim()) {
+      const q = busca.toLowerCase();
+      r = r.filter((m) => m.mes.toLowerCase().includes(q));
+    }
+    const key = sortFinanceiro.key === "mes" ? "mesKey" : sortFinanceiro.key;
+    return ordenar(r, { ...sortFinanceiro, key });
+  }, [financeiro, busca, sortFinanceiro]);
+
+  const kpisFinanceiro = useMemo(() => {
+    const receita = dadosFinanceiro.reduce((s, m) => s + m.receita, 0);
+    const lucro = dadosFinanceiro.reduce((s, m) => s + m.lucroBruto, 0);
+    const despesas = dadosFinanceiro.reduce((s, m) => s + m.despesasPagas, 0);
+    return {
+      receita,
+      lucro,
+      margem: receita > 0 ? (lucro / receita) * 100 : 0,
+      resultado: lucro - despesas,
+    };
+  }, [dadosFinanceiro]);
+
   /* KPIs */
   const kpis = useMemo(() => ({
     clientes: resumoClientes.length,
@@ -318,6 +516,32 @@ export default function RelatoriosPage() {
       return next;
     });
 
+  const handleSortNaRua = (key: string) =>
+    setSortNaRua((p) => p.key === key ? { key, asc: !p.asc } : { key, asc: false });
+  const handleSortEstoque = (key: string) =>
+    setSortEstoque((p) => p.key === key ? { key, asc: !p.asc } : { key, asc: false });
+  const handleSortFinanceiro = (key: string) =>
+    setSortFinanceiro((p) => p.key === key ? { key, asc: !p.asc } : { key, asc: false });
+
+  const toggleColNaRua = (key: string) =>
+    setVisColsNaRua((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  const toggleColEstoque = (key: string) =>
+    setVisColsEstoque((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  const toggleColFinanceiro = (key: string) =>
+    setVisColsFinanceiro((prev) => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+
   /* Export CSV */
   const exportarCSV = () => {
     let header: string[];
@@ -348,6 +572,43 @@ export default function RelatoriosPage() {
         c.liquidoRecebido.toFixed(2).replace(".", ","),
         c.dataAceite ? formatarData(c.dataAceite) : "—",
       ]);
+    } else if (viewMode === "narua") {
+      header = ["Cliente", "Saída do Kit", "Acerto Previsto", "Itens", "Valor na Rua (R$)", "Dias na Rua", "Dias de Atraso"];
+      linhas = dadosNaRua.map((c) => [
+        c.clienteNome,
+        formatarData(c.dataSaida),
+        c.dataPrevista ? formatarData(c.dataPrevista) : "—",
+        c.qtdItens,
+        c.valorKit.toFixed(2).replace(".", ","),
+        c.diasNaRua,
+        c.diasAtraso,
+      ]);
+    } else if (viewMode === "estoque") {
+      header = ["Produto", "SKU", "Categoria", "Qtd.", "Custo Un. (R$)", "Preço de Venda (R$)", "Valor em Estoque (R$)", "Venda Potencial (R$)", "Margem %"];
+      linhas = dadosEstoque.map((p) => [
+        p.produtoNome,
+        p.sku,
+        p.categoria,
+        p.quantidade,
+        p.custoUnit.toFixed(2).replace(".", ","),
+        p.precoVenda.toFixed(2).replace(".", ","),
+        p.valorEstoque.toFixed(2).replace(".", ","),
+        p.valorPotencial.toFixed(2).replace(".", ","),
+        p.margem.toFixed(1).replace(".", ","),
+      ]);
+    } else if (viewMode === "financeiro") {
+      header = ["Mês", "Vendas", "Receita (R$)", "Custo (R$)", "Lucro Bruto (R$)", "Margem %", "% do Período", "Despesas Pagas (R$)", "Resultado (R$)"];
+      linhas = dadosFinanceiro.map((m) => [
+        m.mes,
+        m.numVendas,
+        m.receita.toFixed(2).replace(".", ","),
+        m.custo.toFixed(2).replace(".", ","),
+        m.lucroBruto.toFixed(2).replace(".", ","),
+        m.margem.toFixed(1).replace(".", ","),
+        m.pctPeriodo.toFixed(1).replace(".", ","),
+        m.despesasPagas.toFixed(2).replace(".", ","),
+        m.resultado.toFixed(2).replace(".", ","),
+      ]);
     } else {
       header = ["Cliente", "Produto", "SKU", "Qtd.", "Pedidos", "Receita (R$)"];
       linhas = dadosProduto.map((d) => [
@@ -372,22 +633,40 @@ export default function RelatoriosPage() {
     URL.revokeObjectURL(url);
   };
 
-  const activeCols =
-    viewMode === "cliente" ? COLUNAS_CLIENTE
-    : viewMode === "consignado" ? COLUNAS_CONSIGNADO
-    : COLUNAS_PRODUTO;
-  const visActive =
-    viewMode === "cliente" ? visColsCliente
-    : viewMode === "consignado" ? visColsConsignado
-    : visColsProduto;
-  const toggleActive =
-    viewMode === "cliente" ? toggleColCliente
-    : viewMode === "consignado" ? toggleColConsignado
-    : toggleColProduto;
+  const activeCols: ColDef[] = {
+    cliente: COLUNAS_CLIENTE,
+    produto: COLUNAS_PRODUTO,
+    consignado: COLUNAS_CONSIGNADO,
+    narua: COLUNAS_NARUA,
+    estoque: COLUNAS_ESTOQUE,
+    financeiro: COLUNAS_FINANCEIRO,
+  }[viewMode];
+  const visActive: Set<string> = {
+    cliente: visColsCliente,
+    produto: visColsProduto,
+    consignado: visColsConsignado,
+    narua: visColsNaRua,
+    estoque: visColsEstoque,
+    financeiro: visColsFinanceiro,
+  }[viewMode];
+  const toggleActive: (key: string) => void = {
+    cliente: toggleColCliente,
+    produto: toggleColProduto,
+    consignado: toggleColConsignado,
+    narua: toggleColNaRua,
+    estoque: toggleColEstoque,
+    financeiro: toggleColFinanceiro,
+  }[viewMode];
 
   /* dados visíveis (para empty-state / footer / export) conforme o modo */
-  const temDados =
-    viewMode === "consignado" ? dadosConsignado.length > 0 : dadosFiltrados.length > 0;
+  const temDados = {
+    cliente: dadosFiltrados.length > 0,
+    produto: dadosFiltrados.length > 0,
+    consignado: dadosConsignado.length > 0,
+    narua: dadosNaRua.length > 0,
+    estoque: dadosEstoque.length > 0,
+    financeiro: dadosFinanceiro.length > 0,
+  }[viewMode];
 
   /* ─── Render ── */
   return (
@@ -398,14 +677,24 @@ export default function RelatoriosPage() {
         <div>
           <h1 className="text-xl font-black text-zinc-900 tracking-tight flex items-center gap-2">
             <BarChart2 size={22} className="text-indigo-600" />
-            {viewMode === "consignado"
-              ? "Relatório de Consignados"
-              : "Relatório de Vendas por Cliente"}
+            {{
+              cliente: "Relatório de Vendas por Cliente",
+              produto: "Relatório de Vendas por Cliente",
+              consignado: "Relatório de Consignados",
+              narua: "Consignados na Rua",
+              estoque: "Relatório de Estoque",
+              financeiro: "Relatório Financeiro",
+            }[viewMode]}
           </h1>
           <p className="text-sm text-zinc-500 mt-0.5">
-            {viewMode === "consignado"
-              ? "Acertos de consignado fechados — kit, vendas, comissão e líquido recebido"
-              : "Tabela dinâmica — personalize a visualização conforme sua necessidade"}
+            {{
+              cliente: "Tabela dinâmica — personalize a visualização conforme sua necessidade",
+              produto: "Tabela dinâmica — personalize a visualização conforme sua necessidade",
+              consignado: "Acertos de consignado fechados — kit, vendas, comissão e líquido recebido",
+              narua: "Kits pendentes de acerto — quanto está na rua aguardando retorno",
+              estoque: "Posição atual valorizada — custo, venda potencial e margem",
+              financeiro: "Resumo mensal — receita, custo, lucro bruto e despesas",
+            }[viewMode]}
           </p>
         </div>
         <button
@@ -505,6 +794,39 @@ export default function RelatoriosPage() {
               <Receipt size={12} />
               Consignados
             </button>
+            <button
+              onClick={() => setViewMode("narua")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+                viewMode === "narua"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700"
+              }`}
+            >
+              <Truck size={12} />
+              Na Rua
+            </button>
+            <button
+              onClick={() => setViewMode("estoque")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+                viewMode === "estoque"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700"
+              }`}
+            >
+              <Warehouse size={12} />
+              Estoque
+            </button>
+            <button
+              onClick={() => setViewMode("financeiro")}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+                viewMode === "financeiro"
+                  ? "bg-white text-indigo-700 shadow-sm"
+                  : "text-zinc-500 hover:text-zinc-700"
+              }`}
+            >
+              <Wallet size={12} />
+              Financeiro
+            </button>
           </div>
 
           {/* Column picker */}
@@ -566,20 +888,44 @@ export default function RelatoriosPage() {
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {(viewMode === "consignado"
-          ? [
-              { label: "Valor dos kits",   value: money(kpisConsignado.valorKit),    icon: Package,    color: "text-indigo-600",  bg: "bg-indigo-50"  },
-              { label: "Valor vendido",    value: money(kpisConsignado.valorVendas), icon: ShoppingCart, color: "text-violet-600",  bg: "bg-violet-50"  },
-              { label: "Comissão paga",    value: money(kpisConsignado.comissao),    icon: HandCoins,  color: "text-rose-600",    bg: "bg-rose-50"    },
-              { label: "Líquido recebido", value: money(kpisConsignado.liquido),     icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
-            ]
-          : [
-              { label: "Clientes",           value: kpis.clientes,                       icon: Users,        color: "text-indigo-600",  bg: "bg-indigo-50"  },
-              { label: "Produtos distintos", value: kpis.produtos,                       icon: Package,      color: "text-violet-600",  bg: "bg-violet-50"  },
-              { label: "Itens vendidos",     value: kpis.itens.toLocaleString("pt-BR"),  icon: ShoppingCart, color: "text-emerald-600", bg: "bg-emerald-50" },
-              { label: "Receita total",      value: money(kpis.receita),                 icon: TrendingUp,   color: "text-amber-600",   bg: "bg-amber-50"   },
-            ]
-        ).map((k) => (
+        {({
+          consignado: [
+            { label: "Valor dos kits",   value: money(kpisConsignado.valorKit),    icon: Package,    color: "text-indigo-600",  bg: "bg-indigo-50"  },
+            { label: "Valor vendido",    value: money(kpisConsignado.valorVendas), icon: ShoppingCart, color: "text-violet-600",  bg: "bg-violet-50"  },
+            { label: "Comissão paga",    value: money(kpisConsignado.comissao),    icon: HandCoins,  color: "text-rose-600",    bg: "bg-rose-50"    },
+            { label: "Líquido recebido", value: money(kpisConsignado.liquido),     icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
+          ],
+          narua: [
+            { label: "Valor na rua",      value: money(kpisNaRua.valorNaRua),      icon: Truck,         color: "text-indigo-600",  bg: "bg-indigo-50"  },
+            { label: "Kits na rua",       value: kpisNaRua.kits,                   icon: Package,       color: "text-violet-600",  bg: "bg-violet-50"  },
+            { label: "Acertos atrasados", value: kpisNaRua.atrasados,              icon: AlertTriangle, color: "text-rose-600",    bg: "bg-rose-50"    },
+            { label: "Valor atrasado",    value: money(kpisNaRua.valorAtrasado),   icon: HandCoins,     color: "text-amber-600",   bg: "bg-amber-50"   },
+          ],
+          estoque: [
+            { label: "Produtos c/ estoque", value: kpisEstoque.produtos,                          icon: Package,   color: "text-indigo-600",  bg: "bg-indigo-50"  },
+            { label: "Unidades",            value: kpisEstoque.unidades.toLocaleString("pt-BR"),  icon: Warehouse, color: "text-violet-600",  bg: "bg-violet-50"  },
+            { label: "Valor em estoque",    value: money(kpisEstoque.valorEstoque),               icon: Wallet,    color: "text-amber-600",   bg: "bg-amber-50"   },
+            { label: "Venda potencial",     value: money(kpisEstoque.valorPotencial),             icon: TrendingUp, color: "text-emerald-600", bg: "bg-emerald-50" },
+          ],
+          financeiro: [
+            { label: "Receita",     value: money(kpisFinanceiro.receita),   icon: ShoppingCart, color: "text-indigo-600",  bg: "bg-indigo-50"  },
+            { label: "Lucro bruto", value: money(kpisFinanceiro.lucro),     icon: TrendingUp,   color: "text-emerald-600", bg: "bg-emerald-50" },
+            { label: "Margem",      value: pct(kpisFinanceiro.margem),      icon: BarChart2,    color: "text-violet-600",  bg: "bg-violet-50"  },
+            { label: "Resultado (após despesas)", value: money(kpisFinanceiro.resultado), icon: Wallet, color: kpisFinanceiro.resultado >= 0 ? "text-emerald-600" : "text-rose-600", bg: kpisFinanceiro.resultado >= 0 ? "bg-emerald-50" : "bg-rose-50" },
+          ],
+          cliente: [
+            { label: "Clientes",           value: kpis.clientes,                       icon: Users,        color: "text-indigo-600",  bg: "bg-indigo-50"  },
+            { label: "Produtos distintos", value: kpis.produtos,                       icon: Package,      color: "text-violet-600",  bg: "bg-violet-50"  },
+            { label: "Itens vendidos",     value: kpis.itens.toLocaleString("pt-BR"),  icon: ShoppingCart, color: "text-emerald-600", bg: "bg-emerald-50" },
+            { label: "Receita total",      value: money(kpis.receita),                 icon: TrendingUp,   color: "text-amber-600",   bg: "bg-amber-50"   },
+          ],
+          produto: [
+            { label: "Clientes",           value: kpis.clientes,                       icon: Users,        color: "text-indigo-600",  bg: "bg-indigo-50"  },
+            { label: "Produtos distintos", value: kpis.produtos,                       icon: Package,      color: "text-violet-600",  bg: "bg-violet-50"  },
+            { label: "Itens vendidos",     value: kpis.itens.toLocaleString("pt-BR"),  icon: ShoppingCart, color: "text-emerald-600", bg: "bg-emerald-50" },
+            { label: "Receita total",      value: money(kpis.receita),                 icon: TrendingUp,   color: "text-amber-600",   bg: "bg-amber-50"   },
+          ],
+        }[viewMode] as { label: string; value: string | number; icon: typeof Users; color: string; bg: string }[]).map((k) => (
           <div key={k.label} className="bg-white rounded-xl border border-zinc-200 p-4 flex items-center gap-3">
             <div className={`w-10 h-10 rounded-xl ${k.bg} flex items-center justify-center shrink-0`}>
               <k.icon size={18} className={k.color} />
@@ -838,6 +1184,90 @@ export default function RelatoriosPage() {
                 ))}
               </tbody>
             </table>
+          ) : viewMode === "narua" ? (
+            /* ─── Tabela Consignados na Rua ─── */
+            <TabelaRelatorio
+              vis={visColsNaRua}
+              sort={sortNaRua}
+              onSort={handleSortNaRua}
+              rows={dadosNaRua}
+              rowKey={(r) => `rua_${r.vendaId}`}
+              cols={[
+                { key: "clienteNome", label: "Cliente", render: (r) => <span className="font-semibold text-zinc-800">{r.clienteNome}</span> },
+                { key: "dataSaida", label: "Saída do Kit", align: "right", render: (r) => <span className="text-xs text-zinc-500">{formatarData(r.dataSaida)}</span> },
+                { key: "dataPrevista", label: "Acerto Previsto", align: "right", render: (r) => <span className="text-xs text-zinc-500">{r.dataPrevista ? formatarData(r.dataPrevista) : "—"}</span> },
+                { key: "qtdItens", label: "Itens", align: "right", render: (r) => <span className="text-zinc-600">{r.qtdItens}</span> },
+                { key: "valorKit", label: "Valor na Rua", align: "right", render: (r) => <span className="font-semibold text-zinc-800">{money(r.valorKit)}</span> },
+                { key: "diasNaRua", label: "Dias na Rua", align: "right", render: (r) => <span className="text-zinc-600">{r.diasNaRua}</span> },
+                {
+                  key: "diasAtraso", label: "Situação", align: "right",
+                  render: (r) => r.atrasado
+                    ? <span className="inline-flex items-center px-2 py-0.5 bg-red-50 text-red-600 text-xs font-bold rounded-full">Atrasado {r.diasAtraso}d</span>
+                    : <span className="inline-flex items-center px-2 py-0.5 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full">Em dia</span>,
+                },
+              ]}
+            />
+          ) : viewMode === "estoque" ? (
+            /* ─── Tabela Estoque ─── */
+            <TabelaRelatorio
+              vis={visColsEstoque}
+              sort={sortEstoque}
+              onSort={handleSortEstoque}
+              rows={dadosEstoque}
+              rowKey={(r) => `est_${r.sku}`}
+              cols={[
+                { key: "produtoNome", label: "Produto", render: (r) => <span className="font-semibold text-zinc-800">{r.produtoNome}</span> },
+                { key: "sku", label: "SKU", render: (r) => <span className="text-xs text-zinc-400 font-mono">SKU-{r.sku}</span> },
+                { key: "categoria", label: "Categoria", render: (r) => <span className="text-zinc-600">{r.categoria}</span> },
+                { key: "quantidade", label: "Qtd.", align: "right", render: (r) => <span className="text-zinc-600">{r.quantidade.toLocaleString("pt-BR")}</span> },
+                { key: "custoUnit", label: "Custo Un.", align: "right", render: (r) => <span className="text-zinc-600">{money(r.custoUnit)}</span> },
+                { key: "precoVenda", label: "Preço de Venda", align: "right", render: (r) => <span className="text-zinc-600">{money(r.precoVenda)}</span> },
+                { key: "valorEstoque", label: "Valor em Estoque", align: "right", render: (r) => <span className="font-semibold text-zinc-800">{money(r.valorEstoque)}</span> },
+                { key: "valorPotencial", label: "Venda Potencial", align: "right", render: (r) => <span className="font-black text-emerald-700">{money(r.valorPotencial)}</span> },
+                {
+                  key: "margem", label: "Margem %", align: "right",
+                  render: (r) => (
+                    <span className="inline-flex items-center px-2 py-0.5 bg-violet-50 text-violet-700 text-xs font-bold rounded-full">
+                      {pct(r.margem)}
+                    </span>
+                  ),
+                },
+              ]}
+            />
+          ) : viewMode === "financeiro" ? (
+            /* ─── Tabela Financeiro Mensal ─── */
+            <TabelaRelatorio
+              vis={visColsFinanceiro}
+              sort={sortFinanceiro}
+              onSort={handleSortFinanceiro}
+              rows={dadosFinanceiro}
+              rowKey={(r) => `fin_${r.mesKey}`}
+              cols={[
+                { key: "mes", label: "Mês", render: (r) => <span className="font-semibold text-zinc-800 capitalize">{r.mes}</span> },
+                { key: "numVendas", label: "Vendas", align: "right", render: (r) => <span className="text-zinc-600">{r.numVendas.toLocaleString("pt-BR")}</span> },
+                { key: "receita", label: "Receita", align: "right", render: (r) => <span className="font-semibold text-zinc-800">{money(r.receita)}</span> },
+                { key: "custo", label: "Custo", align: "right", render: (r) => <span className="text-zinc-600">{money(r.custo)}</span> },
+                { key: "lucroBruto", label: "Lucro Bruto", align: "right", render: (r) => <span className="font-semibold text-emerald-700">{money(r.lucroBruto)}</span> },
+                {
+                  key: "margem", label: "Margem %", align: "right",
+                  render: (r) => (
+                    <span className="inline-flex items-center px-2 py-0.5 bg-violet-50 text-violet-700 text-xs font-bold rounded-full">
+                      {pct(r.margem)}
+                    </span>
+                  ),
+                },
+                { key: "pctPeriodo", label: "% do Período", align: "right", render: (r) => <span className="text-xs text-zinc-500">{pct(r.pctPeriodo)}</span> },
+                { key: "despesasPagas", label: "Despesas Pagas", align: "right", render: (r) => <span className="text-rose-600">{money(r.despesasPagas)}</span> },
+                {
+                  key: "resultado", label: "Resultado", align: "right",
+                  render: (r) => (
+                    <span className={`font-black ${r.resultado >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+                      {money(r.resultado)}
+                    </span>
+                  ),
+                },
+              ]}
+            />
           ) : (
             /* ─── Tabela Detalhe por Produto ─── */
             <table className="w-full text-sm">

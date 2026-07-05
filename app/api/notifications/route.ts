@@ -64,21 +64,29 @@ export async function POST() {
     await supabaseAdmin.from("notifications").delete().in("reference_id", staleStock);
   }
 
-  // ── Vendas atrasadas (pendentes há mais de 2 dias) ───────────────────────────
-  const limite = new Date();
-  limite.setDate(limite.getDate() - 2);
-
+  // ── Vendas ATRASADAS (data prevista de acerto já passou) ─────────────────────
+  // Estar pendente é normal (consignado aguardando acerto); o alerta só dispara
+  // quando o "Pagamento previsto: YYYY-MM-DD" da observação está no passado.
   const { data: vendas } = await supabaseAdmin
     .from("sales")
-    .select("id, sale_date, final_amount, customer:customers(name)")
-    .eq("payment_status", "pending")
-    .lt("sale_date", limite.toISOString());
+    .select("id, sale_date, final_amount, observation, customer:people(name)")
+    .eq("payment_status", "pending");
 
-  for (const v of vendas ?? []) {
+  const hoje = new Date();
+  hoje.setHours(0, 0, 0, 0);
+
+  const vendasAtrasadas = (vendas ?? []).filter((v) => {
+    const match = (v.observation as string | null)?.match(/Pagamento previsto: (\d{4}-\d{2}-\d{2})/);
+    if (!match) return false; // pendente sem data prevista não é atraso
+    return new Date(match[1] + "T12:00:00") < hoje;
+  });
+
+  for (const v of vendasAtrasadas) {
     const ref = `sale_${v.id}`;
     if (!existingRefs.has(ref)) {
-      const dias = Math.floor(
-        (Date.now() - new Date(v.sale_date).getTime()) / (1000 * 60 * 60 * 24)
+      const dataPrevista = (v.observation as string).match(/Pagamento previsto: (\d{4}-\d{2}-\d{2})/)![1];
+      const diasAtraso = Math.floor(
+        (hoje.getTime() - new Date(dataPrevista + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)
       );
       const cliente = (v.customer as { name?: string } | null)?.name ?? "sem cliente";
       const valor = Number(v.final_amount).toLocaleString("pt-BR", {
@@ -88,20 +96,63 @@ export async function POST() {
 
       await supabaseAdmin.from("notifications").insert({
         type: "sale_delayed",
-        title: "Venda Atrasada",
-        message: `Venda #${v.id} de ${cliente} (${valor}) está pendente há ${dias} dia(s).`,
+        title: "Acerto Atrasado",
+        message: `Consignado #${v.id} de ${cliente} (${valor}) está atrasado há ${diasAtraso} dia(s) — acerto previsto para ${new Date(dataPrevista + "T12:00:00").toLocaleDateString("pt-BR")}.`,
         reference_id: ref,
       });
     }
   }
 
-  // Remove notificações de vendas que foram pagas ou canceladas
-  const refsVendasAtivas = new Set((vendas ?? []).map((v) => `sale_${v.id}`));
+  // Remove notificações de vendas que foram pagas/canceladas ou não estão mais atrasadas
+  const refsVendasAtivas = new Set(vendasAtrasadas.map((v) => `sale_${v.id}`));
   const staleSales = [...existingRefs].filter(
     (r) => typeof r === "string" && r.startsWith("sale_") && !refsVendasAtivas.has(r)
   );
   if (staleSales.length > 0) {
     await supabaseAdmin.from("notifications").delete().in("reference_id", staleSales);
+  }
+
+  // ── Cadastros de clientes desatualizados (6+ meses sem edição) ───────────────
+  const limiteCadastro = new Date();
+  limiteCadastro.setMonth(limiteCadastro.getMonth() - 6);
+
+  const { data: clientesDesatualizados, error: clientesError } = await supabaseAdmin
+    .from("people")
+    .select("id, name, updated_at")
+    .eq("is_active", true)
+    .lt("updated_at", limiteCadastro.toISOString());
+
+  // Se a coluna updated_at ainda não existe (SQL não executado), pula o bloco
+  // sem apagar notificações existentes.
+  if (!clientesError) {
+    const novas = (clientesDesatualizados ?? [])
+      .filter((c) => !existingRefs.has(`customer_${c.id}`))
+      .map((c) => {
+        const meses = Math.floor(
+          (Date.now() - new Date(c.updated_at).getTime()) / (1000 * 60 * 60 * 24 * 30)
+        );
+        return {
+          type: "customer_stale",
+          title: "Cadastro Desatualizado",
+          message: `O cadastro de ${c.name?.trim() || `cliente #${c.id}`} está há ${meses} meses sem atualização. Confirme telefone e endereço.`,
+          reference_id: `customer_${c.id}`,
+        };
+      });
+
+    if (novas.length > 0) {
+      await supabaseAdmin.from("notifications").insert(novas);
+    }
+
+    // Remove notificações de cadastros que foram atualizados (ou inativados)
+    const refsClientesAtivos = new Set(
+      (clientesDesatualizados ?? []).map((c) => `customer_${c.id}`)
+    );
+    const staleCustomers = [...existingRefs].filter(
+      (r) => typeof r === "string" && r.startsWith("customer_") && !refsClientesAtivos.has(r)
+    );
+    if (staleCustomers.length > 0) {
+      await supabaseAdmin.from("notifications").delete().in("reference_id", staleCustomers);
+    }
   }
 
   return NextResponse.json({ ok: true });

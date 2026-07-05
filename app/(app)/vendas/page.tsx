@@ -4,8 +4,16 @@ import { useState, useEffect, useMemo } from "react";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import DevolucaoTrocaModal from "@/components/troca/DevolucaoTrocaModal";
 import Recibo from "@/components/vendas/Recibo";
-import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado } from "@/src/services/sales.service";
+import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
+
+const METODO_LABELS: Record<string, string> = {
+  credit_card: "Crédito",
+  debit: "Débito",
+  cash: "Dinheiro",
+  pix: "PIX",
+  consignado: "Consignado",
+};
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { Sale, ConsignadoItemBreakdown } from "@/types/sales";
@@ -134,6 +142,67 @@ export default function HistoricoVendasCompacto() {
   const fecharPopup = () => {
     setPopupAberto(false);
   };
+
+  // ======= EDIÇÃO DO MÉTODO DE PAGAMENTO =======
+  const [editandoMetodo, setEditandoMetodo] = useState(false);
+  const [novoMetodo, setNovoMetodo] = useState<MetodoPagamento>("cash");
+  const [novaDataMetodoConsignado, setNovaDataMetodoConsignado] = useState("");
+  const [salvandoMetodo, setSalvandoMetodo] = useState(false);
+
+  // Fecha o editor ao trocar de venda selecionada
+  useEffect(() => {
+    setEditandoMetodo(false);
+  }, [selecionada?.id]);
+
+  const executarAlteracaoMetodo = async () => {
+    if (!selecionada) return;
+    fecharPopup();
+    setSalvandoMetodo(true);
+    try {
+      const atualizada = await atualizarMetodoPagamento(
+        selecionada.id,
+        novoMetodo,
+        novoMetodo === 'consignado' ? novaDataMetodoConsignado : undefined
+      );
+      setVendas(prev => prev.map(v => v.id === atualizada.id ? atualizada : v));
+      setSelecionada(atualizada);
+      setEditandoMetodo(false);
+      mostrarToast(`Método de pagamento alterado para ${METODO_LABELS[novoMetodo] || novoMetodo}`, "sucesso");
+    } catch (e: any) {
+      mostrarToast(e.message || "Erro ao alterar método de pagamento", "erro");
+    } finally {
+      setSalvandoMetodo(false);
+    }
+  };
+
+  const handleAlterarMetodo = () => {
+    if (!selecionada) return;
+    if (novoMetodo === selecionada.payment_method) {
+      setEditandoMetodo(false);
+      return;
+    }
+    if (novoMetodo === 'consignado' && !novaDataMetodoConsignado) {
+      mostrarToast("Informe a data prevista de pagamento do consignado", "erro");
+      return;
+    }
+
+    const viraPendente = novoMetodo === 'consignado' && selecionada.payment_status === 'paid';
+    const viraPago = novoMetodo !== 'consignado' && selecionada.payment_status === 'pending';
+
+    if (viraPendente || viraPago) {
+      mostrarPopup(
+        "Alterar método de pagamento",
+        viraPendente
+          ? `A venda #${selecionada.id} passará a ser um consignado PENDENTE, com acerto previsto para ${new Date(novaDataMetodoConsignado + 'T12:00:00').toLocaleDateString('pt-BR')}. Confirmar?`
+          : `A venda #${selecionada.id} deixará de ser consignado e será marcada como PAGA em ${METODO_LABELS[novoMetodo]}. Confirmar?`,
+        "aviso",
+        executarAlteracaoMetodo
+      );
+    } else {
+      executarAlteracaoMetodo();
+    }
+  };
+  // =============================================
 
   // Busca de clientes para edição
   useEffect(() => {
@@ -853,7 +922,65 @@ export default function HistoricoVendasCompacto() {
                     </div>
 
                     <span className="text-zinc-200">·</span>
-                    <span className="shrink-0 capitalize">{selecionada.payment_method || '—'}</span>
+                    {editandoMetodo ? (
+                      <span className="flex items-center gap-1 shrink-0">
+                        <select
+                          value={novoMetodo}
+                          onChange={e => setNovoMetodo(e.target.value as MetodoPagamento)}
+                          className="text-xs border border-indigo-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white text-zinc-800"
+                        >
+                          {Object.entries(METODO_LABELS).map(([valor, label]) => (
+                            <option key={valor} value={valor}>{label}</option>
+                          ))}
+                        </select>
+                        {novoMetodo === 'consignado' && (
+                          <input
+                            type="date"
+                            value={novaDataMetodoConsignado}
+                            onChange={e => setNovaDataMetodoConsignado(e.target.value)}
+                            title="Data prevista do acerto"
+                            className="text-xs border border-orange-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400 bg-white"
+                          />
+                        )}
+                        <button
+                          onClick={handleAlterarMetodo}
+                          disabled={salvandoMetodo}
+                          title="Salvar método de pagamento"
+                          className="text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                        >
+                          {salvandoMetodo ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                        </button>
+                        <button
+                          onClick={() => setEditandoMetodo(false)}
+                          title="Cancelar"
+                          className="text-zinc-400 hover:text-red-500"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ) : selecionada.payment_status === 'cancelled' ? (
+                      <span className="shrink-0 capitalize">
+                        {METODO_LABELS[selecionada.payment_method || ''] || selecionada.payment_method || '—'}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setNovoMetodo((selecionada.payment_method as MetodoPagamento) || "cash");
+                          setNovaDataMetodoConsignado(
+                            extrairDataConsignado(selecionada.observation) ||
+                            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+                          );
+                          setEditandoMetodo(true);
+                        }}
+                        className="shrink-0 flex items-center gap-1 text-zinc-500 hover:text-indigo-600 group transition-colors"
+                        title="Editar método de pagamento"
+                      >
+                        <span className="font-medium text-zinc-600">
+                          {METODO_LABELS[selecionada.payment_method || ''] || selecionada.payment_method || '—'}
+                        </span>
+                        <Pencil size={9} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                      </button>
+                    )}
 
                     {isConsignado(selecionada) && (() => {
                       const dp = extrairDataConsignado(selecionada.observation);

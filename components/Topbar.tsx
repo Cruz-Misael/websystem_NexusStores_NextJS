@@ -9,7 +9,7 @@ import {
   Bell, Search, HelpCircle, Settings, ChevronDown,
   Command, Slash, Menu, Sparkles, LogOut,
   Package, Clock, Check, Trash2, X, Keyboard,
-  RefreshCw, CheckCheck,
+  RefreshCw, CheckCheck, UserRoundPen,
 } from "lucide-react";
 
 const PAGE_NAMES: Record<string, string> = {
@@ -298,10 +298,14 @@ export default function TopbarCompacta({ onOpenPlans }: TopbarProps) {
                           <div className={`mt-0.5 shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
                             n.type === "stock_critical"
                               ? "bg-red-100"
+                              : n.type === "customer_stale"
+                              ? "bg-blue-100"
                               : "bg-amber-100"
                           }`}>
                             {n.type === "stock_critical"
                               ? <Package size={13} className="text-red-500" />
+                              : n.type === "customer_stale"
+                              ? <UserRoundPen size={13} className="text-blue-500" />
                               : <Clock size={13} className="text-amber-500" />
                             }
                           </div>

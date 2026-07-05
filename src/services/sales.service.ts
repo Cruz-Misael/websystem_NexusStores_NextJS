@@ -250,6 +250,93 @@ export async function atualizarVendaConsignado(
   return { success: true, data };
 }
 
+export type MetodoPagamento = 'credit_card' | 'debit' | 'cash' | 'pix' | 'consignado';
+
+/**
+ * Corrige o método de pagamento de uma venda já registrada.
+ * - Para consignado: exige data prevista, muda o status para 'pending' e grava
+ *   o marcador "Venda consignada - Pagamento previsto: ..." na observação.
+ * - Saindo de consignado/pendente para método à vista: marca como 'paid' e
+ *   remove o marcador de consignado (senão a venda continuaria sendo tratada
+ *   como consignado pelas telas).
+ * - Toda alteração deixa trilha de auditoria na observação.
+ */
+export async function atualizarMetodoPagamento(
+  saleId: number,
+  novoMetodo: MetodoPagamento,
+  dataPrevistaConsignado?: string // YYYY-MM-DD, obrigatória ao trocar para consignado
+) {
+  const { data: venda, error: fetchError } = await supabase
+    .from("sales")
+    .select("payment_method, payment_status, observation")
+    .eq("id", saleId)
+    .single();
+
+  if (fetchError || !venda) {
+    throw new Error("Venda não encontrada");
+  }
+  if (venda.payment_status === 'cancelled') {
+    throw new Error("Não é possível alterar o método de uma venda cancelada");
+  }
+  if (venda.payment_method === novoMetodo) {
+    throw new Error("A venda já está com esse método de pagamento");
+  }
+
+  const metodoAntigo = venda.payment_method || "não informado";
+  let observation = venda.observation || "";
+  const patch: {
+    payment_method: string;
+    payment_status?: 'paid' | 'pending';
+    observation?: string;
+  } = { payment_method: novoMetodo };
+
+  if (novoMetodo === 'consignado') {
+    if (!dataPrevistaConsignado) {
+      throw new Error("Informe a data prevista de pagamento do consignado");
+    }
+    patch.payment_status = 'pending';
+    if (/Pagamento previsto: \d{4}-\d{2}-\d{2}/.test(observation)) {
+      observation = observation.replace(
+        /Pagamento previsto: \d{4}-\d{2}-\d{2}/,
+        `Pagamento previsto: ${dataPrevistaConsignado}`
+      );
+      if (!observation.includes("Venda consignada")) {
+        observation = `Venda consignada - ${observation}`;
+      }
+    } else {
+      observation = [`Venda consignada - Pagamento previsto: ${dataPrevistaConsignado}`, observation]
+        .filter(Boolean)
+        .join("\n");
+    }
+  } else {
+    // Corrigindo para método à vista: se estava pendente, considera paga
+    if (venda.payment_status === 'pending') {
+      patch.payment_status = 'paid';
+    }
+    // Remove o marcador de consignado da observação
+    observation = observation
+      .replace(/Venda consignada - Pagamento previsto: \d{4}-\d{2}-\d{2}( - )?/g, "")
+      .replace(/Venda consignada/g, "")
+      .trim();
+  }
+
+  patch.observation = [
+    observation,
+    `[MÉTODO ALTERADO em ${new Date().toLocaleDateString('pt-BR')}: ${metodoAntigo} → ${novoMetodo}]`,
+  ].filter(Boolean).join("\n");
+
+  const { error } = await supabase
+    .from("sales")
+    .update(patch)
+    .eq("id", saleId);
+
+  if (error) {
+    throw new Error(`Erro ao alterar método de pagamento: ${error.message}`);
+  }
+
+  return buscarVendaPorId(saleId);
+}
+
 export async function atualizarDataAcertoConsignado(saleId: number, novaData: string) {
   const { data: venda, error: fetchError } = await supabase
     .from("sales")
