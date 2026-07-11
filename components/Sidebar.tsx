@@ -20,6 +20,9 @@ import {
   ChevronUp,
   BarChart2,
   ShoppingBag,
+  ClipboardList,
+  Factory,
+  Wallet,
   Globe,
   ChevronsLeft,
   ChevronsRight,
@@ -79,13 +82,16 @@ export default function Sidebar() {
   };
 
   const menuItems = [
-    { name: "Dashboard",      icon: LayoutDashboard, href: "/dashboard",   onlineStore: false, adminOnly: false },
-    { name: "Caixa / PDV",   icon: CreditCard,       href: "/caixa",       onlineStore: false, adminOnly: false },
-    { name: "Vendas",         icon: ShoppingCart,     href: "/vendas",      onlineStore: false, adminOnly: false },
-    { name: "Estoque",        icon: Package,          href: "/produtos",    onlineStore: false, adminOnly: false },
-    { name: "Clientes",       icon: Users,            href: "/clientes",    onlineStore: false, adminOnly: false },
-    { name: "Pedidos Online", icon: ShoppingBag,      href: "/pedidos",     onlineStore: true,  adminOnly: true  },
-    { name: "Relatórios",    icon: BarChart2,         href: "/relatorios",  onlineStore: false, adminOnly: false },
+    { name: "Dashboard",      icon: LayoutDashboard, href: "/dashboard",             onlineStore: false, adminOnly: false },
+    { name: "Caixa / PDV",   icon: CreditCard,       href: "/caixa",                 onlineStore: false, adminOnly: false },
+    { name: "Vendas",         icon: ShoppingCart,     href: "/vendas",                onlineStore: false, adminOnly: false },
+    { name: "Estoque",        icon: Package,          href: "/produtos",              onlineStore: false, adminOnly: false },
+    { name: "Compras",        icon: ClipboardList,    href: "/compras/pedidos",       onlineStore: false, adminOnly: false },
+    { name: "Fornecedores",   icon: Factory,          href: "/compras/fornecedores",  onlineStore: false, adminOnly: false },
+    { name: "Financeiro",     icon: Wallet,           href: "/financeiro",            onlineStore: false, adminOnly: false, roles: ["admin", "gerente"] },
+    { name: "Clientes",       icon: Users,            href: "/clientes",              onlineStore: false, adminOnly: false },
+    { name: "Pedidos Online", icon: ShoppingBag,      href: "/pedidos",               onlineStore: true,  adminOnly: true  },
+    { name: "Relatórios",    icon: BarChart2,         href: "/relatorios",            onlineStore: false, adminOnly: false },
   ];
 
   return (
@@ -136,9 +142,11 @@ export default function Sidebar() {
           )}
 
           {menuItems.map((item) => {
-            const isActive = pathname === item.href;
+            const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
             const isEstoque = item.href === "/produtos";
-            const isDisabled = item.adminOnly && user !== null && user.role !== "admin";
+            const roleBlocked =
+              "roles" in item && Array.isArray(item.roles) && user !== null && !item.roles.includes(user.role);
+            const isDisabled = (item.adminOnly && user !== null && user.role !== "admin") || roleBlocked;
 
             if (isDisabled) {
               return (
