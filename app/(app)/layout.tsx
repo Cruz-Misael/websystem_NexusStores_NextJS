@@ -2,12 +2,16 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { SidebarProvider, useSidebar } from "@/src/contexts/SidebarContext";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
-import PlansModal from "@/components/planos/ModalPlanoSaas";
 import BillingGuard from "@/components/billing/BillingGuard";
-import NexusIA from "@/components/ia/NexusIA";
+
+// Carregados sob demanda: o modal de planos só abre por clique, e o widget de IA
+// não é crítico para a primeira renderização. Tira ambos do bundle inicial.
+const PlansModal = dynamic(() => import("@/components/planos/ModalPlanoSaas"), { ssr: false });
+const NexusIA = dynamic(() => import("@/components/ia/NexusIA"), { ssr: false });
 
 function AppLayoutInner({ children }: { children: React.ReactNode }) {
   const [openPlans, setOpenPlans] = useState(false);

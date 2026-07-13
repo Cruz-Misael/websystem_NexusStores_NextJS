@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useDebounce } from "@/src/hooks/useDebounce";
-import DevolucaoTrocaModal from "@/components/troca/DevolucaoTrocaModal";
-import Recibo from "@/components/vendas/Recibo";
+
+// Modais abertos por clique — carregados sob demanda.
+const DevolucaoTrocaModal = dynamic(() => import("@/components/troca/DevolucaoTrocaModal"), { ssr: false });
+const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
 import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 
@@ -26,6 +29,7 @@ import {
   XCircle,
   RotateCcw,
   ChevronRight,
+  ChevronLeft,
   Calendar,
   CreditCard,
   ShoppingCart,
@@ -77,6 +81,13 @@ export default function HistoricoVendasCompacto() {
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroData, setFiltroData] = useState<string>("");
   const [modoConsignado, setModoConsignado] = useState(false);
+
+  // ── Paginação (server-side) ──
+  const ITENS_POR_PAGINA = 30;
+  const [pagina, setPagina] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
+  const [totalVendas, setTotalVendas] = useState(0);
+  const [exportando, setExportando] = useState(false);
 
   // ── Edição de cliente ──
   const [editandoCliente, setEditandoCliente] = useState(false);
@@ -251,15 +262,22 @@ export default function HistoricoVendasCompacto() {
     }
   };
 
-  // Carregar vendas do backend
-  const carregarVendas = async () => {
+  // Carregar vendas do backend (paginado e filtrado no servidor)
+  const carregarVendas = async (paginaAlvo = pagina) => {
     try {
       setCarregando(true);
       setErro(null);
 
-      const result = await listarVendas(1, 100);
+      const result = await listarVendas(paginaAlvo, ITENS_POR_PAGINA, {
+        busca: debouncedBusca,
+        status: filtroStatus,
+        data: filtroData,
+      });
       setVendas(result.sales);
+      setTotalPaginas(result.totalPaginas || 1);
+      setTotalVendas(result.total || 0);
 
+      // Seleciona a primeira da lista quando nada está selecionado
       if (result.sales.length > 0 && !selecionada) {
         setSelecionada(result.sales[0]);
       }
@@ -272,9 +290,27 @@ export default function HistoricoVendasCompacto() {
     }
   };
 
+  // Recarrega ao mudar de página (também faz a carga inicial no mount)
   useEffect(() => {
-    carregarVendas();
-  }, []);
+    carregarVendas(pagina);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagina]);
+
+  // Ao mudar filtros/busca, volta para a página 1 (o efeito acima recarrega).
+  // Ignora a primeira renderização para não duplicar a carga inicial.
+  const primeiraCarga = useRef(true);
+  useEffect(() => {
+    if (primeiraCarga.current) {
+      primeiraCarga.current = false;
+      return;
+    }
+    if (pagina !== 1) {
+      setPagina(1); // dispara o efeito de página acima
+    } else {
+      carregarVendas(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedBusca, filtroStatus, filtroData]);
 
   useEffect(() => {
     setEditandoCliente(false);
@@ -552,23 +588,22 @@ export default function HistoricoVendasCompacto() {
     currency: "BRL"
   }).format(val);
 
-  const vendasFiltradas = useMemo(() =>
-    vendas.filter(v => {
-      const buscaMatch =
-        v.customer?.name?.toLowerCase().includes(debouncedBusca.toLowerCase()) ||
-        v.id.toString().includes(debouncedBusca);
-      const statusMatch = filtroStatus === "todos" || getStatusFromVenda(v) === filtroStatus;
-      const dataMatch = filtroData
-        ? new Date(v.sale_date).toISOString().split('T')[0] === filtroData
-        : true;
-      return buscaMatch && statusMatch && dataMatch;
-    }),
-    [vendas, debouncedBusca, filtroStatus, filtroData]
-  );
+  // A filtragem (busca/status/data) agora é feita no servidor; a lista exibida
+  // já vem filtrada e paginada.
+  const vendasFiltradas = vendas;
 
-  const exportarCSV = () => {
-    const cabecalho = ["ID", "Data", "Cliente", "Itens", "Pagamento", "Status", "Subtotal", "Desconto", "Total"];
-    const linhas = vendasFiltradas.map((v) => [
+  const exportarCSV = async () => {
+    setExportando(true);
+    try {
+      // Exporta TODOS os registros que batem no filtro atual (não só a página).
+      const result = await listarVendas(1, 10000, {
+        busca: debouncedBusca,
+        status: filtroStatus,
+        data: filtroData,
+      });
+      const dados = result.sales as Sale[];
+      const cabecalho = ["ID", "Data", "Cliente", "Itens", "Pagamento", "Status", "Subtotal", "Desconto", "Total"];
+      const linhas = dados.map((v) => [
       v.id,
       new Date(v.sale_date).toLocaleString("pt-BR"),
       v.customer?.name || "Consumidor Final",
@@ -582,13 +617,16 @@ export default function HistoricoVendasCompacto() {
     const csv = [cabecalho, ...linhas]
       .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
       .join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `vendas_${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `vendas_${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportando(false);
+    }
   };
 
   if (carregando && vendas.length === 0) {
@@ -715,10 +753,11 @@ export default function HistoricoVendasCompacto() {
                 <div className="w-px h-4 bg-zinc-200 mx-1" />
                 <button
                   onClick={exportarCSV}
-                  className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors"
-                  title="Exportar CSV"
+                  disabled={exportando}
+                  className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Exportar CSV (todos os registros do filtro)"
                 >
-                  <Download size={16} />
+                  {exportando ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                 </button>
               </div>
             </div>
@@ -764,7 +803,7 @@ export default function HistoricoVendasCompacto() {
               <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
               <p className="text-red-600 text-xs mb-2">{erro}</p>
               <button
-                onClick={carregarVendas}
+                onClick={() => carregarVendas()}
                 className="text-indigo-600 hover:text-indigo-700 text-xs font-medium"
               >
                 Tentar novamente
@@ -831,9 +870,28 @@ export default function HistoricoVendasCompacto() {
           )}
         </div>
 
-        {/* Total de registros */}
-        <div className="p-2 border-t border-gray-100 text-[10px] text-gray-400 text-center bg-gray-50">
-          {vendasFiltradas.length} registro(s) encontrado(s)
+        {/* Paginação + total */}
+        <div className="p-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-2">
+          <button
+            onClick={() => setPagina((p) => Math.max(1, p - 1))}
+            disabled={pagina <= 1 || carregando}
+            className="p-1.5 rounded-md text-zinc-500 hover:text-indigo-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Página anterior"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="text-[10px] text-gray-500 text-center leading-tight">
+            <div>Página {pagina} de {totalPaginas || 1}</div>
+            <div className="text-gray-400">{totalVendas} venda(s)</div>
+          </div>
+          <button
+            onClick={() => setPagina((p) => Math.min(totalPaginas || 1, p + 1))}
+            disabled={pagina >= (totalPaginas || 1) || carregando}
+            className="p-1.5 rounded-md text-zinc-500 hover:text-indigo-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Próxima página"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 

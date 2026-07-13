@@ -37,6 +37,7 @@ export type ClienteForm = {
   estado: string;
   observacoes: string; // observation
   dataNascimento: string; // birth_date
+  limiteVenda: string; // sales_limit
   anexos: File[];
 };
 
@@ -55,6 +56,7 @@ interface PessoaDB {
   state: string | null;
   observation: string | null;
   birth_date: string | null;
+  sales_limit: number | null;
   documents?: Array<{
     id: number;
     document_file: string;
@@ -89,6 +91,7 @@ const estadoInicial: ClienteForm = {
   estado: "",
   observacoes: "",
   dataNascimento: "",
+  limiteVenda: "",
   anexos: [],
 };
 
@@ -141,6 +144,7 @@ export default function ClienteModal({
         estado: pessoa.state || "",
         observacoes: pessoa.observation || "",
         dataNascimento: pessoa.birth_date || "",
+        limiteVenda: pessoa.sales_limit != null ? String(pessoa.sales_limit) : "",
         anexos: [],
       });
       
@@ -193,6 +197,9 @@ export default function ClienteModal({
         state: form.estado || null,
         observation: form.observacoes || null,
         birth_date: form.dataNascimento || null,
+        sales_limit: form.limiteVenda.trim()
+          ? parseFloat(form.limiteVenda.replace(",", "."))
+          : null,
       };
 
       console.log("Dados a serem salvos:", pessoaData);
@@ -379,6 +386,14 @@ export default function ClienteModal({
                     value={form.dataNascimento}
                     placeholder=""
                     onChange={(v) => handleChange("dataNascimento", v)}
+                  />
+
+                  <Input
+                    label="Limite de Venda (R$)"
+                    type="number"
+                    value={form.limiteVenda}
+                    placeholder="Vazio = sem limite"
+                    onChange={(v) => handleChange("limiteVenda", v)}
                   />
                 </div>
               </section>

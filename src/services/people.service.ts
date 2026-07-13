@@ -45,6 +45,25 @@ export async function atualizarPessoa(id: number, pessoa: any) {
 }
 
 /* =========================
+   ATUALIZAR LIMITE DE VENDA (cliente novo)
+========================= */
+export async function atualizarLimiteCliente(id: number, salesLimit: number | null) {
+  const { data, error } = await supabase
+    .from("people")
+    .update({ sales_limit: salesLimit })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) {
+    console.error("Erro ao atualizar limite do cliente:", error);
+    throw new Error(`Erro ao atualizar limite: ${error.message}`);
+  }
+
+  return data;
+}
+
+/* =========================
    BUSCAR POR ID
 ========================= */
 export async function buscarPessoaPorId(id: number) {
@@ -123,39 +142,11 @@ export async function listarPessoasPaginado(
     throw new Error(pessoasError.message);
   }
 
-  if (!pessoas || pessoas.length === 0) {
-    return {
-      pessoas: [],
-      total: count || 0,
-      pagina,
-      totalPaginas: Math.ceil((count || 0) / itensPorPagina),
-      itensPorPagina,
-    };
-  }
-
-  // Para cada pessoa, busca seus documentos usando people_id
-  const pessoasComDocs = await Promise.all(
-    pessoas.map(async (pessoa) => {
-      const { data: documentos, error: docsError } = await supabase
-        .from("documents")
-        .select("*")
-        .eq("people_id", pessoa.id) // Nome correto da coluna
-        .order("created_at", { ascending: false });
-
-      if (docsError) {
-        console.error(`Erro ao buscar docs da pessoa ${pessoa.id}:`, docsError);
-        return { ...pessoa, documents: [] };
-      }
-
-      return {
-        ...pessoa,
-        documents: documentos || []
-      };
-    })
-  );
-
+  // Não buscamos os documentos aqui: a lista de clientes não os exibe, e antes
+  // isso disparava 1 query por pessoa (N+1) trazendo blobs base64 à toa. Os
+  // documentos são carregados sob demanda ao abrir um cliente (buscarPessoaPorId).
   return {
-    pessoas: pessoasComDocs,
+    pessoas: pessoas || [],
     total: count || 0,
     pagina,
     totalPaginas: Math.ceil((count || 0) / itensPorPagina),

@@ -1,10 +1,13 @@
 "use client";
 import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useDebounce } from "@/src/hooks/useDebounce";
-import ClienteModal from "@/components/clientes/ClienteModal";
-import VisualizarDocumento from "@/components/clientes/VisualizarDocumento";
 import PopupConfirmacao from "@/components/clientes/PopupConfirmacao";
 import { History } from "lucide-react";
+
+// Modais abertos por clique (o de documento carrega base64) — sob demanda.
+const ClienteModal = dynamic(() => import("@/components/clientes/ClienteModal"), { ssr: false });
+const VisualizarDocumento = dynamic(() => import("@/components/clientes/VisualizarDocumento"), { ssr: false });
 import {
   Search,
   Mail,
