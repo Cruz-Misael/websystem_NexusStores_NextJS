@@ -61,11 +61,15 @@ import {
   Tag,
   Percent,
   ToggleLeft,
+  BarChart3,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { BillingService, BillingConfig, calcularProximoVencimento, calcularStatus } from '@/src/services/billing.service';
 import { getWebsiteConfig, upsertWebsiteConfig, uploadBanner, WebsiteConfig } from '@/src/services/website.service';
+// Aba de gráficos (recharts) carregada só quando aberta — fora do bundle inicial.
+const IndicadoresSite = dynamic(() => import('@/components/configuracoes/IndicadoresSite'), { ssr: false });
 
-type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'meusite' | 'frete' | 'descontos';
+type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'meusite' | 'frete' | 'descontos' | 'indicadores';
 type UsuarioCargo = 'admin' | 'gerente' | 'colaborador';
 type UsuarioStatus = 'ativo' | 'inativo' | 'pendente';
 
@@ -121,7 +125,7 @@ function ConfiguracoesContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'meusite' || tab === 'frete' || tab === 'descontos') return tab as TabType;
+    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'meusite' || tab === 'frete' || tab === 'descontos' || tab === 'indicadores') return tab as TabType;
     return 'loja';
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -726,6 +730,7 @@ function ConfiguracoesContent() {
     { id: 'meusite' as TabType, label: 'Meu Site', icon: Store, desc: 'Loja virtual pública', onlineStore: true, disabled: !isAdmin },
     { id: 'frete' as TabType, label: 'Frete', icon: Truck, desc: 'Envio e Melhor Envio', onlineStore: true, disabled: !isAdmin },
     { id: 'descontos' as TabType, label: 'Descontos', icon: Tag, desc: 'Cupons e promoções', onlineStore: true, disabled: !isAdmin },
+    { id: 'indicadores' as TabType, label: 'Indicadores', icon: BarChart3, desc: 'Acessos e visitas do site', onlineStore: true, disabled: !isAdmin },
   ];
 
   return (
@@ -826,6 +831,9 @@ function ConfiguracoesContent() {
 
         <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-8 min-h-0">
           <div className="max-w-4xl mx-auto">
+
+            {/* ===== ABA INDICADORES DO SITE ===== */}
+            {activeTab === 'indicadores' && <IndicadoresSite />}
 
             {/* ===== ABA LOJA ===== */}
             {activeTab === 'loja' && (

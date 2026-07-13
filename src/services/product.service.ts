@@ -1,6 +1,11 @@
 // product.service.ts - CORRIGIDO
 import { supabase } from "@/src/lib/supabase/client";
 
+// Colunas para listagens — exclui a coluna `imagem` (base64 pesado), que só é
+// necessária ao editar um produto (carregada sob demanda via buscarProdutoPorSKU).
+const LIST_COLUMNS =
+  "sku, name, category, supplier, localizacao, price, cost, stock_quantity, minimum_stock, maximum_stock, barcode, created_at, description, color, size, units_type, is_active";
+
 export async function criarProduto(produto: any) {
   // Remover campos undefined
   const produtoParaInserir = { ...produto };
@@ -86,7 +91,7 @@ export async function listarProdutos() {
 
   const { data, error } = await supabase
     .from("products")
-    .select("*")
+    .select(LIST_COLUMNS)
     .order("created_at", { ascending: false })
     .limit(1000);
 
@@ -111,7 +116,7 @@ export async function listarProdutosPaginado(
 
   let query = supabase
     .from("products")
-    .select("*", { count: 'exact' })
+    .select(LIST_COLUMNS, { count: 'exact' })
     .order("created_at", { ascending: false });
 
   if (busca && busca.trim()) {

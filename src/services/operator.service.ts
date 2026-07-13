@@ -73,3 +73,14 @@ export async function deletarOperador(id: string): Promise<void> {
     .eq("id", id);
   if (error) throw new Error(`Erro ao deletar operador: ${error.message}`);
 }
+
+/**
+ * Valida se o PIN informado pertence a algum operador ATIVO com categoria
+ * "manager" (Gerente). Usa a função Postgres validate_manager_pin, mantendo
+ * os PINs no servidor (o front nunca recebe a lista de PINs).
+ */
+export async function validarPinGerente(pin: string): Promise<boolean> {
+  const { data, error } = await supabase.rpc("validate_manager_pin", { p_pin: pin });
+  if (error) throw new Error(`Erro ao validar PIN: ${error.message}`);
+  return data === true;
+}

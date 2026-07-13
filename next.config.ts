@@ -5,6 +5,20 @@ const nextConfig: NextConfig = {
   compress: true,
   // Não expor o header X-Powered-By (fingerprinting)
   poweredByHeader: false,
+  // Melhora o tree-shaking/chunking destas libs (imports de barril → submódulos)
+  experimental: {
+    optimizePackageImports: [
+      'lucide-react',
+      'recharts',
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-tabs',
+    ],
+  },
+  // Remove console.* do bundle de produção (mantém console.error)
+  compiler: {
+    removeConsole: { exclude: ['error'] },
+  },
   images: {
     remotePatterns: [
       {

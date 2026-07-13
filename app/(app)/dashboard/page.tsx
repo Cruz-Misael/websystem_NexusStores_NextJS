@@ -18,7 +18,12 @@ import {
   AlertTriangle,
   Wallet,
   Loader2,
-  UserCog
+  UserCog,
+  Store,
+  Globe,
+  CreditCard,
+  Download,
+  Crown,
 } from "lucide-react";
 import {
   AreaChart,
@@ -36,6 +41,7 @@ import {
   Legend
 } from "recharts";
 import {
+  fetchDashboardSales,
   getDashboardKPIs,
   getFinancialPerformance,
   getSalesByCategory,
@@ -43,6 +49,9 @@ import {
   getSalesByHour,
   getStockRuptureKPI,
   getSalesByOperator,
+  getTopCustomers,
+  getSalesBySource,
+  getSalesByPaymentMethod,
 } from "@/src/services/sales.service";
 
 // --- TIPOS DE DADOS ---
@@ -84,6 +93,22 @@ interface OperatorData {
   faturamento: number;
   ticketMedio: number;
 }
+interface CustomerData {
+  id: number;
+  nome: string;
+  vendas: number;
+  faturamento: number;
+}
+interface SourceData {
+  loja: { vendas: number; faturamento: number };
+  site: { vendas: number; faturamento: number };
+}
+interface PaymentData {
+  metodo: string;
+  vendas: number;
+  faturamento: number;
+  color: string;
+}
 
 export default function DashboardExecutive() {
   const router = useRouter();
@@ -96,6 +121,11 @@ export default function DashboardExecutive() {
   const [salesByHour, setSalesByHour] = useState<SalesByHourData[]>([]);
   const [stockRupture, setStockRupture] = useState<StockRuptureData | null>(null);
   const [operatorData, setOperatorData] = useState<OperatorData[]>([]);
+  const [topCustomers, setTopCustomers] = useState<CustomerData[]>([]);
+  const [sourceData, setSourceData] = useState<SourceData | null>(null);
+  const [paymentData, setPaymentData] = useState<PaymentData[]>([]);
+  const [kpiAnterior, setKpiAnterior] = useState<KpiData | null>(null);
+  const [periodoDias, setPeriodoDias] = useState(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,37 +143,62 @@ export default function DashboardExecutive() {
 
         const endDate = new Date();
         const startDate = new Date();
-        startDate.setDate(endDate.getDate() - 30);
+        startDate.setDate(endDate.getDate() - periodoDias);
         const periodo = {
           inicio: startDate.toISOString(),
           fim: endDate.toISOString(),
         };
 
+        // Período imediatamente anterior, de mesma duração, para comparação
+        const prevEnd = new Date(startDate);
+        const prevStart = new Date(startDate);
+        prevStart.setDate(prevStart.getDate() - periodoDias);
+        const periodoAnterior = {
+          inicio: prevStart.toISOString(),
+          fim: prevEnd.toISOString(),
+        };
+
+        // Uma única leitura das vendas do período; todos os indicadores abaixo
+        // são calculados a partir dela (antes eram ~10 consultas separadas).
+        const vendasPeriodo = await fetchDashboardSales(periodo);
+
         const [
           kpiResult,
+          kpiAnteriorResult,
           financialResult,
           categoryResult,
           topProductsResult,
           salesByHourResult,
           stockRuptureResult,
           operatorResult,
+          topCustomersResult,
+          sourceResult,
+          paymentResult,
         ] = await Promise.all([
-          getDashboardKPIs(periodo),
-          getFinancialPerformance(periodo),
-          getSalesByCategory(periodo),
-          getTopPerformingProducts(periodo),
-          getSalesByHour(periodo),
+          getDashboardKPIs(periodo, vendasPeriodo),
+          getDashboardKPIs(periodoAnterior),
+          getFinancialPerformance(periodo, vendasPeriodo),
+          getSalesByCategory(periodo, vendasPeriodo),
+          getTopPerformingProducts(periodo, 4, vendasPeriodo),
+          getSalesByHour(periodo, vendasPeriodo),
           getStockRuptureKPI(),
-          getSalesByOperator(periodo),
+          getSalesByOperator(periodo, vendasPeriodo),
+          getTopCustomers(periodo, 5, vendasPeriodo),
+          getSalesBySource(periodo, vendasPeriodo),
+          getSalesByPaymentMethod(periodo, vendasPeriodo),
         ]);
 
         setKpiData(kpiResult);
+        setKpiAnterior(kpiAnteriorResult);
         setFinancialData(financialResult);
         setCategoryData(categoryResult);
         setTopProducts(topProductsResult);
         setSalesByHour(salesByHourResult);
         setStockRupture(stockRuptureResult);
         setOperatorData(operatorResult);
+        setTopCustomers(topCustomersResult);
+        setSourceData(sourceResult);
+        setPaymentData(paymentResult);
 
       } catch (err: any) {
         setError(err.message || "Erro ao buscar dados do dashboard.");
@@ -154,7 +209,54 @@ export default function DashboardExecutive() {
     };
 
     fetchDashboardData();
-  }, []);
+  }, [periodoDias]);
+
+  // Rótulo do período (usado em subtítulos)
+  const periodoLabel = `últimos ${periodoDias} dias`;
+
+  // Calcula a variação percentual vs período anterior para as setas de tendência
+  const calcTrend = (atual: number | undefined, anterior: number | undefined) => {
+    if (atual == null || anterior == null || anterior === 0) return {};
+    const pct = ((atual - anterior) / anterior) * 100;
+    return { trend: pct >= 0 ? "up" : "down", trendValue: Math.abs(pct).toFixed(1) };
+  };
+
+  // Exporta um resumo do dashboard em CSV (separador ';' + BOM, amigável ao Excel BR)
+  const exportarCSV = () => {
+    const linhas: string[][] = [
+      ["Resumo do Dashboard", `Últimos ${periodoDias} dias`],
+      [],
+      ["Indicador", "Valor"],
+      ["Faturamento Bruto", String(kpiData?.faturamentoBruto ?? 0)],
+      ["Total de Vendas", String(kpiData?.totalVendas ?? 0)],
+      ["Ticket Médio", String((kpiData?.ticketMedio ?? 0).toFixed(2))],
+      ["Rupturas de Estoque", String(stockRupture?.rupturas ?? 0)],
+      [],
+      ["Origem", "Vendas", "Faturamento"],
+      ["Loja Física", String(sourceData?.loja.vendas ?? 0), String((sourceData?.loja.faturamento ?? 0).toFixed(2))],
+      ["Site", String(sourceData?.site.vendas ?? 0), String((sourceData?.site.faturamento ?? 0).toFixed(2))],
+      [],
+      ["Forma de Pagamento", "Vendas", "Faturamento"],
+      ...paymentData.map((p) => [p.metodo, String(p.vendas), String(p.faturamento.toFixed(2))]),
+      [],
+      ["Top Produtos", "Vendas", "Receita", "Margem %"],
+      ...topProducts.map((p) => [p.nome, String(p.vendas), String(p.receita.toFixed(2)), String(p.margem)]),
+      [],
+      ["Top Clientes", "Vendas", "Faturamento"],
+      ...topCustomers.map((c) => [c.nome, String(c.vendas), String(c.faturamento.toFixed(2))]),
+      [],
+      ["Operador", "Vendas", "Faturamento", "Ticket Médio"],
+      ...operatorData.map((o) => [o.nome, String(o.vendas), String(o.faturamento.toFixed(2)), String(o.ticketMedio.toFixed(2))]),
+    ];
+    const csv = linhas.map((l) => l.join(";")).join("\n");
+    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `dashboard-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   // Componente de Card KPI (Refinado)
   const KpiCard = ({ title, value, subtext, icon: Icon, trend, trendValue, colorClass, isLoading, onClick }: any) => (
@@ -214,12 +316,31 @@ export default function DashboardExecutive() {
         </div>
 
         <div className="flex items-center gap-3">
-          <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-zinc-50 border border-zinc-200 rounded-md text-xs font-medium text-zinc-600">
-            <Calendar size={14} className="text-zinc-400" />
-            <span>Este Mês</span>
+          <div className="flex items-center gap-1 bg-zinc-50 border border-zinc-200 rounded-lg p-1">
+            {[
+              { label: "7 dias", dias: 7 },
+              { label: "30 dias", dias: 30 },
+              { label: "90 dias", dias: 90 },
+            ].map((p) => (
+              <button
+                key={p.dias}
+                onClick={() => setPeriodoDias(p.dias)}
+                disabled={loading}
+                className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all disabled:opacity-50 ${
+                  periodoDias === p.dias ? "bg-indigo-600 text-white shadow-sm" : "text-zinc-500 hover:bg-zinc-100"
+                }`}
+              >
+                {p.label}
+              </button>
+            ))}
           </div>
-          <button className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide shadow-sm shadow-indigo-200 transition-all active:scale-95">
-            Exportar Relatório
+          <button
+            onClick={exportarCSV}
+            disabled={loading || !kpiData}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-xs font-bold uppercase tracking-wide shadow-sm shadow-indigo-200 transition-all active:scale-95 disabled:opacity-50 flex items-center gap-2"
+          >
+            <Download size={14} />
+            Exportar
           </button>
         </div>
       </div>
@@ -229,33 +350,30 @@ export default function DashboardExecutive() {
         
         {/* 1. KPIs FINANCEIROS (O CORAÇÃO DO NEGÓCIO) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KpiCard 
-            title="Faturamento Bruto" 
+          <KpiCard
+            title="Faturamento Bruto"
             value={kpiData ? formatCurrency(kpiData.faturamentoBruto) : "..."}
-            subtext="Nos últimos 30 dias"
-            icon={DollarSign} 
-            // trend="up" (lógica de tendência a ser implementada)
-            // trendValue="12.5"
+            subtext={`Nos ${periodoLabel}`}
+            icon={DollarSign}
+            {...calcTrend(kpiData?.faturamentoBruto, kpiAnterior?.faturamentoBruto)}
             colorClass="bg-indigo-100 text-indigo-700"
             isLoading={loading}
           />
-          <KpiCard 
-            title="Total de Vendas" 
+          <KpiCard
+            title="Total de Vendas"
             value={kpiData ? kpiData.totalVendas.toString() : "..."}
-            subtext="Vendas pagas nos últimos 30 dias"
-            icon={ShoppingBag} 
-            // trend="up"
-            // trendValue="8.2"
+            subtext={`Vendas pagas nos ${periodoLabel}`}
+            icon={ShoppingBag}
+            {...calcTrend(kpiData?.totalVendas, kpiAnterior?.totalVendas)}
             colorClass="bg-emerald-100 text-emerald-700"
             isLoading={loading}
           />
-          <KpiCard 
-            title="Ticket Médio" 
+          <KpiCard
+            title="Ticket Médio"
             value={kpiData ? formatCurrency(kpiData.ticketMedio) : "..."}
             subtext="Valor médio por venda"
-            icon={Wallet} 
-            // trend="down"
-            // trendValue="2.1"
+            icon={Wallet}
+            {...calcTrend(kpiData?.ticketMedio, kpiAnterior?.ticketMedio)}
             colorClass="bg-amber-100 text-amber-700"
             isLoading={loading}
           />
@@ -282,7 +400,7 @@ export default function DashboardExecutive() {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Performance Financeira</h3>
-                <p className="text-xs text-zinc-500">Receita vs Custo nos últimos 30 dias</p>
+                <p className="text-xs text-zinc-500">Receita vs Custo nos {periodoLabel}</p>
               </div>
               <div className="flex gap-2">
                 <div className="flex items-center gap-1.5 text-xs">
@@ -482,6 +600,137 @@ export default function DashboardExecutive() {
 
         </div>
 
+        {/* 5. ORIGEM · PAGAMENTO · TOP CLIENTES */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+
+          {/* ORIGEM DAS VENDAS: LOJA FÍSICA x SITE */}
+          <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-5">
+              <div className="p-2 rounded-lg bg-indigo-50"><Globe size={16} className="text-indigo-600" /></div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Origem das Vendas</h3>
+                <p className="text-xs text-zinc-500">Loja física × Site</p>
+              </div>
+            </div>
+            {loading || !sourceData ? (
+              <div className="space-y-4">
+                {Array.from({ length: 2 }).map((_, i) => <div key={i} className="h-14 bg-zinc-100 rounded-lg animate-pulse" />)}
+              </div>
+            ) : (() => {
+              const totalFat = sourceData.loja.faturamento + sourceData.site.faturamento;
+              const linha = (
+                label: string,
+                icon: React.ReactNode,
+                dados: { vendas: number; faturamento: number },
+                cor: string
+              ) => {
+                const pct = totalFat > 0 ? (dados.faturamento / totalFat) * 100 : 0;
+                return (
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="flex items-center gap-2 text-sm font-semibold text-zinc-700">{icon}{label}</span>
+                      <span className="text-sm font-black text-zinc-900">{formatCurrency(dados.faturamento)}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-2 bg-zinc-100 rounded-full overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: cor }} />
+                      </div>
+                      <span className="text-[11px] font-bold text-zinc-500 w-24 text-right shrink-0">{dados.vendas} venda{dados.vendas !== 1 ? "s" : ""} · {pct.toFixed(0)}%</span>
+                    </div>
+                  </div>
+                );
+              };
+              return (
+                <div className="space-y-5">
+                  {linha("Loja Física", <Store size={15} className="text-indigo-500" />, sourceData.loja, "#4f46e5")}
+                  {linha("Site", <Globe size={15} className="text-cyan-500" />, sourceData.site, "#06b6d4")}
+                  {totalFat === 0 && <p className="text-xs text-zinc-400 text-center pt-2">Nenhuma venda no período</p>}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* FORMAS DE PAGAMENTO */}
+          <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-5">
+              <div className="p-2 rounded-lg bg-emerald-50"><CreditCard size={16} className="text-emerald-600" /></div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Formas de Pagamento</h3>
+                <p className="text-xs text-zinc-500">Faturamento por método</p>
+              </div>
+            </div>
+            {loading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-6 bg-zinc-100 rounded animate-pulse" />)}
+              </div>
+            ) : paymentData.length === 0 ? (
+              <p className="text-xs text-zinc-400 text-center py-8">Nenhuma venda no período</p>
+            ) : (() => {
+              const total = paymentData.reduce((acc, p) => acc + p.faturamento, 0);
+              return (
+                <div className="space-y-3">
+                  {paymentData.map((p) => {
+                    const pct = total > 0 ? (p.faturamento / total) * 100 : 0;
+                    return (
+                      <div key={p.metodo}>
+                        <div className="flex justify-between text-xs mb-1">
+                          <span className="flex items-center gap-2 font-medium text-zinc-700">
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ background: p.color }} />
+                            {p.metodo}
+                          </span>
+                          <span className="font-bold text-zinc-900">{formatCurrency(p.faturamento)}</span>
+                        </div>
+                        <div className="h-1.5 bg-zinc-100 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, backgroundColor: p.color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* TOP CLIENTES */}
+          <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm">
+            <div className="flex items-center gap-2 mb-5">
+              <div className="p-2 rounded-lg bg-amber-50"><Crown size={16} className="text-amber-600" /></div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Top Clientes</h3>
+                <p className="text-xs text-zinc-500">Maiores compradores do período</p>
+              </div>
+            </div>
+            {loading ? (
+              <div className="space-y-3">
+                {Array.from({ length: 5 }).map((_, i) => <div key={i} className="h-9 bg-zinc-100 rounded animate-pulse" />)}
+              </div>
+            ) : topCustomers.length === 0 ? (
+              <div className="py-8 text-center">
+                <Users className="mx-auto mb-2 text-zinc-200" size={32} />
+                <p className="text-xs text-zinc-400">Nenhuma venda com cliente identificado</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {topCustomers.map((c, index) => (
+                  <div key={c.id} className="flex items-center gap-3 py-1.5">
+                    <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[11px] font-black shrink-0 ${
+                      index === 0 ? "bg-amber-100 text-amber-700" :
+                      index === 1 ? "bg-zinc-200 text-zinc-600" :
+                      index === 2 ? "bg-orange-100 text-orange-700" :
+                      "bg-zinc-100 text-zinc-500"
+                    }`}>{index + 1}</div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold text-zinc-800 truncate">{c.nome}</p>
+                      <p className="text-[10px] text-zinc-400">{c.vendas} compra{c.vendas !== 1 ? "s" : ""}</p>
+                    </div>
+                    <span className="text-sm font-black text-zinc-900 shrink-0">{formatCurrency(c.faturamento)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
         {/* 6. DESEMPENHO POR OPERADOR */}
         <div className="bg-white p-5 rounded-xl border border-zinc-200 shadow-sm">
           <div className="flex justify-between items-center mb-5">
@@ -491,7 +740,7 @@ export default function DashboardExecutive() {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-zinc-800 uppercase tracking-wide">Desempenho por Operador</h3>
-                <p className="text-xs text-zinc-500">Vendas atribuídas nos últimos 30 dias</p>
+                <p className="text-xs text-zinc-500">Vendas atribuídas nos {periodoLabel}</p>
               </div>
             </div>
           </div>

@@ -112,9 +112,9 @@ export async function POST() {
     await supabaseAdmin.from("notifications").delete().in("reference_id", staleSales);
   }
 
-  // ── Cadastros de clientes desatualizados (6+ meses sem edição) ───────────────
+  // ── Cadastros de clientes desatualizados (3+ meses sem edição) ───────────────
   const limiteCadastro = new Date();
-  limiteCadastro.setMonth(limiteCadastro.getMonth() - 6);
+  limiteCadastro.setMonth(limiteCadastro.getMonth() - 3);
 
   const { data: clientesDesatualizados, error: clientesError } = await supabaseAdmin
     .from("people")
