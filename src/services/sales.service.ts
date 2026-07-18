@@ -293,13 +293,21 @@ export async function atualizarVendaConsignado(
     observation?: string;
     consignado_commission_percent?: number;
     consignado_net_before_commission?: number;
+    settled_at?: string | null;
   }
 ) {
   console.log(`Finalizando consignado da venda ${saleId}`, dados);
 
+  // Registra a data de fechamento quando o consignado é marcado como pago
+  // (usada nos relatórios como a data efetiva da venda). Ao reabrir, limpa.
+  const payload = { ...dados };
+  if (!("settled_at" in payload)) {
+    payload.settled_at = dados.payment_status === "paid" ? new Date().toISOString() : null;
+  }
+
   const { data, error } = await supabase
     .from("sales")
-    .update(dados)
+    .update(payload)
     .eq("id", saleId)
     .select();
 
@@ -497,6 +505,17 @@ export async function atualizarClienteVenda(saleId: number, customerId: number |
   const { error } = await supabase
     .from("sales")
     .update({ customer_id: customerId })
+    .eq("id", saleId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
+// Observação interna da venda — texto livre manual, NÃO impresso na notinha.
+export async function atualizarNotaInterna(saleId: number, note: string | null) {
+  const { error } = await supabase
+    .from("sales")
+    .update({ internal_note: note && note.trim() ? note.trim() : null })
     .eq("id", saleId);
 
   if (error) throw error;
@@ -1001,8 +1020,8 @@ export async function getTopProductsByCustomer(
     `)
     .eq("payment_status", "paid")
     .not("customer_id", "is", null)
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
+    // Período considera a data do acerto (settled_at) no consignado; senão a data da venda.
+    .or(`and(settled_at.gte.${periodo.inicio},settled_at.lte.${periodo.fim}),and(settled_at.is.null,sale_date.gte.${periodo.inicio},sale_date.lte.${periodo.fim})`);
 
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) return [];
@@ -1101,6 +1120,7 @@ export async function getConsignadosFechados(
     .select(`
       id,
       sale_date,
+      settled_at,
       total_amount,
       final_amount,
       observation,
@@ -1111,8 +1131,8 @@ export async function getConsignadosFechados(
     `)
     .eq("payment_status", "paid")
     .or("payment_method.eq.consignado,consignado_net_before_commission.not.is.null")
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
+    // Período considera a data de fechamento (settled_at) quando existir; senão a data da venda.
+    .or(`and(settled_at.gte.${periodo.inicio},settled_at.lte.${periodo.fim}),and(settled_at.is.null,sale_date.gte.${periodo.inicio},sale_date.lte.${periodo.fim})`);
 
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) return [];
@@ -1137,7 +1157,8 @@ export async function getConsignadosFechados(
     const percentualVendas = valorKit > 0 ? (saldo / valorKit) * 100 : 0;
 
     const dataAceite = extrairDataPrevista(sale.observation);
-    const baseData = (dataAceite || sale.sale_date || "").slice(0, 10); // YYYY-MM-DD
+    // Data efetiva do relatório: fechamento (settled_at) quando houver, senão a data da venda.
+    const baseData = (sale.settled_at || sale.sale_date || "").slice(0, 10); // YYYY-MM-DD
     const [ano, mesNum] = baseData.split("-");
     const mesIdx = parseInt(mesNum || "1", 10) - 1;
     const mes = `${MESES_ABREV[mesIdx] ?? mesNum}/${ano}`;

@@ -135,11 +135,11 @@ export async function getRelatorioFinanceiroMensal(
   for (let page = 0; ; page++) {
     const { data, error } = await supabase
       .from("sales")
-      .select("id, sale_date, final_amount, items:sale_items(quantity, unit_cost)")
+      .select("id, sale_date, settled_at, final_amount, items:sale_items(quantity, unit_cost)")
       .eq("payment_status", "paid")
-      .gte("sale_date", periodo.inicio)
-      .lte("sale_date", periodo.fim)
-      .order("sale_date")
+      // Data efetiva = fechamento do consignado (settled_at) quando houver; senão a data da venda.
+      .or(`and(settled_at.gte.${periodo.inicio},settled_at.lte.${periodo.fim}),and(settled_at.is.null,sale_date.gte.${periodo.inicio},sale_date.lte.${periodo.fim})`)
+      .order("id")
       .range(page * 1000, page * 1000 + 999);
 
     if (error) throw new Error(error.message);
@@ -168,7 +168,8 @@ export async function getRelatorioFinanceiroMensal(
 
   const meses = new Map<string, FinanceiroMensal>();
   for (const v of vendas) {
-    const key = String(v.sale_date).slice(0, 7); // YYYY-MM
+    // Agrupa pela data efetiva: fechamento do consignado quando houver, senão a data da venda.
+    const key = String(v.settled_at || v.sale_date).slice(0, 7); // YYYY-MM
     let m = meses.get(key);
     if (!m) {
       const [ano, mesNum] = key.split("-");

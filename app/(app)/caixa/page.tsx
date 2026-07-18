@@ -48,6 +48,7 @@ interface Cliente {
   email?: string;
   phone?: string;
   sales_limit?: number | null;
+  person_type?: string | null;
 }
 
 export default function CaixaPDVPro() {
@@ -92,7 +93,7 @@ export default function CaixaPDVPro() {
   // Modal de consignado
   const [mostrarModalConsignado, setMostrarModalConsignado] = useState(false);
   const [dataPrevistaPagamento, setDataPrevistaPagamento] = useState("");
-  const [observacaoConsignado, setObservacaoConsignado] = useState(`OBRIGAÇÕES DA CONSIGNATÁRIA\n\n• Cuidados com o material:\n  - Manter as peças em perfeito estado, sem amassar, sujar ou danificar.\n  - Conferir as peças recebidas, confirmar a quantidade e dar OK do recebimento.\n  - Organizar adequadamente para devolução.\n\n• Controle de vendas:\n  - Passar a data do Acerto em até 3 dias após recebimento do Kit.\n  - Enviar relação detalhada das vendas até 3 dias antes do pagamento.\n  - Informar: descrição, quantidade e valor unitário dos itens vendidos.\n\n• Devolução:\n  - Restituir todos os itens não vendidos nas mesmas condições de recebimento.\n  - Cumprir prazo estipulado para devolução.\n  - Multas por atraso: 5% do valor total do kit até 3 dias | 10% após 3 dias.\n\n• Responsabilidade por danos/perdas:\n  - Indenização integral pelo valor do kit em caso de: danos irreparáveis, extravio de peças ou devolução em condições inadequadas.\n\nDe Acordo: __________________________`);
+  const [observacaoConsignado, setObservacaoConsignado] = useState("");
 
   // Modal de produto sem estoque
   const [produtoSemEstoque, setProdutoSemEstoque] = useState<any | null>(null);
@@ -1092,7 +1093,12 @@ export default function CaixaPDVPro() {
                   onClick={() => selecionarCliente(cliente)}
                   className="w-full text-left p-3 hover:bg-indigo-50 rounded-lg transition-colors border-b border-zinc-100 last:border-0"
                 >
-                  <p className="font-medium text-zinc-800">{cliente.name}</p>
+                  <p className="font-medium text-zinc-800 flex items-center gap-1.5">
+                    <span className="truncate">{cliente.name}</span>
+                    {cliente.person_type === "consultora" && (
+                      <span className="shrink-0 text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase tracking-wide">Consultor(a)</span>
+                    )}
+                  </p>
                   <p className="text-xs text-zinc-500 truncate">
                     {cliente.phone && `${cliente.phone} • `}
                     {cliente.email}
@@ -1270,7 +1276,7 @@ export default function CaixaPDVPro() {
                 onClick={() => {
                   setMostrarModalConsignado(false);
                   setDataPrevistaPagamento("");
-                  setObservacaoConsignado(`OBRIGAÇÕES DA CONSIGNATÁRIA\n\n• Cuidados com o material:\n  - Manter as peças em perfeito estado, sem amassar, sujar ou danificar.\n  - Conferir as peças recebidas, confirmar a quantidade e dar OK do recebimento.\n  - Organizar adequadamente para devolução.\n\n• Controle de vendas:\n  - Passar a data do Acerto em até 3 dias após recebimento do Kit.\n  - Enviar relação detalhada das vendas até 3 dias antes do pagamento.\n  - Informar: descrição, quantidade e valor unitário dos itens vendidos.\n\n• Devolução:\n  - Restituir todos os itens não vendidos nas mesmas condições de recebimento.\n  - Cumprir prazo estipulado para devolução.\n  - Multas por atraso: 5% do valor total do kit até 3 dias | 10% após 3 dias.\n\n• Responsabilidade por danos/perdas:\n  - Indenização integral pelo valor do kit em caso de: danos irreparáveis, extravio de peças ou devolução em condições inadequadas.\n\nDe Acordo: __________________________`);
+                  setObservacaoConsignado("");
                   setPagamentoAtivo('credito');
                 }}
                 className="px-5 py-2.5 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"

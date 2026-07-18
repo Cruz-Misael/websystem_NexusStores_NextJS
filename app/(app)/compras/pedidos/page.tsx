@@ -572,10 +572,18 @@ export default function PedidosCompraPage() {
                         <button
                           key={s.sku}
                           onClick={() => adicionarItem(s)}
-                          className="w-full flex justify-between items-center px-3 py-2 text-left hover:bg-indigo-50 text-sm"
+                          className="w-full flex justify-between items-start gap-2 px-3 py-2 text-left hover:bg-indigo-50 text-sm"
                         >
-                          <span className="text-zinc-800">{s.name}</span>
-                          <span className="text-xs text-zinc-400 whitespace-nowrap ml-2">
+                          <span className="flex flex-col min-w-0">
+                            <span className="text-zinc-800 truncate">
+                              {s.name}
+                              {s.size ? <span className="ml-1 text-zinc-500">· Tam. {s.size}</span> : null}
+                            </span>
+                            <span className="text-[11px] text-zinc-400 truncate">
+                              Cód. barras: {s.barcode ?? "—"}
+                            </span>
+                          </span>
+                          <span className="text-xs text-zinc-400 whitespace-nowrap ml-2 shrink-0">
                             SKU-{s.sku} · custo {fmtMoeda(s.cost || 0)} · est. {s.stock_quantity ?? 0}
                           </span>
                         </button>

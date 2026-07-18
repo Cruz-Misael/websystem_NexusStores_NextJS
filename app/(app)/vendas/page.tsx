@@ -7,7 +7,7 @@ import { useDebounce } from "@/src/hooks/useDebounce";
 // Modais abertos por clique — carregados sob demanda.
 const DevolucaoTrocaModal = dynamic(() => import("@/components/troca/DevolucaoTrocaModal"), { ssr: false });
 const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
-import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, MetodoPagamento } from "@/src/services/sales.service";
+import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 
 const METODO_LABELS: Record<string, string> = {
@@ -102,6 +102,10 @@ export default function HistoricoVendasCompacto() {
   const [editandoDataConsignado, setEditandoDataConsignado] = useState(false);
   const [novaDataConsignado, setNovaDataConsignado] = useState("");
   const [salvandoDataConsignado, setSalvandoDataConsignado] = useState(false);
+
+  // Observação interna da venda (não sai na notinha)
+  const [notaInterna, setNotaInterna] = useState("");
+  const [salvandoNota, setSalvandoNota] = useState(false);
 
   const [vendaConsignadoRecibo, setVendaConsignadoRecibo] = useState<{
     venda: Sale;
@@ -243,6 +247,22 @@ export default function HistoricoVendasCompacto() {
     }
   };
 
+  const handleSalvarNotaInterna = async () => {
+    if (!selecionada) return;
+    setSalvandoNota(true);
+    try {
+      await atualizarNotaInterna(selecionada.id, notaInterna);
+      const notaFinal = notaInterna.trim() || null;
+      setSelecionada({ ...selecionada, internal_note: notaFinal });
+      setVendas(prev => prev.map(v => v.id === selecionada.id ? { ...v, internal_note: notaFinal } : v));
+      mostrarToast("Observação interna salva!", "sucesso");
+    } catch (e: any) {
+      mostrarToast(`Erro ao salvar observação: ${e.message}`, "erro");
+    } finally {
+      setSalvandoNota(false);
+    }
+  };
+
   const handleAlterarDataConsignado = async () => {
     if (!selecionada || !novaDataConsignado) return;
     setSalvandoDataConsignado(true);
@@ -318,6 +338,7 @@ export default function HistoricoVendasCompacto() {
     setResultadosCliente([]);
     setEditandoDataConsignado(false);
     setNovaDataConsignado("");
+    setNotaInterna(selecionada?.internal_note || "");
   }, [selecionada?.id]);
 
   // Cancelar venda
@@ -928,6 +949,15 @@ export default function HistoricoVendasCompacto() {
                       {new Date(selecionada.sale_date).toLocaleDateString('pt-BR')}
                     </span>
 
+                    {selecionada.settled_at && (
+                      <>
+                        <span className="text-zinc-200">·</span>
+                        <span className="shrink-0 text-emerald-600 font-semibold">
+                          Acerto: {new Date(selecionada.settled_at).toLocaleDateString('pt-BR')}
+                        </span>
+                      </>
+                    )}
+
                     <span className="text-zinc-200">·</span>
 
                     {/* Cliente editável */}
@@ -957,7 +987,12 @@ export default function HistoricoVendasCompacto() {
                                 )}
                                 {resultadosCliente.map(c => (
                                   <button key={c.id} onClick={() => handleSalvarCliente({ id: c.id, name: c.name })} disabled={salvandoCliente} className="w-full text-left px-3 py-1.5 hover:bg-indigo-50 border-b border-zinc-50 last:border-0">
-                                    <p className="text-xs font-medium text-zinc-800 truncate">{c.name}</p>
+                                    <p className="text-xs font-medium text-zinc-800 truncate flex items-center gap-1.5">
+                                      <span className="truncate">{c.name}</span>
+                                      {c.person_type === "consultora" && (
+                                        <span className="shrink-0 text-[8px] bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded font-black uppercase tracking-wide">Consultor(a)</span>
+                                      )}
+                                    </p>
                                     {c.phone && <p className="text-[10px] text-zinc-400">{c.phone}</p>}
                                   </button>
                                 ))}
@@ -1229,18 +1264,61 @@ export default function HistoricoVendasCompacto() {
                   </div>
                 )}
 
+                {/* Observação interna (uso interno — não sai na notinha) */}
+                <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                      Observação Interna
+                    </p>
+                    <span className="text-[10px] text-amber-600/80 italic">não aparece na notinha</span>
+                  </div>
+                  <textarea
+                    value={notaInterna}
+                    onChange={(e) => setNotaInterna(e.target.value)}
+                    rows={3}
+                    placeholder="Anote aqui algo sobre esta venda (ex.: cliente pediu troca, pendência, combinado...)"
+                    className="w-full bg-white border border-amber-200 rounded-lg p-3 text-xs text-zinc-700 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                  />
+                  <div className="flex justify-end mt-2">
+                    <button
+                      onClick={handleSalvarNotaInterna}
+                      disabled={salvandoNota || (notaInterna.trim() === (selecionada.internal_note || "").trim())}
+                      className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    >
+                      {salvandoNota ? <Loader2 size={12} className="animate-spin" /> : null}
+                      Salvar observação
+                    </button>
+                  </div>
+                </div>
+
                 {/* Breakdown de itens — consignado fechado */}
                 {isConsignado(selecionada) && selecionada.payment_status === "paid" && (() => {
                   const bd = parseConsignadoBreakdown(selecionada.observation);
                   if (!bd) return null;
+                  const totalSaiu = bd.itensOriginais.reduce((a, i) => a + i.quantidade, 0);
+                  const totalDevolvidas = bd.itensDevolvidos.reduce((a, i) => a + i.quantidade, 0);
+                  const totalFicou = bd.itensFicaram.reduce((a, i) => a + i.quantidade, 0);
                   return (
                     <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-3">
-                      <h4 className="text-xs font-bold text-violet-700 uppercase tracking-wide">Peças do Consignado</h4>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-xs font-bold text-violet-700 uppercase tracking-wide">Peças do Consignado</h4>
+                          {selecionada.settled_at && (
+                            <span className="text-[10px] font-semibold text-violet-500">
+                              · Fechado em {new Date(selecionada.settled_at).toLocaleDateString('pt-BR')}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] font-bold">
+                          <span className="text-emerald-700">{totalFicou} vendida{totalFicou === 1 ? "" : "s"}</span>
+                          <span className="text-amber-700">{totalDevolvidas} devolvida{totalDevolvidas === 1 ? "" : "s"}</span>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {/* Saiu */}
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1 flex items-center gap-1">
-                            <ShoppingBag size={10} /> Saiu da loja
+                            <ShoppingBag size={10} /> Saiu da loja ({totalSaiu})
                           </p>
                           {bd.itensOriginais.map((i, idx) => (
                             <div key={idx} className="flex justify-between text-xs text-zinc-600">
@@ -1252,7 +1330,7 @@ export default function HistoricoVendasCompacto() {
                         {/* Devolveu */}
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1 flex items-center gap-1">
-                            <RotateCcw size={10} /> Devolvidas
+                            <RotateCcw size={10} /> Devolvidas ({totalDevolvidas})
                           </p>
                           {bd.itensDevolvidos.length === 0 ? (
                             <p className="text-xs text-zinc-400 italic">Nenhuma</p>
@@ -1266,7 +1344,7 @@ export default function HistoricoVendasCompacto() {
                         {/* Ficou */}
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600 mb-1 flex items-center gap-1">
-                            <CheckCircle size={10} /> Ficou com o cliente
+                            <CheckCircle size={10} /> Ficou com o cliente ({totalFicou})
                           </p>
                           {bd.itensFicaram.length === 0 ? (
                             <p className="text-xs text-zinc-400 italic">Nenhuma</p>
