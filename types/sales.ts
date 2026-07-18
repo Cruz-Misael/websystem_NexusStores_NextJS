@@ -46,6 +46,8 @@ export interface Sale {
   payment_method: string | null;
   payment_status: 'pending' | 'paid' | 'cancelled';
   observation: string | null;
+  internal_note: string | null;
+  settled_at: string | null;
   consignado_commission_percent: number | null;
   consignado_net_before_commission: number | null;
   // Objetos aninhados

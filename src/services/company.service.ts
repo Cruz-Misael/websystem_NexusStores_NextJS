@@ -17,6 +17,8 @@ export interface CompanyData {
   city?: string;
   state?: string;
   cep?: string;
+  receipt_note?: string | null;
+  receipt_image_url?: string | null;
 }
 
 export class CompanyService {
@@ -58,6 +60,27 @@ export class CompanyService {
   static async uploadLogo(file: File): Promise<string> {
     const fileExt = file.name.split('.').pop();
     const fileName = `logo-${Date.now()}.${fileExt}`;
+    const filePath = `${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('logos')
+      .upload(filePath, file);
+
+    if (uploadError) {
+      throw uploadError;
+    }
+
+    const { data } = supabase.storage
+      .from('logos')
+      .getPublicUrl(filePath);
+
+    return data.publicUrl;
+  }
+
+  // Imagem exibida na notinha (ex.: QR code do PIX). Usa o mesmo bucket do logo.
+  static async uploadReceiptImage(file: File): Promise<string> {
+    const fileExt = file.name.split('.').pop();
+    const fileName = `receipt-${Date.now()}.${fileExt}`;
     const filePath = `${fileName}`;
 
     const { error: uploadError } = await supabase.storage

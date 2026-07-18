@@ -116,7 +116,8 @@ export async function listarPessoasPaginado(
   pagina: number = 1,
   itensPorPagina: number = 50,
   busca?: string,
-  mostrarInativos?: boolean
+  mostrarInativos?: boolean,
+  tipoPessoa?: "cliente" | "consultora" | "todos"
 ) {
   const inicio = (pagina - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina - 1;
@@ -132,6 +133,14 @@ export async function listarPessoasPaginado(
 
   if (!mostrarInativos) {
     pessoasQuery = pessoasQuery.or("is_active.eq.true,is_active.is.null");
+  }
+
+  // Filtro por tipo de pessoa (cliente x consultora). "todos" ou vazio = sem filtro.
+  // Cadastros antigos sem person_type são tratados como 'cliente'.
+  if (tipoPessoa === "cliente") {
+    pessoasQuery = pessoasQuery.or("person_type.eq.cliente,person_type.is.null");
+  } else if (tipoPessoa === "consultora") {
+    pessoasQuery = pessoasQuery.eq("person_type", "consultora");
   }
 
   // Primeiro busca as pessoas paginadas

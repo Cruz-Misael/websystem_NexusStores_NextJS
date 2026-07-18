@@ -47,6 +47,7 @@ import { Sale } from "@/types/sales";
 // Tipo do backend
 interface PessoaDB {
   id: number;
+  person_type?: string | null;
   name: string;
   email: string;
   phone: string;
@@ -72,6 +73,7 @@ interface PessoaDB {
 // Tipo para uso na interface
 export type Cliente = {
   id: number;
+  tipo: "cliente" | "consultora";
   nome: string;
   email: string;
   telefone: string;
@@ -141,6 +143,7 @@ export default function CRMCompacto() {
   
   const [menuAberto, setMenuAberto] = useState<number | null>(null);
   const [mostrarInativos, setMostrarInativos] = useState(false);
+  const [visaoTipo, setVisaoTipo] = useState<"todos" | "cliente" | "consultora">("todos");
   const [paginaAtual, setPaginaAtual] = useState(1);
   const [totalPaginas, setTotalPaginas] = useState(1);
   const [totalClientes, setTotalClientes] = useState(0);
@@ -173,9 +176,10 @@ export default function CRMCompacto() {
       setErro(null);
       setPaginaAtual(pagina);
 
-      const resultado = await listarPessoasPaginado(pagina, 50, debouncedBusca, mostrarInativos);
+      const resultado = await listarPessoasPaginado(pagina, 50, debouncedBusca, mostrarInativos, visaoTipo);
       const clientesConvertidos: Cliente[] = resultado.pessoas.map((p: PessoaDB) => ({
         id: p.id,
+        tipo: p.person_type === "consultora" ? "consultora" : "cliente",
         nome: p.name || "Sem nome",
         email: p.email || "",
         telefone: p.phone || "",
@@ -294,7 +298,7 @@ export default function CRMCompacto() {
   // Carrega clientes na inicialização e quando busca/filtro mudam (reset para página 1)
   useEffect(() => {
     carregarClientes(1);
-  }, [debouncedBusca, mostrarInativos]);
+  }, [debouncedBusca, mostrarInativos, visaoTipo]);
 
   useEffect(() => {
     const handleClickOutside = () => setMenuAberto(null);
@@ -421,6 +425,25 @@ export default function CRMCompacto() {
                 Todos
               </button>
             </div>
+
+            {/* Filtro de visão: cliente x consultora */}
+            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+              {([
+                { valor: "todos", titulo: "Todos" },
+                { valor: "cliente", titulo: "Clientes" },
+                { valor: "consultora", titulo: "Consultores(as)" },
+              ] as const).map((opt) => (
+                <button
+                  key={opt.valor}
+                  onClick={() => setVisaoTipo(opt.valor)}
+                  className={`px-3 py-1 rounded-md text-[10px] font-bold uppercase tracking-tight transition-all border
+                    ${visaoTipo === opt.valor ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm' : 'bg-white border-zinc-200 text-zinc-500 hover:border-zinc-300'}
+                  `}
+                >
+                  {opt.titulo}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -466,6 +489,11 @@ export default function CRMCompacto() {
                 <div className="flex justify-between items-start mb-1">
                   <span className="font-bold text-zinc-800 truncate text-xs flex items-center gap-2">
                     {cliente.nome}
+                    {cliente.tipo === "consultora" && (
+                      <span className="text-[8px] bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded font-black uppercase tracking-wide">
+                        Consultor(a)
+                      </span>
+                    )}
                     {!cliente.is_active && (
                       <span className="text-[8px] bg-gray-200 text-gray-600 px-1 py-0.5 rounded">
                         Inativo
@@ -578,6 +606,11 @@ export default function CRMCompacto() {
                     <h2 className="text-2xl font-extrabold text-zinc-900 tracking-tight leading-none">
                       {selecionado.nome}
                     </h2>
+                    {selecionado.tipo === "consultora" && (
+                      <span className="text-[9px] font-black px-2 py-0.5 rounded-full border uppercase tracking-widest bg-indigo-100 text-indigo-700 border-indigo-200">
+                        Consultor(a)
+                      </span>
+                    )}
                     <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border uppercase tracking-widest ${getStatusColor(getStatus(selecionado))}`}>
                       {getStatus(selecionado)}
                     </span>

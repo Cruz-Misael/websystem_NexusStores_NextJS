@@ -24,6 +24,7 @@ import toast from "react-hot-toast";
 /* ========= TIPOS ========= */
 
 export type ClienteForm = {
+  tipoPessoa: "cliente" | "consultora";
   nome: string;
   email: string;
   whatsapp: string;
@@ -43,6 +44,7 @@ export type ClienteForm = {
 
 interface PessoaDB {
   id: number;
+  person_type?: string | null;
   name: string;
   email: string;
   phone: string;
@@ -78,6 +80,7 @@ interface Props {
 /* ========= ESTADO INICIAL ========= */
 
 const estadoInicial: ClienteForm = {
+  tipoPessoa: "consultora",
   nome: "",
   email: "",
   whatsapp: "",
@@ -131,6 +134,7 @@ export default function ClienteModal({
       
       // Mapeia os dados do banco para o formulário
       setForm({
+        tipoPessoa: pessoa.person_type === "consultora" ? "consultora" : "cliente",
         nome: pessoa.name || "",
         email: pessoa.email || "",
         whatsapp: pessoa.phone || "",
@@ -184,6 +188,7 @@ export default function ClienteModal({
 
       // 1. Preparar dados da pessoa
       const pessoaData = {
+        person_type: form.tipoPessoa,
         name: form.nome,
         email: form.email || null,
         phone: form.whatsapp || null,
@@ -343,6 +348,35 @@ export default function ClienteModal({
                   <h3 className="text-[10px] font-black text-zinc-400 uppercase tracking-[2px]">
                     Informações de Identificação
                   </h3>
+                </div>
+
+                {/* Tipo de pessoa: cliente x consultora */}
+                <div className="mb-5">
+                  <label className="text-[10px] font-bold text-zinc-500 ml-1 uppercase tracking-tighter">
+                    Tipo de cadastro
+                  </label>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    {([
+                      { valor: "cliente", titulo: "Cliente" },
+                      { valor: "consultora", titulo: "Consultor(a)" },
+                    ] as const).map((opt) => {
+                      const ativo = form.tipoPessoa === opt.valor;
+                      return (
+                        <button
+                          key={opt.valor}
+                          type="button"
+                          onClick={() => handleChange("tipoPessoa", opt.valor)}
+                          className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${
+                            ativo
+                              ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+                              : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-300"
+                          }`}
+                        >
+                          {opt.titulo}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-5">

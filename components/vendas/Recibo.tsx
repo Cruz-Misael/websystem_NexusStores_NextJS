@@ -65,6 +65,10 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
     venda.consignado_net_before_commission !== undefined;
   const itens = venda.items?.filter((i) => i.quantity > 0) ?? [];
   const totalItens = itens.reduce((acc, i) => acc + i.quantity, 0);
+  // Total de itens devolvidos no acerto do consignado (só existe quando há breakdown).
+  const totalDevolvidos = consignadoBreakdown
+    ? consignadoBreakdown.itensDevolvidos.reduce((acc, i) => acc + i.quantidade, 0)
+    : 0;
 
   // Mapa nome → barcode para lookup no breakdown
   const barcodeMap = new Map<string, string>();
@@ -319,17 +323,13 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
         <span style="color:#6b7280;font-size:11px">Endereço</span><br>
         <span style="font-weight:600;color:#111827">${enderecoCliente}</span>
       </div>` : ""}
-      ${clienteCompleto?.observation ? `<div style="padding:4px 0;font-size:12px;color:#374151">
-        <span style="color:#6b7280;font-size:11px">Obs. do Cliente</span><br>
-        <span style="font-weight:600;color:#111827;white-space:pre-wrap">${clienteCompleto.observation}</span>
-      </div>` : ""}
     </div>
   </div>
 
   <!-- ITENS -->
   <div style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:2px;
               color:#9ca3af;margin-bottom:8px">
-    ${consignadoBreakdown ? "Itens do Consignado" : "Itens"} — ${totalItens} ${totalItens === 1 ? "unidade" : "unidades"}
+    ${consignadoBreakdown ? "Itens do Consignado" : "Itens"} — ${totalItens} ${totalItens === 1 ? "unidade" : "unidades"} ${consignadoBreakdown ? `vendida${totalItens === 1 ? "" : "s"} · ${totalDevolvidos} devolvida${totalDevolvidos === 1 ? "" : "s"}` : ""}
   </div>
   ${itensHtml}
 
@@ -340,7 +340,9 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
 
   <!-- TOTAL DE ITENS -->
   <div style="margin-top:6px;text-align:right;font-size:11px;color:#6b7280;font-weight:600">
-    Total de itens: ${totalItens} ${totalItens === 1 ? "unidade" : "unidades"}
+    ${consignadoBreakdown
+      ? `Total vendido: ${totalItens} ${totalItens === 1 ? "unidade" : "unidades"} &nbsp;·&nbsp; Total devolvido: ${totalDevolvidos} ${totalDevolvidos === 1 ? "unidade" : "unidades"}`
+      : `Total de itens: ${totalItens} ${totalItens === 1 ? "unidade" : "unidades"}`}
   </div>
 
   <!-- OBSERVAÇÃO (somente na venda inicial, não no acerto) -->
@@ -351,6 +353,30 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
            <div style="font-size:9px;font-weight:800;text-transform:uppercase;
                        letter-spacing:1.5px;color:#9ca3af;margin-bottom:8px">Observações / Termos</div>
            <div style="font-size:12px;color:#374151;line-height:1.65;white-space:pre-wrap">${observacaoLimpa}</div>
+         </div>`
+      : ""
+  }
+
+  ${
+    empresa?.description
+      ? `<div class="no-break" style="margin-top:18px;padding:12px 16px;background:#f9fafb;
+              border:1px solid #e5e7eb;border-radius:8px;font-size:11px;color:#374151;
+              line-height:1.6;white-space:pre-wrap">${empresa.description}</div>`
+      : ""
+  }
+
+  ${
+    empresa?.receipt_note
+      ? `<div class="no-break" style="margin-top:18px;padding:12px 16px;background:#f9fafb;
+              border:1px solid #e5e7eb;border-radius:8px;font-size:11px;color:#374151;
+              line-height:1.6;white-space:pre-wrap">${empresa.receipt_note}</div>`
+      : ""
+  }
+
+  ${
+    empresa?.receipt_image_url
+      ? `<div class="no-break" style="margin-top:18px;text-align:center">
+           <img src="${empresa.receipt_image_url}" alt="" style="max-width:180px;max-height:180px;object-fit:contain;display:inline-block" />
          </div>`
       : ""
   }
@@ -488,19 +514,15 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                     <p className="font-bold text-[10px] mt-0.5 leading-snug">{enderecoCliente}</p>
                   </div>
                 )}
-                {clienteCompleto?.observation && (
-                  <div className="mt-1">
-                    <span className="text-zinc-400 font-semibold">Obs. do Cliente</span>
-                    <p className="font-bold text-[10px] mt-0.5 leading-snug whitespace-pre-wrap">{clienteCompleto.observation}</p>
-                  </div>
-                )}
               </div>
             )}
 
             {/* Itens */}
             <div className="pb-2 border-b border-dashed border-zinc-200">
               <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400 mb-2">
-                {consignadoBreakdown ? "Itens" : "Itens"} — {totalItens} un.
+                {consignadoBreakdown
+                  ? `Itens — ${totalItens} un. vendida${totalItens === 1 ? "" : "s"} · ${totalDevolvidos} devolvida${totalDevolvidos === 1 ? "" : "s"}`
+                  : `Itens — ${totalItens} un.`}
               </p>
 
               {consignadoBreakdown ? (
@@ -522,7 +544,7 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                   </div>
                   {consignadoBreakdown.itensDevolvidos.length > 0 && (
                     <div>
-                      <p className="text-[9px] font-black uppercase text-zinc-400 mb-1">↩ Devolvidas</p>
+                      <p className="text-[9px] font-black uppercase text-zinc-400 mb-1">↩ Devolvidas — {totalDevolvidos} un.</p>
                       {consignadoBreakdown.itensDevolvidos.map((item, i) => (
                         <div key={i} className="flex justify-between text-zinc-400 line-through text-[10px]">
                           <span className="truncate max-w-[170px]">{item.nome}</span>
@@ -573,9 +595,15 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
             {/* Totais */}
             <div className="pb-2 border-b border-dashed border-zinc-200 space-y-0.5">
               <div className="flex justify-between text-[11px] text-zinc-500">
-                <span className="font-semibold">Total de itens</span>
+                <span className="font-semibold">{consignadoBreakdown ? "Total vendido" : "Total de itens"}</span>
                 <span className="font-bold">{totalItens} un.</span>
               </div>
+              {consignadoBreakdown && (
+                <div className="flex justify-between text-[11px] text-zinc-500">
+                  <span className="font-semibold">Total devolvido</span>
+                  <span className="font-bold">{totalDevolvidos} un.</span>
+                </div>
+              )}
 
               {isConsignado ? (
                 <>
@@ -615,6 +643,24 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
               <div className="pb-2 border-b border-dashed border-zinc-200">
                 <p className="text-[9px] font-black uppercase tracking-widest text-zinc-400 mb-1">Observações / Termos</p>
                 <p className="text-[10px] text-zinc-600 leading-relaxed whitespace-pre-wrap">{observacaoLimpa}</p>
+              </div>
+            )}
+
+            {empresa?.description && (
+              <div className="pb-2 border-b border-dashed border-zinc-200">
+                <p className="text-[10px] text-zinc-600 leading-relaxed whitespace-pre-wrap">{empresa.description}</p>
+              </div>
+            )}
+
+            {empresa?.receipt_note && (
+              <div className="pb-2 border-b border-dashed border-zinc-200">
+                <p className="text-[10px] text-zinc-600 leading-relaxed whitespace-pre-wrap">{empresa.receipt_note}</p>
+              </div>
+            )}
+
+            {empresa?.receipt_image_url && (
+              <div className="flex justify-center pb-2">
+                <img src={empresa.receipt_image_url} alt="Imagem da nota" className="max-w-[160px] max-h-[160px] object-contain" />
               </div>
             )}
 

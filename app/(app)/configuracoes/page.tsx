@@ -101,6 +101,9 @@ interface FormLojaData {
   city: string;
   state: string;
   cep: string;
+  receiptNote: string;
+  receiptImage: File | null;
+  receiptImagePreview: string;
 }
 
 const defaultPermissions: OperatorPermissions = {
@@ -135,6 +138,7 @@ function ConfiguracoesContent() {
   const [usuarioEditando, setUsuarioEditando] = useState<UsuarioParaEdicao | null>(null);
   const [modoModal, setModoModal] = useState<'criacao' | 'edicao'>('criacao');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiptFileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Loja ---
   const [companyId, setCompanyId] = useState<string | undefined>(undefined);
@@ -143,6 +147,7 @@ function ConfiguracoesContent() {
     telefone: '', email: '', website: '', logo: null, logoPreview: '',
     address_street: '', address_number: '', address_complement: '',
     neighbourhood: '', city: '', state: '', cep: '',
+    receiptNote: '', receiptImage: null, receiptImagePreview: '',
   });
 
   // --- Usuários ---
@@ -257,6 +262,8 @@ function ConfiguracoesContent() {
     try {
       let logoUrl = formLoja.logoPreview;
       if (formLoja.logo) logoUrl = await CompanyService.uploadLogo(formLoja.logo);
+      let receiptImageUrl = formLoja.receiptImagePreview;
+      if (formLoja.receiptImage) receiptImageUrl = await CompanyService.uploadReceiptImage(formLoja.receiptImage);
       const companyData: CompanyData = {
         id: companyId,
         name: formLoja.nomeCompleto, fantasy_name: formLoja.nomeFantasia,
@@ -270,6 +277,8 @@ function ConfiguracoesContent() {
         city: formLoja.city || undefined,
         state: formLoja.state || undefined,
         cep: formLoja.cep || undefined,
+        receipt_note: formLoja.receiptNote.trim() || null,
+        receipt_image_url: receiptImageUrl || null,
       };
       const saved = await CompanyService.saveCompany(companyData);
       if (!companyId) setCompanyId(saved.id);
@@ -294,6 +303,21 @@ function ConfiguracoesContent() {
   const handleRemoveLogo = () => {
     setFormLoja(prev => ({ ...prev, logo: null, logoPreview: '' }));
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleReceiptImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error('A imagem deve ter no máximo 2MB.'); return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast.error('Formato inválido. Use JPG, PNG ou WebP.'); return; }
+    const reader = new FileReader();
+    reader.onloadend = () => setFormLoja(prev => ({ ...prev, receiptImage: file, receiptImagePreview: reader.result as string }));
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveReceiptImage = () => {
+    setFormLoja(prev => ({ ...prev, receiptImage: null, receiptImagePreview: '' }));
+    if (receiptFileInputRef.current) receiptFileInputRef.current.value = '';
   };
 
   // ========== USUÁRIOS ==========
@@ -706,6 +730,8 @@ function ConfiguracoesContent() {
           address_street: company.address_street || '', address_number: company.address_number || '',
           address_complement: company.address_complement || '', neighbourhood: company.neighbourhood || '',
           city: company.city || '', state: company.state || '', cep: company.cep || '',
+          receiptNote: company.receipt_note || '',
+          receiptImage: null, receiptImagePreview: company.receipt_image_url || '',
         });
       }
     } catch { toast.error('Erro ao carregar dados da empresa'); }
@@ -888,6 +914,37 @@ function ConfiguracoesContent() {
                     <Input label="Número" name="address_number" value={formLoja.address_number} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="1000" />
                     <Input label="Complemento" name="address_complement" value={formLoja.address_complement} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="Sala 12, Loja A" />
                     <Input label="Bairro" name="neighbourhood" value={formLoja.neighbourhood} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="Centro" />
+                  </div>
+                </section>
+
+                <section className="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2"><div className="w-1 h-4 bg-indigo-500 rounded-full"></div><h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px]">Configurações da Nota / Recibo</h3></div>
+                  <p className="text-[11px] text-zinc-400 mb-6">Informações extras que aparecem na notinha impressa (além dos dados já padronizados). A <span className="font-semibold">Descrição do Negócio</span> (acima) também é exibida na nota como observação padrão.</p>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1">Observações / Rodapé da Nota</label>
+                      <textarea name="receiptNote" value={formLoja.receiptNote} onChange={handleLojaInputChange} rows={3} className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none" placeholder="Ex.: Trocas em até 7 dias mediante nota. Horário de funcionamento..." />
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1">Imagem na Nota (ex.: QR Code do PIX)</label>
+                      <div className="flex items-center gap-4">
+                        <div className="relative w-24 h-24 bg-zinc-50 border border-zinc-200 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden">
+                          {formLoja.receiptImagePreview ? (
+                            <img src={formLoja.receiptImagePreview} alt="Imagem da nota" className="w-full h-full object-contain" />
+                          ) : (
+                            <QrCode size={22} className="text-zinc-300" />
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => receiptFileInputRef.current?.click()} className="px-4 py-2 bg-zinc-900 text-white text-[10px] font-black rounded-lg uppercase tracking-widest hover:bg-zinc-800 transition-all">Escolher Imagem</button>
+                            {formLoja.receiptImagePreview && <button type="button" onClick={handleRemoveReceiptImage} className="px-4 py-2 bg-white border border-red-100 text-red-500 text-[10px] font-black rounded-lg uppercase tracking-widest hover:bg-red-50 transition-all">Remover</button>}
+                          </div>
+                          <p className="text-[10px] text-zinc-400">PNG, JPG ou WebP · máx 2MB. Aparece centralizada no fim da notinha.</p>
+                        </div>
+                      </div>
+                      <input ref={receiptFileInputRef} type="file" className="hidden" accept="image/png,image/jpeg,image/webp" onChange={handleReceiptImageUpload} />
+                    </div>
                   </div>
                 </section>
               </div>
