@@ -25,6 +25,7 @@ import { listarPessoasPaginado, atualizarLimiteCliente } from "@/src/services/pe
 import { listarProdutosPaginado, buscarProdutoPorSKU, buscarProdutoPorBarcode, criarProduto, atualizarProduto } from "@/src/services/product.service";
 import { listarOperadores, validarPinGerente, Operator } from "@/src/services/operator.service";
 import { Sale } from "@/types/sales";
+import { CompanyService } from "@/services/company.service";
 
 // Recibo só aparece após finalizar a venda — fora do bundle inicial do caixa.
 const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
@@ -94,6 +95,9 @@ export default function CaixaPDVPro() {
   const [mostrarModalConsignado, setMostrarModalConsignado] = useState(false);
   const [dataPrevistaPagamento, setDataPrevistaPagamento] = useState("");
   const [observacaoConsignado, setObservacaoConsignado] = useState("");
+
+  // Observação padrão (rodapé da nota) usada para pré-preencher o consignado.
+  const [observacaoPadrao, setObservacaoPadrao] = useState("");
 
   // Modal de produto sem estoque
   const [produtoSemEstoque, setProdutoSemEstoque] = useState<any | null>(null);
@@ -246,6 +250,21 @@ export default function CaixaPDVPro() {
   useEffect(() => {
     if (modalOperadorAberto) carregarOperadores();
   }, [modalOperadorAberto]);
+
+  // Carrega o rodapé/observação padrão da nota (configurações) uma vez.
+  useEffect(() => {
+    CompanyService.getCompany()
+      .then((c) => setObservacaoPadrao(c?.receipt_note?.trim() || ""))
+      .catch(() => {});
+  }, []);
+
+  // Ao abrir o modal de consignado, pré-preenche a observação com o padrão
+  // (só quando o campo ainda está vazio, para não sobrescrever o que já foi digitado).
+  useEffect(() => {
+    if (mostrarModalConsignado && observacaoPadrao && !observacaoConsignado.trim()) {
+      setObservacaoConsignado(observacaoPadrao);
+    }
+  }, [mostrarModalConsignado, observacaoPadrao]);
 
   // Persistência de foco no input de bipar
   useEffect(() => {
