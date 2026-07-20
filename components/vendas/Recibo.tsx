@@ -60,6 +60,16 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
     ?.replace(/^Venda consignada - Pagamento previsto: \d{4}-\d{2}-\d{2}( - )?/, "")
     .trim() || null;
 
+  // Observação padrão (descrição/rodapé) vem das configurações e é aplicada na
+  // hora inicial da venda — na venda de consignado ela já fica salva em
+  // `observation`. Para não duplicar na nota, só renderizamos o bloco padrão
+  // do config quando a observação da venda ainda NÃO contém aquele texto.
+  const obsRaw = venda.observation || "";
+  const showDescription =
+    !!empresa?.description && !obsRaw.includes(empresa.description.trim());
+  const showReceiptNote =
+    !!empresa?.receipt_note && !obsRaw.includes(empresa.receipt_note.trim());
+
   const isConsig =
     venda.consignado_net_before_commission !== null &&
     venda.consignado_net_before_commission !== undefined;
@@ -358,7 +368,7 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
   }
 
   ${
-    empresa?.description
+    showDescription
       ? `<div class="no-break" style="margin-top:18px;padding:12px 16px;background:#f9fafb;
               border:1px solid #e5e7eb;border-radius:8px;font-size:11px;color:#374151;
               line-height:1.6;white-space:pre-wrap">${empresa.description}</div>`
@@ -366,7 +376,7 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
   }
 
   ${
-    empresa?.receipt_note
+    showReceiptNote
       ? `<div class="no-break" style="margin-top:18px;padding:12px 16px;background:#f9fafb;
               border:1px solid #e5e7eb;border-radius:8px;font-size:11px;color:#374151;
               line-height:1.6;white-space:pre-wrap">${empresa.receipt_note}</div>`
@@ -646,13 +656,13 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
               </div>
             )}
 
-            {empresa?.description && (
+            {showDescription && (
               <div className="pb-2 border-b border-dashed border-zinc-200">
                 <p className="text-[10px] text-zinc-600 leading-relaxed whitespace-pre-wrap">{empresa.description}</p>
               </div>
             )}
 
-            {empresa?.receipt_note && (
+            {showReceiptNote && (
               <div className="pb-2 border-b border-dashed border-zinc-200">
                 <p className="text-[10px] text-zinc-600 leading-relaxed whitespace-pre-wrap">{empresa.receipt_note}</p>
               </div>
