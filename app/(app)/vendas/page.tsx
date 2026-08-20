@@ -7,8 +7,9 @@ import { useDebounce } from "@/src/hooks/useDebounce";
 // Modais abertos por clique — carregados sob demanda.
 const DevolucaoTrocaModal = dynamic(() => import("@/components/troca/DevolucaoTrocaModal"), { ssr: false });
 const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
-import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, MetodoPagamento } from "@/src/services/sales.service";
+import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, reabrirConsignado, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
+import { supabase } from "@/src/lib/supabase/client";
 
 const METODO_LABELS: Record<string, string> = {
   credit_card: "Crédito",
@@ -122,6 +123,25 @@ export default function HistoricoVendasCompacto() {
     textoConfirmar: "Confirmar",
     textoCancelar: "Cancelar",
   });
+
+  // Reabrir consignado é ação de administrador (a regra também é validada no banco)
+  const [ehAdmin, setEhAdmin] = useState(false);
+
+  useEffect(() => {
+    async function carregarPapel() {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+
+      const { data: profile } = await supabase
+        .from("authorized_users")
+        .select("role")
+        .eq("user_id", authUser.id)
+        .single();
+
+      setEhAdmin(profile?.role === "admin");
+    }
+    carregarPapel();
+  }, []);
 
   const [toastAberto, setToastAberto] = useState(false);
   const [toastConfig, setToastConfig] = useState({
@@ -560,10 +580,58 @@ export default function HistoricoVendasCompacto() {
     }
   };
 
+  // Reabrir consignado fechado: volta para pendente sem tocar em estoque/devoluções
+  const handleReabrirConsignado = () => {
+    if (!selecionada) return;
+
+    const saldo = selecionada.consignado_net_before_commission ?? selecionada.final_amount;
+    const breakdown = parseConsignadoBreakdown(selecionada.observation);
+    const devolvidas = (breakdown?.itensDevolvidos || []).reduce((acc, i) => acc + i.quantidade, 0);
+
+    const aviso = devolvidas > 0
+      ? `\n\nAtenção: ${devolvidas} ${devolvidas === 1 ? "peça foi devolvida" : "peças foram devolvidas"} no fechamento. Elas continuam devolvidas e no estoque — reabrir não estorna a devolução.`
+      : "";
+
+    mostrarPopup(
+      "Reabrir Consignado",
+      `A venda #${selecionada.id} volta para PENDENTE com saldo de ${formatarMoeda(saldo)}. `
+        + "A data de acerto e o desconto de lucro do fechamento serão apagados, e a venda sai do faturamento do período."
+        + aviso,
+      "aviso",
+      async () => {
+        try {
+          setAtualizando(true);
+          await reabrirConsignado(selecionada.id);
+
+          const vendaAtualizada = await buscarVendaPorId(selecionada.id);
+          setVendas(prev => prev.map(v => (v.id === vendaAtualizada.id ? vendaAtualizada : v)));
+          setSelecionada(vendaAtualizada);
+
+          fecharPopup();
+          mostrarToast("Consignado reaberto. A venda voltou para pendente.", "sucesso");
+        } catch (error) {
+          console.error("Erro ao reabrir consignado:", error);
+          fecharPopup();
+          const msg = error instanceof Error ? error.message : String(error);
+          mostrarToast(`Erro ao reabrir: ${msg}`, "erro");
+        } finally {
+          setAtualizando(false);
+        }
+      },
+      "Sim, Reabrir",
+      "Não, Voltar"
+    );
+  };
+
   // ======= UTILITÁRIOS CONSIGNADO =======
   function parseConsignadoBreakdown(obs: string | null): ConsignadoItemBreakdown | null {
     if (!obs) return null;
-    const match = obs.match(/Saídas: (.+?) \| Devolvidas: (.+?) \| Mantidas: (.+?)(?:\n|$)/);
+    // Regex global + última ocorrência: se o consignado foi reaberto e fechado
+    // outra vez, a observação guarda vários marcadores e vale o mais recente.
+    const re = /Saídas: (.+?) \| Devolvidas: (.+?) \| Mantidas: (.+?)(?:\n|$)/g;
+    let atual: RegExpExecArray | null;
+    let match: RegExpExecArray | null = null;
+    while ((atual = re.exec(obs)) !== null) match = atual;
     if (!match) return null;
     const parseList = (s: string) =>
       s === "Nenhuma"
@@ -1147,6 +1215,16 @@ export default function HistoricoVendasCompacto() {
                       {isConsignado(selecionada)
                         ? <><RefreshCw size={13} /> Fechar Consignado</>
                         : <><CheckCircle size={13} /> Confirmar Pagamento</>}
+                    </button>
+                  )}
+                  {ehAdmin && isConsignado(selecionada) && selecionada.payment_status === 'paid' && (
+                    <button
+                      onClick={handleReabrirConsignado}
+                      disabled={atualizando}
+                      title="Reabrir consignado (volta para pendente)"
+                      className="px-3 py-1.5 bg-white border border-amber-300 text-amber-700 rounded-lg font-semibold text-xs flex items-center gap-1.5 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+                    >
+                      <RotateCcw size={13} /> Reabrir
                     </button>
                   )}
                   <button

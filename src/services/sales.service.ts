@@ -319,6 +319,32 @@ export async function atualizarVendaConsignado(
   return { success: true, data };
 }
 
+/**
+ * Desfaz o fechamento de um consignado: o status volta para 'pending', a data
+ * de acerto é apagada e o saldo devido (valor antes da comissão) é restaurado.
+ *
+ * Não mexe em estoque, devoluções nem itens da venda — as peças devolvidas no
+ * fechamento continuam devolvidas. O que volta é apenas a cobrança em aberto.
+ *
+ * Roda como transação única no banco (RPC) e só é permitida para administradores;
+ * a checagem de papel está na própria função do Postgres.
+ */
+export async function reabrirConsignado(saleId: number, motivo?: string) {
+  console.log(`Reabrindo consignado da venda ${saleId}`, motivo);
+
+  const { data, error } = await supabase.rpc("reabrir_consignado", {
+    p_sale_id: saleId,
+    p_motivo: motivo?.trim() || null,
+  });
+
+  if (error) {
+    console.error("Erro ao reabrir consignado:", error);
+    throw new Error(error.message);
+  }
+
+  return data as { sale_id: number; saldo_restaurado: number; reaberto_em: string };
+}
+
 export type MetodoPagamento = 'credit_card' | 'debit' | 'cash' | 'pix' | 'consignado';
 
 /**
