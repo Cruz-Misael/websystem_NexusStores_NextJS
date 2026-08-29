@@ -12,8 +12,21 @@ import {
   Plus,
   Minus,
   Briefcase,
+  Loader2,
 } from "lucide-react";
-import { buscarProdutoPorBarcodeOuSKU } from "@/src/services/product.service";
+import {
+  buscarProdutoPorBarcodeOuSKU,
+  listarProdutosPaginado,
+} from "@/src/services/product.service";
+import { useDebounce } from "@/src/hooks/useDebounce";
+
+// Um termo com letras e >= 2 caracteres e busca por nome; so digitos continuam
+// sendo tratados como bipagem de codigo de barras / SKU.
+const temLetras = (texto: string) => /[a-zA-ZÀ-ÿ]/.test(texto);
+const ehBuscaPorNome = (texto: string) => temLetras(texto) && texto.trim().length >= 2;
+
+const money = (valor: number) =>
+  new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(valor || 0);
 
 interface ItemVenda {
   id: number;
@@ -22,6 +35,8 @@ interface ItemVenda {
   quantidade: number;
   precoUnitario: number;
   codigoBarras: string;
+  sku?: number | string;
+  tamanho?: string;
 }
 
 interface NovoItem {
@@ -30,6 +45,17 @@ interface NovoItem {
   quantidade: number;
   precoUnitario: number;
   codigoBarras: string;
+}
+
+// Produto vindo do estoque (product.service). Só os campos que o modal usa —
+// os mesmos que a busca do caixa mostra na lista: nome, SKU, barras, TAM, preço.
+interface ProdutoEstoque {
+  sku: number;
+  name: string;
+  price?: number | null;
+  barcode?: string | number | null;
+  size?: string | null;
+  stock_quantity?: number | null;
 }
 
 interface Venda {
@@ -67,6 +93,17 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   const inputDevolucaoRef = useRef<HTMLInputElement>(null);
   const inputAdicaoRef = useRef<HTMLInputElement>(null);
 
+  // Autocomplete por nome (mesmo comportamento da busca do caixa).
+  // Devolucao filtra os itens da propria venda; adicao busca no estoque.
+  const [sugestoesDevolucao, setSugestoesDevolucao] = useState<ItemVenda[]>([]);
+  const [indiceDevolucao, setIndiceDevolucao] = useState(-1);
+  const [sugestoesAdicao, setSugestoesAdicao] = useState<ProdutoEstoque[]>([]);
+  const [indiceAdicao, setIndiceAdicao] = useState(-1);
+  const [buscandoAdicao, setBuscandoAdicao] = useState(false);
+  const containerDevolucaoRef = useRef<HTMLDivElement>(null);
+  const containerAdicaoRef = useRef<HTMLDivElement>(null);
+  const debouncedAdicao = useDebounce(barcodeAdicao, 250);
+
   // Log para debug
   useEffect(() => {
     console.log("📦 Venda recebida no modal:", venda);
@@ -92,33 +129,77 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
     }
   }, [mensagemSucesso]);
 
+  // Marca +1 unidade de um item da venda. Usada tanto pela bipagem quanto pela
+  // seleção no dropdown de busca por nome.
+  function marcarDevolucao(item: ItemVenda) {
+    const atual = itensDevolvidos[item.id] ?? 0;
+    if (atual >= item.quantidade) {
+      setMensagemErro(`Limite atingido (${item.quantidade} un)`);
+      return;
+    }
+    setItensDevolvidos((prev) => ({ ...prev, [item.id]: (prev[item.id] ?? 0) + 1 }));
+    setMensagemSucesso(`${item.nome} marcado`);
+  }
+
+  function selecionarSugestaoDevolucao(item: ItemVenda) {
+    marcarDevolucao(item);
+    setBarcodeDevolucao("");
+    setSugestoesDevolucao([]);
+    setIndiceDevolucao(-1);
+    inputDevolucaoRef.current?.focus();
+  }
+
   async function handleBipDevolucao(code: string) {
     if (!venda || !venda.itens || lockBip.current) return;
     const codigoLimpo = code.trim();
     if (!codigoLimpo) return;
 
     lockBip.current = true;
-    setBarcodeDevolucao(""); 
+    setBarcodeDevolucao("");
 
     const itemExistente = venda.itens.find(i =>
       i.codigoBarras?.toString().toLowerCase() === codigoLimpo.toLowerCase()
     );
 
     if (itemExistente) {
-      setItensDevolvidos((prev) => {
-        const atual = prev[itemExistente.id] ?? 0;
-        if (atual >= itemExistente.quantidade) {
-          setMensagemErro(`Limite atingido (${itemExistente.quantidade} un)`);
-          return prev;
-        }
-        setMensagemSucesso(`${itemExistente.nome} marcado`);
-        return { ...prev, [itemExistente.id]: atual + 1 };
-      });
+      marcarDevolucao(itemExistente);
     } else {
-      setMensagemErro("Item não consta nesta venda.");
+      setMensagemErro(
+        temLetras(codigoLimpo)
+          ? "Nenhum item desta venda com esse nome."
+          : "Item não consta nesta venda."
+      );
     }
-    
+
     setTimeout(() => { lockBip.current = false; }, 400);
+  }
+
+  // Acrescenta +1 unidade de um produto do estoque à lista de troca.
+  function adicionarProdutoNovo(produto: ProdutoEstoque) {
+    setItensNovos(prev => {
+      const index = prev.findIndex(p => p.sku === produto.sku);
+      if (index >= 0) {
+        const novos = [...prev];
+        novos[index] = { ...novos[index], quantidade: novos[index].quantidade + 1 };
+        return novos;
+      }
+      return [...prev, {
+        sku: produto.sku,
+        nome: produto.name,
+        quantidade: 1,
+        precoUnitario: produto.price || 0,
+        codigoBarras: produto.barcode ? String(produto.barcode) : String(produto.sku)
+      }];
+    });
+    setMensagemSucesso(`${produto.name} adicionado.`);
+  }
+
+  function selecionarSugestaoAdicao(produto: ProdutoEstoque) {
+    adicionarProdutoNovo(produto);
+    setBarcodeAdicao("");
+    setSugestoesAdicao([]);
+    setIndiceAdicao(-1);
+    inputAdicaoRef.current?.focus();
   }
 
   async function handleBipAdicao(code: string) {
@@ -133,29 +214,138 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
       const produtoNoBanco = await buscarProdutoPorBarcodeOuSKU(codigoLimpo);
 
       if (produtoNoBanco) {
-        setItensNovos(prev => {
-          const index = prev.findIndex(p => p.sku === produtoNoBanco.sku);
-          if (index >= 0) {
-            const novos = [...prev];
-            novos[index] = { ...novos[index], quantidade: novos[index].quantidade + 1 };
-            return novos;
-          }
-          return [...prev, {
-            sku: produtoNoBanco.sku,
-            nome: produtoNoBanco.name,
-            quantidade: 1,
-            precoUnitario: produtoNoBanco.price,
-            codigoBarras: produtoNoBanco.barcode || produtoNoBanco.sku.toString()
-          }];
-        });
-        setMensagemSucesso(`${produtoNoBanco.name} adicionado.`);
+        adicionarProdutoNovo(produtoNoBanco);
       } else {
-        setMensagemErro("Produto não encontrado.");
+        setMensagemErro(
+          temLetras(codigoLimpo)
+            ? "Nenhum produto com esse nome."
+            : "Produto não encontrado."
+        );
       }
-    } catch (err) {
+    } catch {
       setMensagemErro("Erro na busca.");
     } finally {
       setTimeout(() => { lockBip.current = false; }, 400);
+    }
+  }
+
+  // ── Sugestões da devolução: filtro local nos itens da própria venda ────────
+  useEffect(() => {
+    const termo = barcodeDevolucao.trim();
+    if (!ehBuscaPorNome(termo)) {
+      setSugestoesDevolucao([]);
+      setIndiceDevolucao(-1);
+      return;
+    }
+    const alvo = termo.toLowerCase();
+    setSugestoesDevolucao(
+      (venda?.itens ?? [])
+        .filter(i => i.quantidade > 0 && i.nome?.toLowerCase().includes(alvo))
+        .slice(0, 8)
+    );
+    setIndiceDevolucao(-1);
+  }, [barcodeDevolucao, venda]);
+
+  // ── Sugestões da troca: busca no estoque, igual ao caixa ──────────────────
+  useEffect(() => {
+    const termo = debouncedAdicao.trim();
+    if (!ehBuscaPorNome(termo)) {
+      setSugestoesAdicao([]);
+      setIndiceAdicao(-1);
+      setBuscandoAdicao(false);
+      return;
+    }
+    let cancelado = false;
+    setBuscandoAdicao(true);
+    listarProdutosPaginado(1, 8, termo, false)
+      .then(res => { if (!cancelado) { setSugestoesAdicao(res.produtos); setIndiceAdicao(-1); } })
+      .catch(() => { if (!cancelado) setSugestoesAdicao([]); })
+      .finally(() => { if (!cancelado) setBuscandoAdicao(false); });
+    return () => { cancelado = true; };
+  }, [debouncedAdicao]);
+
+  // Fecha os dropdowns ao clicar fora
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      if (containerDevolucaoRef.current && !containerDevolucaoRef.current.contains(e.target as Node)) {
+        setSugestoesDevolucao([]);
+        setIndiceDevolucao(-1);
+      }
+      if (containerAdicaoRef.current && !containerAdicaoRef.current.contains(e.target as Node)) {
+        setSugestoesAdicao([]);
+        setIndiceAdicao(-1);
+      }
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  function onKeyDownDevolucao(e: React.KeyboardEvent) {
+    if (e.key === 'Escape' && sugestoesDevolucao.length > 0) {
+      e.preventDefault(); e.stopPropagation();
+      setSugestoesDevolucao([]); setIndiceDevolucao(-1);
+      return;
+    }
+    if (sugestoesDevolucao.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setIndiceDevolucao(prev => Math.min(prev + 1, sugestoesDevolucao.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setIndiceDevolucao(prev => Math.max(prev - 1, -1));
+        return;
+      }
+      if (e.key === 'Enter') {
+        // Sem navegar, Enter resolve sozinho quando há um único resultado.
+        const alvo = indiceDevolucao >= 0
+          ? sugestoesDevolucao[indiceDevolucao]
+          : (sugestoesDevolucao.length === 1 ? sugestoesDevolucao[0] : null);
+        if (alvo) {
+          e.preventDefault(); e.stopPropagation();
+          selecionarSugestaoDevolucao(alvo);
+          return;
+        }
+      }
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      handleBipDevolucao(barcodeDevolucao);
+    }
+  }
+
+  function onKeyDownAdicao(e: React.KeyboardEvent) {
+    if (e.key === 'Escape' && sugestoesAdicao.length > 0) {
+      e.preventDefault(); e.stopPropagation();
+      setSugestoesAdicao([]); setIndiceAdicao(-1);
+      return;
+    }
+    if (sugestoesAdicao.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setIndiceAdicao(prev => Math.min(prev + 1, sugestoesAdicao.length - 1));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setIndiceAdicao(prev => Math.max(prev - 1, -1));
+        return;
+      }
+      if (e.key === 'Enter') {
+        const alvo = indiceAdicao >= 0
+          ? sugestoesAdicao[indiceAdicao]
+          : (sugestoesAdicao.length === 1 ? sugestoesAdicao[0] : null);
+        if (alvo) {
+          e.preventDefault(); e.stopPropagation();
+          selecionarSugestaoAdicao(alvo);
+          return;
+        }
+      }
+    }
+    if (e.key === 'Enter') {
+      e.preventDefault(); e.stopPropagation();
+      handleBipAdicao(barcodeAdicao);
     }
   }
 
@@ -333,19 +523,69 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                     </span>
                   )}
                 </div>
-                <div className="relative">
+                <div ref={containerDevolucaoRef} className="relative">
                   <Barcode className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={15} />
                   <input
                     ref={inputDevolucaoRef}
                     type="text"
-                    placeholder="Bipar código..."
+                    placeholder="Bipar código ou digitar o nome..."
                     value={barcodeDevolucao}
                     onChange={(e) => setBarcodeDevolucao(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleBipDevolucao(barcodeDevolucao); }
-                    }}
-                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 outline-none font-mono placeholder:text-zinc-400 transition-all"
+                    onKeyDown={onKeyDownDevolucao}
+                    className="w-full bg-zinc-50 border border-zinc-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 outline-none placeholder:text-zinc-400 transition-all"
                   />
+
+                  {/* Dropdown de busca por nome — itens desta venda */}
+                  {sugestoesDevolucao.length > 0 && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                      <div className="px-3 py-1.5 bg-zinc-50 border-b border-zinc-100">
+                        <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                          {sugestoesDevolucao.length} nesta venda · ↑↓ · Enter
+                        </span>
+                      </div>
+                      <div className="max-h-64 overflow-y-auto">
+                        {sugestoesDevolucao.map((item, idx) => {
+                          const jaMarcado = itensDevolvidos[item.id] ?? 0;
+                          const esgotado = jaMarcado >= item.quantidade;
+                          const ativo = idx === indiceDevolucao;
+                          return (
+                            <button
+                              key={item.id}
+                              onMouseDown={(e) => e.preventDefault()}
+                              onClick={() => selecionarSugestaoDevolucao(item)}
+                              className={`w-full text-left px-4 py-2.5 flex items-start justify-between gap-3 border-b border-zinc-50 last:border-0 transition-colors ${
+                                ativo ? 'bg-indigo-50' : esgotado ? 'opacity-50 hover:bg-zinc-50' : 'hover:bg-zinc-50'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                {/* Nome completo em até 2 linhas: a coluna do modal é
+                                    mais estreita que a busca do caixa e cortar em
+                                    uma linha esconde o fim do nome. */}
+                                <p className="text-sm font-semibold text-zinc-800 line-clamp-2 leading-tight" title={item.nome}>
+                                  {item.nome}
+                                </p>
+                                <p className="text-[10px] text-zinc-400 font-mono truncate mt-0.5">
+                                  {item.sku ? `SKU ${item.sku}` : `Item ${item.id}`}
+                                  {item.codigoBarras ? ` · ${item.codigoBarras}` : ''}
+                                </p>
+                              </div>
+                              <div className="shrink-0 text-right">
+                                <p className={`text-sm font-bold ${esgotado ? 'text-zinc-400' : 'text-zinc-900'}`}>
+                                  {money(item.precoUnitario)}
+                                </p>
+                                {item.tamanho && (
+                                  <p className="text-[10px] font-medium text-indigo-500 uppercase leading-tight">{item.tamanho}</p>
+                                )}
+                                <p className="text-[10px] text-zinc-400 leading-tight whitespace-nowrap">
+                                  {jaMarcado > 0 ? `${jaMarcado}/${item.quantidade} marcada(s)` : `${item.quantidade} un.`}
+                                </p>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -363,8 +603,14 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                       }`}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-zinc-800 truncate">{item.nome}</p>
-                        <p className="text-[10px] text-zinc-400 font-mono">
+                        <p className="text-sm font-semibold text-zinc-800 line-clamp-2 leading-tight" title={item.nome}>
+                          {item.nome}
+                          {item.tamanho && (
+                            <span className="ml-1.5 text-[10px] font-medium text-indigo-500 uppercase">{item.tamanho}</span>
+                          )}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 font-mono truncate mt-0.5">
+                          {item.sku ? `SKU ${item.sku} · ` : ''}
                           {item.codigoBarras || item.id} · {item.quantidade} unid. · R$ {item.precoUnitario.toFixed(2)}
                         </p>
                       </div>
@@ -403,19 +649,68 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                       </span>
                     )}
                   </div>
-                  <div className="relative">
+                  <div ref={containerAdicaoRef} className="relative">
                     <PlusCircle className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" size={15} />
                     <input
                       ref={inputAdicaoRef}
                       type="text"
-                      placeholder="Bipar nova peça..."
+                      placeholder="Bipar código ou digitar o nome..."
                       value={barcodeAdicao}
                       onChange={(e) => setBarcodeAdicao(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleBipAdicao(barcodeAdicao); }
-                      }}
-                      className="w-full bg-zinc-50 border border-zinc-200 rounded-lg pl-9 pr-3 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 outline-none font-mono placeholder:text-zinc-400 transition-all"
+                      onKeyDown={onKeyDownAdicao}
+                      className="w-full bg-zinc-50 border border-zinc-200 rounded-lg pl-9 pr-8 py-2 text-sm focus:border-indigo-400 focus:ring-2 focus:ring-indigo-400/20 outline-none placeholder:text-zinc-400 transition-all"
                     />
+                    {buscandoAdicao && (
+                      <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 animate-spin" />
+                    )}
+
+                    {/* Dropdown de busca por nome — estoque */}
+                    {sugestoesAdicao.length > 0 && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-zinc-200 rounded-lg shadow-xl z-50 overflow-hidden">
+                        <div className="px-3 py-1.5 bg-zinc-50 border-b border-zinc-100">
+                          <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">
+                            {sugestoesAdicao.length} no estoque · ↑↓ · Enter
+                          </span>
+                        </div>
+                        <div className="max-h-64 overflow-y-auto">
+                          {sugestoesAdicao.map((produto, idx) => {
+                            const semEstoque = (produto.stock_quantity || 0) <= 0;
+                            const ativo = idx === indiceAdicao;
+                            return (
+                              <button
+                                key={produto.sku}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => selecionarSugestaoAdicao(produto)}
+                                className={`w-full text-left px-4 py-2.5 flex items-start justify-between gap-3 border-b border-zinc-50 last:border-0 transition-colors ${
+                                  ativo ? 'bg-indigo-50' : semEstoque ? 'opacity-50 hover:bg-zinc-50' : 'hover:bg-zinc-50'
+                                }`}
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <p className="text-sm font-semibold text-zinc-800 line-clamp-2 leading-tight" title={produto.name}>
+                                    {produto.name}
+                                  </p>
+                                  <p className="text-[10px] text-zinc-400 font-mono truncate mt-0.5">
+                                    SKU {produto.sku}
+                                    {produto.barcode ? ` · ${produto.barcode}` : ''}
+                                  </p>
+                                </div>
+                                <div className="shrink-0 text-right">
+                                  <p className={`text-sm font-bold ${semEstoque ? 'text-zinc-400' : 'text-zinc-900'}`}>
+                                    {money(produto.price || 0)}
+                                  </p>
+                                  {produto.size && (
+                                    <p className="text-[10px] font-medium text-indigo-500 uppercase leading-tight">{produto.size}</p>
+                                  )}
+                                  <p className={`text-[10px] leading-tight whitespace-nowrap ${semEstoque ? 'text-red-500' : 'text-zinc-400'}`}>
+                                    {semEstoque ? 'sem estoque' : `${produto.stock_quantity} em estoque`}
+                                  </p>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

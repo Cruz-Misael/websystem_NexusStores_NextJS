@@ -1477,7 +1477,11 @@ export default function HistoricoVendasCompacto() {
               quantidade: item.quantity,
               precoUnitario: item.unit_price,
               codigoBarras: item.product ? item.product_barcode || item.product?.sku?.toString() || "" : "",
-              variante: item.product?.sku?.toString() || item.product_sku
+              variante: item.product?.sku?.toString() || item.product_sku,
+              // SKU e tamanho alimentam a busca por nome do modal, que mostra a
+              // mesma ficha do dropdown do caixa (nome, SKU, barras, TAM).
+              sku: item.product?.sku ?? item.product_id ?? undefined,
+              tamanho: item.product?.size || undefined
             }))
           }}
           onClose={() => setModalAberto(false)}
