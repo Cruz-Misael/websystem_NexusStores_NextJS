@@ -30,6 +30,12 @@ import { CompanyService } from "@/services/company.service";
 // Recibo só aparece após finalizar a venda — fora do bundle inicial do caixa.
 const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
 
+// Teto de desconto que qualquer operador pode aplicar sozinho. Acima disso, a
+// venda só fecha com o PIN de um gerente — a mesma trava do limite por cliente.
+const DESCONTO_MAX_SEM_PIN = 10; // %
+// Atalhos do painel de desconto.
+const DESCONTOS_RAPIDOS = [5, 10, 15];
+
 // Tipos
 interface ItemCarrinho {
   id: number;
@@ -74,11 +80,16 @@ export default function CaixaPDVPro() {
   const [limiteInput, setLimiteInput] = useState("");
   const [salvandoLimite, setSalvandoLimite] = useState(false);
 
-  // Autorização de gerente por PIN (venda acima do limite)
+  // Autorização de gerente por PIN (venda acima do limite ou desconto alto)
   const [modalPinAberto, setModalPinAberto] = useState(false);
+  const [motivoPin, setMotivoPin] = useState<'limite' | 'desconto'>('limite');
   const [pinInput, setPinInput] = useState("");
   const [pinErro, setPinErro] = useState("");
   const [validandoPin, setValidandoPin] = useState(false);
+
+  // Desconto da venda (não se aplica a consignado — ver comentário no cálculo)
+  const [descontoTipo, setDescontoTipo] = useState<'percent' | 'valor'>('percent');
+  const [descontoInput, setDescontoInput] = useState("");
   const [sugestoesFiltradas, setSugestoesFiltradas] = useState<any[]>([]);
   const [dropdownAberto, setDropdownAberto] = useState(false);
   const [indiceSelecionado, setIndiceSelecionado] = useState(-1);
@@ -347,7 +358,23 @@ export default function CaixaPDVPro() {
   // Totais
   const subtotal = carrinho.reduce((acc, item) => acc + (item.precoUnitario * item.quantidade), 0);
   const totalItens = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
-  const desconto = 0;
+  // Desconto: o operador digita em % ou em R$. O valor nunca passa do subtotal.
+  // Consignado fica de fora de propósito — o abatimento dele é o percentual de
+  // lucro aplicado no fechamento, na tela de Vendas; somar os dois cobraria o
+  // desconto duas vezes na mesma venda.
+  const descontoDigitado = (() => {
+    const bruto = parseFloat(descontoInput.replace(",", "."));
+    return Number.isFinite(bruto) && bruto > 0 ? bruto : 0;
+  })();
+  const descontoBruto = descontoTipo === 'percent'
+    ? subtotal * (descontoDigitado / 100)
+    : descontoDigitado;
+  const desconto = pagamentoAtivo === 'consignado'
+    ? 0
+    : Math.min(Math.max(descontoBruto, 0), subtotal);
+  const descontoPercentual = subtotal > 0 ? (desconto / subtotal) * 100 : 0;
+  // Margem de 0.01 evita que 10% caia na trava por arredondamento de ponto flutuante.
+  const descontoExigePin = descontoPercentual > DESCONTO_MAX_SEM_PIN + 0.01;
   const totalFinal = subtotal - desconto;
 
   // Formatação
@@ -571,6 +598,17 @@ export default function CaixaPDVPro() {
       return;
     }
 
+    // Desconto acima do teto: exige o PIN de um gerente. A checagem fica aqui,
+    // no fecho, e não na digitação — assim não há como baixar o desconto para
+    // liberar e subir de novo antes de finalizar.
+    if (!autorizadoPorGerente && descontoExigePin) {
+      setMotivoPin('desconto');
+      setPinInput("");
+      setPinErro("");
+      setModalPinAberto(true);
+      return;
+    }
+
     // Limite de venda para cliente novo: se o total ultrapassar o limite,
     // exige o PIN de um operador com categoria "Gerente" para liberar.
     const limiteCliente = clienteSelecionado?.sales_limit;
@@ -581,6 +619,7 @@ export default function CaixaPDVPro() {
       limiteCliente !== undefined &&
       totalFinal > limiteCliente
     ) {
+      setMotivoPin('limite');
       setPinInput("");
       setPinErro("");
       setModalPinAberto(true);
@@ -635,6 +674,8 @@ export default function CaixaPDVPro() {
       setPagamentoAtivo('credito');
       setDataPrevistaPagamento("");
       setObservacaoConsignado("");
+      setDescontoInput("");
+      setDescontoTipo('percent');
 
       // Mostrar recibo da venda finalizada
       setVendaFinalizada(venda as Sale);
@@ -938,10 +979,92 @@ export default function CaixaPDVPro() {
                 <span>Subtotal</span>
                 <span className="font-mono">{money(subtotal)}</span>
               </div>
-              <div className="flex justify-between text-zinc-500 text-sm">
-                <span>Descontos</span>
-                <span className="font-mono">{money(desconto)}</span>
-              </div>
+
+              {pagamentoAtivo === 'consignado' ? (
+                <div className="flex justify-between text-zinc-400 text-sm">
+                  <span>Desconto</span>
+                  <span className="text-[11px] text-right">no fechamento do consignado</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-zinc-500 text-sm">Desconto</span>
+                    <div className="flex items-center gap-1">
+                      <div className="flex bg-white border border-zinc-200 rounded-md overflow-hidden">
+                        {([
+                          { id: 'percent' as const, label: '%' },
+                          { id: 'valor' as const, label: 'R$' },
+                        ]).map(op => (
+                          <button
+                            key={op.id}
+                            onClick={() => setDescontoTipo(op.id)}
+                            className={`px-2 py-1 text-[11px] font-bold transition-colors ${
+                              descontoTipo === op.id
+                                ? 'bg-zinc-800 text-white'
+                                : 'text-zinc-500 hover:bg-zinc-50'
+                            }`}
+                          >
+                            {op.label}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={descontoInput}
+                        onChange={e => setDescontoInput(e.target.value.replace(/[^\d.,]/g, ''))}
+                        placeholder="0"
+                        disabled={carrinho.length === 0}
+                        className="w-16 h-7 px-2 text-right text-sm font-mono bg-white border border-zinc-200 rounded-md outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-end gap-1">
+                    {DESCONTOS_RAPIDOS.map(pct => {
+                      const ativo = descontoTipo === 'percent' && descontoDigitado === pct;
+                      return (
+                        <button
+                          key={pct}
+                          onClick={() => { setDescontoTipo('percent'); setDescontoInput(String(pct)); }}
+                          disabled={carrinho.length === 0}
+                          className={`px-2 py-0.5 rounded-md border text-[11px] font-bold transition-colors disabled:opacity-40 ${
+                            ativo
+                              ? 'bg-indigo-600 border-indigo-600 text-white'
+                              : 'bg-white border-zinc-200 text-zinc-500 hover:border-indigo-300 hover:text-indigo-600'
+                          }`}
+                        >
+                          {pct}%
+                        </button>
+                      );
+                    })}
+                    {descontoInput !== "" && (
+                      <button
+                        onClick={() => setDescontoInput("")}
+                        className="px-2 py-0.5 rounded-md border border-zinc-200 bg-white text-[11px] font-bold text-zinc-400 hover:text-red-600 hover:border-red-200 transition-colors"
+                      >
+                        limpar
+                      </button>
+                    )}
+                  </div>
+
+                  {desconto > 0 && (
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-emerald-600 text-[11px] font-bold uppercase tracking-wide">
+                        {descontoPercentual.toFixed(descontoPercentual % 1 === 0 ? 0 : 1)}% aplicado
+                      </span>
+                      <span className="font-mono text-emerald-600">− {money(desconto)}</span>
+                    </div>
+                  )}
+
+                  {descontoExigePin && (
+                    <div className="flex items-start gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border bg-amber-50 border-amber-200 text-amber-700">
+                      <Lock size={12} className="shrink-0 mt-px" />
+                      Acima de {DESCONTO_MAX_SEM_PIN}% • exige PIN de gerente
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="py-6 border-y border-dashed border-zinc-300 shrink-0">
@@ -1524,15 +1647,27 @@ export default function CaixaPDVPro() {
               </div>
               <div>
                 <h2 className="text-base font-bold text-zinc-900">Autorização de Gerente</h2>
-                <p className="text-xs text-zinc-500">Venda acima do limite do cliente</p>
+                <p className="text-xs text-zinc-500">
+                  {motivoPin === 'desconto'
+                    ? 'Desconto acima do permitido'
+                    : 'Venda acima do limite do cliente'}
+                </p>
               </div>
             </div>
             <div className="p-6 space-y-4">
               <div className="text-sm text-zinc-600 space-y-1">
-                <p>
-                  Total <strong>{money(totalFinal)}</strong> ultrapassa o limite de{' '}
-                  <strong>{money(clienteSelecionado?.sales_limit ?? 0)}</strong> deste cliente.
-                </p>
+                {motivoPin === 'desconto' ? (
+                  <p>
+                    Desconto de <strong>{descontoPercentual.toFixed(descontoPercentual % 1 === 0 ? 0 : 1)}%</strong>{' '}
+                    (<strong>{money(desconto)}</strong>) passa do teto de{' '}
+                    <strong>{DESCONTO_MAX_SEM_PIN}%</strong> liberado ao operador.
+                  </p>
+                ) : (
+                  <p>
+                    Total <strong>{money(totalFinal)}</strong> ultrapassa o limite de{' '}
+                    <strong>{money(clienteSelecionado?.sales_limit ?? 0)}</strong> deste cliente.
+                  </p>
+                )}
                 <p>Digite o PIN de um operador com categoria <strong>Gerente</strong> para liberar.</p>
               </div>
               <div>
