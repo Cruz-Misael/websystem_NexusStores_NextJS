@@ -1,6 +1,12 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
+  // A pasta que guarda este projeto tem vários outros repositórios ao lado, cada
+  // um com seu package-lock.json. Sem esta linha o Turbopack elege a pasta-pai
+  // como raiz do workspace e o `next dev` quebra logo no primeiro import de CSS
+  // ("Can't resolve 'tailwindcss'"), porque procura node_modules lá em cima.
+  turbopack: { root: path.join(__dirname) },
   // Compressão gzip/brotli nas respostas
   compress: true,
   // Não expor o header X-Powered-By (fingerprinting)
