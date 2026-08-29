@@ -972,8 +972,10 @@ export default function CaixaPDVPro() {
               )}
           </div>
 
-          {/* Resumo Financeiro */}
-          <div className="flex-1 p-6 flex flex-col justify-center space-y-4 overflow-y-auto min-h-0">
+          {/* Resumo Financeiro — `justify-start`, e não `justify-center`: com o
+              bloco de desconto a coluna passou a encher a altura disponível, e
+              centralizar dentro de um container que rola esconde o topo. */}
+          <div className="flex-1 px-6 py-4 flex flex-col justify-start space-y-3 overflow-y-auto min-h-0">
             <div className="space-y-2">
               <div className="flex justify-between text-zinc-500 text-sm">
                 <span>Subtotal</span>
@@ -1020,58 +1022,59 @@ export default function CaixaPDVPro() {
                     </div>
                   </div>
 
-                  <div className="flex items-center justify-end gap-1">
-                    {DESCONTOS_RAPIDOS.map(pct => {
-                      const ativo = descontoTipo === 'percent' && descontoDigitado === pct;
-                      return (
-                        <button
-                          key={pct}
-                          onClick={() => { setDescontoTipo('percent'); setDescontoInput(String(pct)); }}
-                          disabled={carrinho.length === 0}
-                          className={`px-2 py-0.5 rounded-md border text-[11px] font-bold transition-colors disabled:opacity-40 ${
-                            ativo
-                              ? 'bg-indigo-600 border-indigo-600 text-white'
-                              : 'bg-white border-zinc-200 text-zinc-500 hover:border-indigo-300 hover:text-indigo-600'
-                          }`}
-                        >
-                          {pct}%
-                        </button>
-                      );
-                    })}
-                    {descontoInput !== "" && (
-                      <button
-                        onClick={() => setDescontoInput("")}
-                        className="px-2 py-0.5 rounded-md border border-zinc-200 bg-white text-[11px] font-bold text-zinc-400 hover:text-red-600 hover:border-red-200 transition-colors"
-                      >
-                        limpar
-                      </button>
-                    )}
+                  {/* Valor abatido à esquerda e atalhos à direita na MESMA linha:
+                      a coluna é estreita e cada linha extra empurra o método de
+                      pagamento para fora da tela. Clicar no atalho já ativo
+                      limpa o desconto, o que dispensa um botão "limpar". */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`font-mono text-sm flex items-center gap-1 ${
+                        desconto <= 0 ? 'text-transparent' : descontoExigePin ? 'text-amber-600' : 'text-emerald-600'
+                      }`}
+                      title={descontoExigePin ? `Acima de ${DESCONTO_MAX_SEM_PIN}%: exige PIN de gerente para finalizar` : undefined}
+                    >
+                      {desconto > 0 ? `− ${money(desconto)}` : '−'}
+                      {descontoExigePin && (
+                        <>
+                          <Lock size={11} className="shrink-0" />
+                          <span className="text-[10px] font-bold uppercase tracking-wide">PIN</span>
+                        </>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {DESCONTOS_RAPIDOS.map(pct => {
+                        const ativo = descontoTipo === 'percent' && descontoDigitado === pct;
+                        return (
+                          <button
+                            key={pct}
+                            onClick={() => {
+                              setDescontoTipo('percent');
+                              setDescontoInput(ativo ? "" : String(pct));
+                            }}
+                            disabled={carrinho.length === 0}
+                            title={ativo ? "Remover desconto" : `Aplicar ${pct}%`}
+                            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold transition-colors disabled:opacity-40 ${
+                              ativo
+                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                : 'bg-white border-zinc-200 text-zinc-500 hover:border-indigo-300 hover:text-indigo-600'
+                            }`}
+                          >
+                            {pct}%
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
 
-                  {desconto > 0 && (
-                    <div className="flex justify-between items-center text-sm">
-                      <span className="text-emerald-600 text-[11px] font-bold uppercase tracking-wide">
-                        {descontoPercentual.toFixed(descontoPercentual % 1 === 0 ? 0 : 1)}% aplicado
-                      </span>
-                      <span className="font-mono text-emerald-600">− {money(desconto)}</span>
-                    </div>
-                  )}
-
-                  {descontoExigePin && (
-                    <div className="flex items-start gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border bg-amber-50 border-amber-200 text-amber-700">
-                      <Lock size={12} className="shrink-0 mt-px" />
-                      Acima de {DESCONTO_MAX_SEM_PIN}% • exige PIN de gerente
-                    </div>
-                  )}
                 </div>
               )}
             </div>
 
-            <div className="py-6 border-y border-dashed border-zinc-300 shrink-0">
+            <div className="py-3 border-y border-dashed border-zinc-300 shrink-0">
               <div className="flex justify-between items-end mb-1">
                 <span className="text-sm font-bold text-zinc-400 uppercase">Total a Pagar</span>
               </div>
-              <div className="text-5xl font-bold text-zinc-900 tracking-tight font-mono text-right">
+              <div className="text-4xl font-bold text-zinc-900 tracking-tight font-mono text-right">
                 {money(totalFinal).replace('R$', '').trim()}
               </div>
             </div>
@@ -1104,50 +1107,54 @@ export default function CaixaPDVPro() {
               </div>
             )}
 
-            {/* Grid de Pagamento */}
+            {/* Grid de Pagamento — os quatro pagamentos à vista ficam em 2x2 e o
+                Consignado sai do grid, numa faixa própria: ele não é forma de
+                pagamento imediata, e como quinto item deixava uma célula vazia
+                custando uma linha inteira de altura na coluna. */}
             <div className="shrink-0">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase mb-2 block">Método de Pagamento</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase mb-1.5 block">Método de Pagamento</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { id: 'credito', icon: CreditCard, label: 'Crédito', key: 'F6' },
                   { id: 'debito', icon: CreditCard, label: 'Débito', key: 'F7' },
                   { id: 'pix', icon: QrCode, label: 'Pix', key: 'F8' },
                   { id: 'dinheiro', icon: Banknote, label: 'Dinheiro', key: 'F9' },
-                  { id: 'consignado', icon: ShoppingBag, label: 'Consignado', key: 'F10', cor: 'orange' },
                 ].map(metodo => (
                   <button
                     key={metodo.id}
-                    onClick={() => {
-                      if (metodo.id === 'consignado') {
-                        setMostrarModalConsignado(true);
-                        setPagamentoAtivo('consignado');
-                      } else {
-                        setPagamentoAtivo(metodo.id);
-                      }
-                    }}
-                    className={`relative flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${pagamentoAtivo === metodo.id
+                    onClick={() => setPagamentoAtivo(metodo.id)}
+                    className={`relative flex flex-col items-center justify-center p-2 rounded-lg border transition-all ${pagamentoAtivo === metodo.id
                       ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]'
-                      : metodo.id === 'consignado'
-                        ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
-                        : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+                      : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
                       }`}
                   >
-                    <metodo.icon size={20} className="mb-1.5" />
+                    <metodo.icon size={20} className="mb-1" />
                     <span className="text-xs font-medium">{metodo.label}</span>
-                    {metodo.id === 'consignado' && pagamentoAtivo === 'consignado' && (
-                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full border-2 border-white"></div>
-                    )}
-                    <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${metodo.id === 'consignado'
-                      ? 'text-orange-400'
-                      : pagamentoAtivo === metodo.id
-                        ? 'text-zinc-400'
-                        : 'text-zinc-300'
-                      }`}>
+                    <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${
+                      pagamentoAtivo === metodo.id ? 'text-zinc-400' : 'text-zinc-300'
+                    }`}>
                       {metodo.key}
                     </span>
                   </button>
                 ))}
               </div>
+
+              <button
+                onClick={() => { setMostrarModalConsignado(true); setPagamentoAtivo('consignado'); }}
+                className={`relative mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-lg border transition-all ${
+                  pagamentoAtivo === 'consignado'
+                    ? 'bg-zinc-800 text-white border-zinc-800 shadow-md'
+                    : 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
+                }`}
+              >
+                <ShoppingBag size={16} />
+                <span className="text-xs font-medium">Consignado</span>
+                <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${
+                  pagamentoAtivo === 'consignado' ? 'text-zinc-400' : 'text-orange-400'
+                }`}>
+                  F10
+                </span>
+              </button>
             </div>
           </div>
 
