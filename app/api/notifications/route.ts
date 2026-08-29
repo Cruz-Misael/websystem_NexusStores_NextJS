@@ -16,6 +16,22 @@ export async function GET() {
   return NextResponse.json({ notifications: data ?? [] });
 }
 
+// Insere avisando quando o banco recusa. Sem isto o erro passa em branco e o
+// alerta some sem explicação — foi o que aconteceu com o CHECK de `type`, que
+// rejeitava um tipo novo (23514) sem nada aparecer em lugar nenhum.
+async function inserirNotificacoes(
+  linhas: { type: string; title: string; message: string; reference_id: string }[]
+) {
+  if (linhas.length === 0) return;
+  const { error } = await supabaseAdmin.from("notifications").insert(linhas);
+  if (error) {
+    console.error(
+      `Falha ao criar notificação (${linhas.map((l) => l.reference_id).join(", ")}):`,
+      error.message
+    );
+  }
+}
+
 // Sincroniza: cria notificações para condições novas, remove as que não se aplicam mais
 export async function POST() {
   const auth = await requireOperator();
@@ -46,12 +62,12 @@ export async function POST() {
           ? `${p.name} está sem estoque.`
           : `${p.name} está com ${p.stock_quantity} unidade(s) (mínimo: ${p.minimum_stock}).`;
 
-      await supabaseAdmin.from("notifications").insert({
+      await inserirNotificacoes([{
         type: "stock_critical",
         title: "Estoque Crítico",
         message: msg,
         reference_id: ref,
-      });
+      }]);
     }
   }
 
@@ -64,52 +80,87 @@ export async function POST() {
     await supabaseAdmin.from("notifications").delete().in("reference_id", staleStock);
   }
 
-  // ── Vendas ATRASADAS (data prevista de acerto já passou) ─────────────────────
-  // Estar pendente é normal (consignado aguardando acerto); o alerta só dispara
-  // quando o "Pagamento previsto: YYYY-MM-DD" da observação está no passado.
+  // ── Acertos de consignado: os de HOJE e os ATRASADOS ────────────────────────
+  // Estar pendente é normal (consignado aguardando acerto); o alerta nasce da
+  // data em "Pagamento previsto: YYYY-MM-DD" na observação.
   const { data: vendas } = await supabaseAdmin
     .from("sales")
     .select("id, sale_date, final_amount, observation, customer:people(name)")
     .eq("payment_status", "pending");
 
-  const hoje = new Date();
-  hoje.setHours(0, 0, 0, 0);
+  // "Hoje" no fuso da loja, e não no do servidor: em produção o container roda
+  // em UTC, então depois das 21h o servidor já viraria o dia e um acerto de hoje
+  // apareceria como atrasado. Comparando as datas como texto YYYY-MM-DD (que é
+  // ordenável) as duas listas também ficam mutuamente exclusivas por construção.
+  const hojeISO = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo" })
+    .format(new Date());
 
-  const vendasAtrasadas = (vendas ?? []).filter((v) => {
-    const match = (v.observation as string | null)?.match(/Pagamento previsto: (\d{4}-\d{2}-\d{2})/);
-    if (!match) return false; // pendente sem data prevista não é atraso
-    return new Date(match[1] + "T12:00:00") < hoje;
-  });
+  const diasEntre = (de: string, ate: string) =>
+    Math.round((Date.parse(`${ate}T12:00:00Z`) - Date.parse(`${de}T12:00:00Z`)) / 86400000);
 
-  for (const v of vendasAtrasadas) {
+  const dataPrevistaDe = (v: { observation: string | null }) =>
+    v.observation?.match(/Pagamento previsto: (\d{4}-\d{2}-\d{2})/)?.[1] ?? null;
+
+  const formatarData = (iso: string) => iso.split("-").reverse().join("/");
+  const formatarValor = (valor: unknown) =>
+    Number(valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  const vendasComPrevisao = (vendas ?? [])
+    .map((v) => ({ venda: v, dataPrevista: dataPrevistaDe(v) }))
+    .filter((x): x is { venda: typeof x.venda; dataPrevista: string } => x.dataPrevista !== null);
+
+  const vendasAtrasadas = vendasComPrevisao.filter((x) => x.dataPrevista < hojeISO);
+  const vendasVencendoHoje = vendasComPrevisao.filter((x) => x.dataPrevista === hojeISO);
+
+  for (const { venda: v, dataPrevista } of vendasAtrasadas) {
     const ref = `sale_${v.id}`;
     if (!existingRefs.has(ref)) {
-      const dataPrevista = (v.observation as string).match(/Pagamento previsto: (\d{4}-\d{2}-\d{2})/)![1];
-      const diasAtraso = Math.floor(
-        (hoje.getTime() - new Date(dataPrevista + "T12:00:00").getTime()) / (1000 * 60 * 60 * 24)
-      );
+      const diasAtraso = diasEntre(dataPrevista, hojeISO);
       const cliente = (v.customer as { name?: string } | null)?.name ?? "sem cliente";
-      const valor = Number(v.final_amount).toLocaleString("pt-BR", {
-        style: "currency",
-        currency: "BRL",
-      });
 
-      await supabaseAdmin.from("notifications").insert({
+      await inserirNotificacoes([{
         type: "sale_delayed",
         title: "Acerto Atrasado",
-        message: `Consignado #${v.id} de ${cliente} (${valor}) está atrasado há ${diasAtraso} dia(s) — acerto previsto para ${new Date(dataPrevista + "T12:00:00").toLocaleDateString("pt-BR")}.`,
+        message: `Consignado #${v.id} de ${cliente} (${formatarValor(v.final_amount)}) está atrasado há ${diasAtraso} dia(s) — acerto previsto para ${formatarData(dataPrevista)}.`,
         reference_id: ref,
-      });
+      }]);
+    }
+  }
+
+  // Acertos que vencem HOJE: é o aviso para cobrar a revendedora ainda em tempo,
+  // antes de virar atraso. Prefixo de referência próprio (`duetoday_`) para não
+  // colidir com a limpeza dos atrasados, que varre tudo que começa com `sale_`.
+  for (const { venda: v, dataPrevista } of vendasVencendoHoje) {
+    const ref = `duetoday_${v.id}`;
+    if (!existingRefs.has(ref)) {
+      const cliente = (v.customer as { name?: string } | null)?.name ?? "sem cliente";
+
+      await inserirNotificacoes([{
+        type: "sale_due_today",
+        title: "Acerto Hoje",
+        message: `Consignado #${v.id} de ${cliente} (${formatarValor(v.final_amount)}) tem acerto previsto para hoje (${formatarData(dataPrevista)}) — hora de cobrar.`,
+        reference_id: ref,
+      }]);
     }
   }
 
   // Remove notificações de vendas que foram pagas/canceladas ou não estão mais atrasadas
-  const refsVendasAtivas = new Set(vendasAtrasadas.map((v) => `sale_${v.id}`));
+  const refsVendasAtivas = new Set(vendasAtrasadas.map((x) => `sale_${x.venda.id}`));
   const staleSales = [...existingRefs].filter(
     (r) => typeof r === "string" && r.startsWith("sale_") && !refsVendasAtivas.has(r)
   );
   if (staleSales.length > 0) {
     await supabaseAdmin.from("notifications").delete().in("reference_id", staleSales);
+  }
+
+  // Mesma limpeza para os acertos do dia: some ao ser pago ou ao virar atraso
+  // (aí o bloco acima já criou o aviso de "Acerto Atrasado" no lugar).
+  const refsVencendoHoje = new Set(vendasVencendoHoje.map((x) => `duetoday_${x.venda.id}`));
+  const staleDueToday = [...existingRefs].filter(
+    (r) => typeof r === "string" && r.startsWith("duetoday_") && !refsVencendoHoje.has(r)
+  );
+  if (staleDueToday.length > 0) {
+    await supabaseAdmin.from("notifications").delete().in("reference_id", staleDueToday);
   }
 
   // ── Cadastros de clientes desatualizados (3+ meses sem edição) ───────────────
@@ -140,7 +191,7 @@ export async function POST() {
       });
 
     if (novas.length > 0) {
-      await supabaseAdmin.from("notifications").insert(novas);
+      await inserirNotificacoes(novas);
     }
 
     // Remove notificações de cadastros que foram atualizados (ou inativados)
