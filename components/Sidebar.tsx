@@ -23,6 +23,7 @@ import {
   ClipboardList,
   Factory,
   Wallet,
+  CalendarClock,
   Globe,
   ChevronsLeft,
   ChevronsRight,
@@ -90,6 +91,7 @@ export default function Sidebar() {
     { name: "Fornecedores",   icon: Factory,          href: "/compras/fornecedores",  onlineStore: false, adminOnly: false },
     { name: "Financeiro",     icon: Wallet,           href: "/financeiro",            onlineStore: false, adminOnly: false, roles: ["admin", "gerente"] },
     { name: "Clientes",       icon: Users,            href: "/clientes",              onlineStore: false, adminOnly: false },
+    { name: "Cobranças",     icon: CalendarClock,     href: "/cobrancas",             onlineStore: false, adminOnly: false, roles: ["admin", "gerente"] },
     { name: "Pedidos Online", icon: ShoppingBag,      href: "/pedidos",               onlineStore: true,  adminOnly: true  },
     { name: "Relatórios",    icon: BarChart2,         href: "/relatorios",            onlineStore: false, adminOnly: false },
   ];
