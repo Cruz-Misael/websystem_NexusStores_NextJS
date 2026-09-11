@@ -70,10 +70,11 @@ import { BillingService, BillingConfig, calcularProximoVencimento, calcularStatu
 import { getWebsiteConfig, upsertWebsiteConfig, uploadBanner, WebsiteConfig } from '@/src/services/website.service';
 import { carregarConfigCobranca, salvarConfigCobranca } from '@/src/services/collections.service';
 import { CollectionSettings, SETTINGS_PADRAO, VARIAVEIS_MENSAGEM } from '@/src/lib/cobranca';
+import { EmailSettings, EMAIL_SETTINGS_PADRAO, carregarEmailSettings, salvarEmailSettings, enviarEmailDeTeste } from '@/src/services/email-settings.service';
 // Aba de gráficos (recharts) carregada só quando aberta — fora do bundle inicial.
 const IndicadoresSite = dynamic(() => import('@/components/configuracoes/IndicadoresSite'), { ssr: false });
 
-type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'cobranca' | 'meusite' | 'frete' | 'descontos' | 'indicadores';
+type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'cobranca' | 'email' | 'meusite' | 'frete' | 'descontos' | 'indicadores';
 type UsuarioCargo = 'admin' | 'gerente' | 'colaborador';
 type UsuarioStatus = 'ativo' | 'inativo' | 'pendente';
 
@@ -132,7 +133,7 @@ function ConfiguracoesContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'cobranca' || tab === 'meusite' || tab === 'frete' || tab === 'descontos' || tab === 'indicadores') return tab as TabType;
+    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'cobranca' || tab === 'email' || tab === 'meusite' || tab === 'frete' || tab === 'descontos' || tab === 'indicadores') return tab as TabType;
     return 'loja';
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -250,8 +251,8 @@ function ConfiguracoesContent() {
       const { settings, migracaoPendente } = await carregarConfigCobranca();
       setFormCobranca(settings);
       setCobrancaMigracaoPendente(migracaoPendente);
-    } catch (error: any) {
-      toast.error(`Não foi possível carregar a configuração de cobrança: ${error.message}`);
+    } catch (error) {
+      toast.error(`Não foi possível carregar a configuração de cobrança: ${error instanceof Error ? error.message : error}`);
     }
   };
 
@@ -264,10 +265,51 @@ function ConfiguracoesContent() {
       });
       toast.success('Configuração de cobrança salva!');
       setCobrancaMigracaoPendente(false);
-    } catch (error: any) {
-      toast.error(`Erro ao salvar: ${error.message}`);
+    } catch (error) {
+      toast.error(`Erro ao salvar: ${error instanceof Error ? error.message : error}`);
     } finally {
       setSalvandoCobranca(false);
+    }
+  };
+
+  // ========== E-MAIL (REMETENTE) ==========
+  const [formEmail, setFormEmail] = useState<EmailSettings>(EMAIL_SETTINGS_PADRAO);
+  const [salvandoEmail, setSalvandoEmail] = useState(false);
+  const [emailMigracaoPendente, setEmailMigracaoPendente] = useState(false);
+  const [enviandoTeste, setEnviandoTeste] = useState(false);
+  const [destinoTeste, setDestinoTeste] = useState('');
+
+  const loadEmailSettings = async () => {
+    try {
+      const { settings, migracaoPendente } = await carregarEmailSettings();
+      setFormEmail(settings);
+      setEmailMigracaoPendente(migracaoPendente);
+    } catch (error) {
+      toast.error(`Não foi possível carregar o remetente: ${error instanceof Error ? error.message : error}`);
+    }
+  };
+
+  const handleSalvarEmail = async () => {
+    setSalvandoEmail(true);
+    try {
+      await salvarEmailSettings(formEmail);
+      toast.success('Remetente salvo!');
+      setEmailMigracaoPendente(false);
+    } catch (error) {
+      toast.error(`Erro ao salvar: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      setSalvandoEmail(false);
+    }
+  };
+
+  const handleEnviarTeste = async () => {
+    setEnviandoTeste(true);
+    try {
+      const r = await enviarEmailDeTeste(destinoTeste.trim() || undefined);
+      if (r.ok) toast.success(`Teste enviado para ${r.to}. Se não chegar, olhe a caixa de spam.`);
+      else toast.error(r.error || 'Falha ao enviar o teste', { duration: 9000 });
+    } finally {
+      setEnviandoTeste(false);
     }
   };
 
@@ -750,7 +792,7 @@ function ConfiguracoesContent() {
     loadCurrentUserRole();
   }, []);
 
-  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); loadWebsiteConfig(); loadCupons(); loadCobranca(); }, []);
+  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); loadWebsiteConfig(); loadCupons(); loadCobranca(); loadEmailSettings(); }, []);
 
   const loadCompanyData = async () => {
     try {
@@ -789,6 +831,7 @@ function ConfiguracoesContent() {
     { id: 'operadores' as TabType, label: 'Operadores', icon: UserCog, desc: 'Operadores do caixa', onlineStore: false, disabled: false },
     { id: 'pagamento' as TabType, label: 'Pagamento', icon: CreditCard, desc: 'Assinatura e vencimento', onlineStore: false, disabled: false },
     { id: 'cobranca' as TabType, label: 'Cobrança', icon: CalendarClock, desc: 'Lembretes de acerto', onlineStore: false, disabled: !isAdmin },
+    { id: 'email' as TabType, label: 'E-mail', icon: Mail, desc: 'Remetente das mensagens', onlineStore: false, disabled: !isAdmin },
     { id: 'meusite' as TabType, label: 'Meu Site', icon: Store, desc: 'Loja virtual pública', onlineStore: true, disabled: !isAdmin },
     { id: 'frete' as TabType, label: 'Frete', icon: Truck, desc: 'Envio e Melhor Envio', onlineStore: true, disabled: !isAdmin },
     { id: 'descontos' as TabType, label: 'Descontos', icon: Tag, desc: 'Cupons e promoções', onlineStore: true, disabled: !isAdmin },
@@ -819,6 +862,12 @@ function ConfiguracoesContent() {
           <button onClick={handleSalvarBilling} disabled={salvandoBilling} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
             {salvandoBilling ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {salvandoBilling ? 'Salvando' : 'Salvar Configuração'}
+          </button>
+        )}
+        {activeTab === 'email' && isAdmin && (
+          <button onClick={handleSalvarEmail} disabled={salvandoEmail} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
+            {salvandoEmail ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {salvandoEmail ? 'Salvando' : 'Salvar Remetente'}
           </button>
         )}
         {activeTab === 'cobranca' && isAdmin && (
@@ -1367,6 +1416,122 @@ function ConfiguracoesContent() {
             })()}
 
             {/* ===== ABA MEU SITE ===== */}
+            {activeTab === 'email' && (
+              <div className="space-y-6 animate-in fade-in duration-400">
+
+                {emailMigracaoPendente && (
+                  <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                    <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                    <div className="text-xs text-amber-800">
+                      <p className="font-black uppercase tracking-tight">Falta preparar o banco</p>
+                      <p className="text-amber-700 mt-1">
+                        Rode <code className="font-mono bg-amber-100 px-1 py-0.5 rounded">sql/email_remetente.sql</code> no
+                        SQL Editor do Supabase para poder salvar o remetente aqui.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {!formEmail.from_address.trim() && (
+                  <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+                    <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                    <div className="text-xs text-red-800">
+                      <p className="font-black uppercase tracking-tight">Os e-mails não estão chegando</p>
+                      <p className="text-red-700 mt-1 leading-relaxed">
+                        Sem remetente próprio, o sistema usa o endereço de teste do Resend
+                        (<code className="font-mono">onboarding@resend.dev</code>), que <strong>só entrega para o dono da
+                        conta do Resend</strong>. Cliente nenhum recebe — nem aviso de pedido, nem cobrança.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><Mail size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Remetente dos e-mails</h3>
+                      <p className="text-[11px] text-zinc-400">Vale para aviso de pedido e para a cobrança de consignado</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Nome que aparece</label>
+                      <input
+                        value={formEmail.from_name}
+                        onChange={e => setFormEmail(p => ({ ...p, from_name: e.target.value }))}
+                        placeholder="Íntima Sedução"
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">É o que a cliente lê na caixa de entrada.</p>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">E-mail remetente</label>
+                      <input
+                        type="email"
+                        value={formEmail.from_address}
+                        onChange={e => setFormEmail(p => ({ ...p, from_address: e.target.value }))}
+                        placeholder="contato@seudominio.com.br"
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">Precisa ser de um domínio verificado no Resend.</p>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Responder para</label>
+                      <input
+                        type="email"
+                        value={formEmail.reply_to}
+                        onChange={e => setFormEmail(p => ({ ...p, reply_to: e.target.value }))}
+                        placeholder="seuemail@gmail.com (opcional)"
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">
+                        Quando a cliente responder, cai aqui. Este campo aceita qualquer e-mail — Gmail serve —, porque a
+                        resposta não passa pela verificação de domínio.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><CheckCircle2 size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Testar o envio</h3>
+                      <p className="text-[11px] text-zinc-400">Descubra agora se chega, em vez de descobrir na cobrança</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input
+                      type="email"
+                      value={destinoTeste}
+                      onChange={e => setDestinoTeste(e.target.value)}
+                      placeholder="Deixe vazio para receber no seu próprio e-mail"
+                      className="flex-1 h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                    <button
+                      onClick={handleEnviarTeste}
+                      disabled={enviandoTeste}
+                      className="inline-flex items-center justify-center gap-2 px-4 h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-colors active:scale-95 disabled:opacity-50"
+                    >
+                      {enviandoTeste ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                      Enviar teste
+                    </button>
+                  </div>
+
+                  <p className="text-[10px] text-zinc-400 mt-3 leading-relaxed">
+                    Salve o remetente antes de testar. Se o Resend recusar, a mensagem de erro aqui diz exatamente o que
+                    falta — normalmente verificar o domínio em resend.com/domains, que exige registros de DNS e é feito
+                    fora do sistema.
+                  </p>
+                </section>
+              </div>
+            )}
+
             {activeTab === 'cobranca' && (
               <div className="space-y-6 animate-in fade-in duration-400">
 
@@ -1443,6 +1608,10 @@ function ConfiguracoesContent() {
                         onChange={e => setFormCobranca(p => ({ ...p, whatsapp_template: e.target.value }))}
                         className="w-full px-3 py-2 border border-zinc-200 rounded-xl text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
                       />
+                      <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
+                        A mensagem sai do WhatsApp conectado no aparelho (ou no WhatsApp Web) de quem clicar em Cobrar —
+                        não existe número de origem a configurar aqui. O número em Meu Site é para onde a cliente responde.
+                      </p>
                     </div>
 
                     <div>

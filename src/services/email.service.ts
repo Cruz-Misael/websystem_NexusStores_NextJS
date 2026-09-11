@@ -1,10 +1,48 @@
 import { Resend } from 'resend';
+import { supabaseAdmin } from '@/src/lib/supabase/admin';
 
-const FROM = process.env.FROM_EMAIL || 'Pedidos <onboarding@resend.dev>';
+// Último recurso: o que estiver no ambiente. O endereço padrão do Resend
+// (onboarding@resend.dev) só entrega para o dono da conta — serve para testar,
+// não para falar com cliente.
+const FROM_AMBIENTE = process.env.FROM_EMAIL || 'Pedidos <onboarding@resend.dev>';
 
 function getResend() {
   if (!process.env.RESEND_API_KEY) return null;
   return new Resend(process.env.RESEND_API_KEY);
+}
+
+export interface Remetente {
+  from: string;              // "Nome <endereco@dominio>" pronto para o Resend
+  replyTo?: string;
+  /** true quando ainda está no endereço de teste do Resend. */
+  usandoEnderecoDeTeste: boolean;
+}
+
+/**
+ * Remetente configurado pela loja (Configurações › E-mail), com o ambiente
+ * como reserva. Lido a cada envio: é uma consulta barata e evita ter que
+ * reiniciar a aplicação para trocar o endereço.
+ */
+export async function carregarRemetente(): Promise<Remetente> {
+  const { data } = await supabaseAdmin
+    .from('email_settings')
+    .select('from_name, from_address, reply_to')
+    .eq('id', 1)
+    .maybeSingle();
+
+  const endereco = data?.from_address?.trim();
+  const nome = data?.from_name?.trim();
+  const replyTo = data?.reply_to?.trim();
+
+  const from = endereco
+    ? (nome ? `${nome} <${endereco}>` : endereco)
+    : FROM_AMBIENTE;
+
+  return {
+    from,
+    replyTo: replyTo || undefined,
+    usandoEnderecoDeTeste: from.includes('resend.dev'),
+  };
 }
 
 const STATUS_LABELS: Record<string, string> = {
@@ -92,17 +130,30 @@ function buildHtml(params: OrderStatusEmailParams): string {
 
 export async function sendOrderStatusEmail(params: OrderStatusEmailParams): Promise<void> {
   const resend = getResend();
-  if (!resend) return;
+  if (!resend) {
+    console.error('RESEND_API_KEY não configurada — e-mail de pedido não enviado.');
+    return;
+  }
 
   const emoji = STATUS_EMOJIS[params.newStatus] || '📦';
   const label = STATUS_LABELS[params.newStatus] || params.newStatus;
+  const remetente = await carregarRemetente();
 
-  await resend.emails.send({
-    from: FROM,
+  const { error } = await resend.emails.send({
+    from: remetente.from,
+    replyTo: remetente.replyTo,
     to: params.to,
     subject: `${emoji} Pedido #${params.orderId.slice(0, 8).toUpperCase()} — ${label} | ${params.storeName}`,
     html: buildHtml(params),
   });
+
+  // Quem chama trata este envio como melhor esforço e engole a exceção. Sem o
+  // log, uma recusa do Resend (domínio não verificado, por exemplo) sumia sem
+  // deixar rastro — foi o que aconteceu enquanto o remetente era o de teste.
+  if (error) {
+    console.error(`E-mail de pedido ${params.orderId} recusado pelo Resend:`, error.message);
+    throw new Error(error.message);
+  }
 }
 
 /* =========================================================
@@ -191,12 +242,51 @@ export async function sendCollectionEmail(params: CollectionEmailParams): Promis
   const resend = getResend();
   if (!resend) throw new Error('RESEND_API_KEY não configurada — nenhum e-mail foi enviado.');
 
+  const remetente = await carregarRemetente();
+
   const { error } = await resend.emails.send({
-    from: FROM,
+    from: remetente.from,
+    replyTo: remetente.replyTo,
     to: params.to,
     subject: params.subject,
     html: buildCollectionHtml(params),
   });
 
   if (error) throw new Error(error.message || 'O Resend recusou o envio.');
+}
+
+/**
+ * E-mail de teste, usado na tela de configuração para descobrir se o remetente
+ * funciona ANTES de a cobrança sair. É aqui que a recusa por domínio não
+ * verificado aparece de forma legível, em vez de virar silêncio.
+ */
+export async function sendTestEmail(to: string): Promise<{ from: string; usandoEnderecoDeTeste: boolean }> {
+  const resend = getResend();
+  if (!resend) throw new Error('RESEND_API_KEY não configurada no servidor.');
+
+  const remetente = await carregarRemetente();
+
+  const { error } = await resend.emails.send({
+    from: remetente.from,
+    replyTo: remetente.replyTo,
+    to,
+    subject: 'Teste de envio — configuração de e-mail',
+    html: `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f4f4f5;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:520px;margin:32px auto;background:#fff;border-radius:16px;border:1px solid #e4e4e7;padding:32px;">
+    <h1 style="margin:0 0 12px;color:#18181b;font-size:20px;font-weight:800;">Deu certo!</h1>
+    <p style="color:#52525b;font-size:14px;line-height:1.6;margin:0 0 16px;">
+      Se este e-mail chegou, o remetente está configurado e os lembretes de cobrança
+      vão sair por aqui.
+    </p>
+    <p style="color:#a1a1aa;font-size:12px;margin:0;">Enviado por <strong>${remetente.from}</strong></p>
+  </div>
+</body>
+</html>`,
+  });
+
+  if (error) throw new Error(error.message || 'O Resend recusou o envio.');
+  return { from: remetente.from, usandoEnderecoDeTeste: remetente.usandoEnderecoDeTeste };
 }
