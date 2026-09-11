@@ -43,6 +43,10 @@ import {
 
 const PAPEIS_PERMITIDOS = ["admin", "gerente"];
 
+// A rota de envio aceita no máximo 40 por chamada (é o que cabe no tempo da
+// função, já que os e-mails saem espaçados). Acima disso, manda em blocos.
+const TAMANHO_DO_BLOCO = 40;
+
 type FiltroSituacao = "todas" | "atrasada" | "hoje";
 
 /** "hoje", "ontem", "há 4 dias" — mais legível que a data crua na coluna de histórico. */
@@ -230,7 +234,14 @@ export default function CobrancasPage() {
     if (alvos.length === 0) return;
     setEnviando(true);
     try {
-      const r = await enviarEmailsCobranca(alvos.map((c) => c.saleId));
+      const r = { enviados: 0, falhas: [] as { sale_id: number; motivo: string }[] };
+
+      for (let i = 0; i < alvos.length; i += TAMANHO_DO_BLOCO) {
+        const bloco = alvos.slice(i, i + TAMANHO_DO_BLOCO);
+        const parcial = await enviarEmailsCobranca(bloco.map((c) => c.saleId));
+        r.enviados += parcial.enviados;
+        r.falhas.push(...parcial.falhas);
+      }
 
       if (r.enviados > 0) {
         toast.success(r.enviados === 1 ? "Lembrete enviado por e-mail." : `${r.enviados} lembretes enviados por e-mail.`);

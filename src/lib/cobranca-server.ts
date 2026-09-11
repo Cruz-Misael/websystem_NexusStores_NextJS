@@ -112,6 +112,12 @@ export interface ResultadoEnvio {
   falhas: { sale_id: number; motivo: string }[];
 }
 
+// O Resend aceita ~2 envios por segundo na conta padrão; acima disso devolve
+// 429 e a cobrança simplesmente não sai. Espaçar é mais barato que tratar o erro.
+const INTERVALO_ENTRE_ENVIOS_MS = 600;
+
+const espera = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 /**
  * Envia o lembrete para cada cobrança da lista e registra o resultado.
  * Quem não tem e-mail válido entra como falha explicada, não some da conta.
@@ -122,12 +128,16 @@ export async function enviarCobrancas(
 ): Promise<ResultadoEnvio> {
   const [settings, loja] = await Promise.all([carregarSettings(), carregarIdentidadeLoja()]);
   const resultado: ResultadoEnvio = { enviados: 0, falhas: [] };
+  let jaEnviouAlgum = false;
 
   for (const cobranca of cobrancas) {
     if (!cobranca.email) {
       resultado.falhas.push({ sale_id: cobranca.saleId, motivo: "cliente sem e-mail no cadastro" });
       continue;
     }
+
+    if (jaEnviouAlgum) await espera(INTERVALO_ENTRE_ENVIOS_MS);
+    jaEnviouAlgum = true;
 
     const ctx = {
       clienteNome: cobranca.clienteNome,

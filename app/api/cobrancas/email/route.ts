@@ -9,8 +9,10 @@ import { buscarCobrancas, enviarCobrancas } from "@/src/lib/cobranca-server";
 // Cobrança é assunto de quem manda na loja — mesmo recorte do menu Financeiro.
 const PAPEIS_PERMITIDOS = ["admin", "gerente"];
 
-// Teto por chamada: evita que um clique acidental dispare a base inteira.
-const MAX_POR_CHAMADA = 100;
+// Os envios são espaçados (limite do Resend), então o teto por chamada é o que
+// cabe no tempo da função — e de quebra evita que um clique dispare a base toda.
+export const maxDuration = 60;
+const MAX_POR_CHAMADA = 40;
 
 export async function POST(req: NextRequest) {
   const auth = await requireOperator();

@@ -17,9 +17,11 @@ import {
   ultimosEmailsPorVenda,
 } from "@/src/lib/cobranca-server";
 
-// Teto por execução: se algo der errado na regra, o estrago é limitado e
-// o resto sai na manhã seguinte.
-const MAX_POR_EXECUCAO = 200;
+// A função serverless tem tempo contado e os envios são espaçados para não
+// bater no limite do Resend (~2/s). Com isso cabem uns 50 lembretes por
+// execução — o que sobrar sai na manhã seguinte, e não some da fila.
+export const maxDuration = 60;
+const MAX_POR_EXECUCAO = 50;
 
 function segredoConfere(req: NextRequest): boolean {
   const esperado = process.env.CRON_SECRET;
