@@ -76,7 +76,9 @@ interface Props {
     valorFinal?: number;
     percentualLucro?: number;
     valorNetAnteComissao?: number;
-  }) => void;
+    // O modal aguarda esta promessa para manter o botão travado enquanto a
+    // operação roda no banco — é o que impede o clique repetido.
+  }) => void | Promise<void>;
   isConsignado?: boolean;
 }
 
@@ -87,6 +89,11 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   const [barcodeDevolucao, setBarcodeDevolucao] = useState("");
   const [barcodeAdicao, setBarcodeAdicao] = useState("");
   const [percentualLucro, setPercentualLucro] = useState<string>("30");
+  // Trava do botão enquanto a operação roda. Sem isto, a troca demora alguns
+  // segundos sem dar sinal de vida e quem está no caixa clica de novo — cada
+  // clique repetia a devolução inteira (estoque creditado 2x, itens novos
+  // inseridos 2x). Aconteceu na venda #214 em 16 e 17/09/2026.
+  const [enviando, setEnviando] = useState(false);
   const [mensagemErro, setMensagemErro] = useState("");
   const [mensagemSucesso, setMensagemSucesso] = useState("");
   const lockBip = useRef(false);
@@ -433,28 +440,37 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   // Alias para manter compatibilidade com o restante do código (troca/devolução normal)
   const valorBaseFinal = saldoDevedor;
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
+    if (enviando) return;
+
     if (!isConsignado && quantidadeRemovida === 0 && itensNovos.length === 0) {
       alert("Selecione pelo menos uma peça para devolver ou adicionar na troca");
       return;
     }
 
-    onConfirm({
-      vendaId: venda.id,
-      itens: Object.entries(itensDevolvidos).map(([itemId, quantidade]) => ({
-        itemId: Number(itemId),
-        quantidade,
-      })),
-      itensAdicionados: itensNovos.map(i => ({
-        sku: i.sku,
-        quantidade: i.quantidade
-      })),
-      motivo: "Ajuste manual de troca/devolução",
-      tipo: isConsignado ? 'devolucao' : (itensNovos.length > 0 ? 'troca' : 'devolucao'),
-      valorFinal: isConsignado ? valorFinalConsignado : valorBaseFinal,
-      percentualLucro: isConsignado ? pctLucro : undefined,
-      valorNetAnteComissao: isConsignado ? saldoDevedor : undefined,
-    });
+    setEnviando(true);
+    try {
+      await onConfirm({
+        vendaId: venda.id,
+        itens: Object.entries(itensDevolvidos).map(([itemId, quantidade]) => ({
+          itemId: Number(itemId),
+          quantidade,
+        })),
+        itensAdicionados: itensNovos.map(i => ({
+          sku: i.sku,
+          quantidade: i.quantidade
+        })),
+        motivo: "Ajuste manual de troca/devolução",
+        tipo: isConsignado ? 'devolucao' : (itensNovos.length > 0 ? 'troca' : 'devolucao'),
+        valorFinal: isConsignado ? valorFinalConsignado : valorBaseFinal,
+        percentualLucro: isConsignado ? pctLucro : undefined,
+        valorNetAnteComissao: isConsignado ? saldoDevedor : undefined,
+      });
+    } finally {
+      // Se a operação falhou, o modal segue aberto e o botão volta a funcionar;
+      // se deu certo, a tela fecha o modal e este estado morre junto.
+      setEnviando(false);
+    }
   };
 
   // Se não houver itens, mostrar mensagem de erro
@@ -852,15 +868,19 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
 
             <button
               onClick={handleConfirm}
-              disabled={isConsignado ? false : (quantidadeRemovida === 0 && itensNovos.length === 0)}
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-colors disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed"
+              disabled={enviando || (isConsignado ? false : (quantidadeRemovida === 0 && itensNovos.length === 0))}
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold uppercase tracking-widest transition-colors disabled:bg-zinc-100 disabled:text-zinc-400 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              {isConsignado ? 'Confirmar Fechamento' : 'Confirmar Operação'}
+              {enviando && <Loader2 size={14} className="animate-spin" />}
+              {enviando
+                ? 'Processando, não feche a tela'
+                : (isConsignado ? 'Confirmar Fechamento' : 'Confirmar Operação')}
             </button>
 
             <button
               onClick={onClose}
-              className="w-full text-[11px] text-zinc-400 hover:text-zinc-600 transition-colors font-medium text-center"
+              disabled={enviando}
+              className="w-full text-[11px] text-zinc-400 hover:text-zinc-600 transition-colors font-medium text-center disabled:text-zinc-300 disabled:cursor-not-allowed"
             >
               Cancelar
             </button>

@@ -417,7 +417,15 @@ export default function HistoricoVendasCompacto() {
   };
 
   // Processar devolução/troca (Ajustado para suportar adições)
+  // Trava de reentrancia: criarDevolucao e adicionarItemVenda nao sao
+  // idempotentes, entao a mesma confirmacao rodando duas vezes credita estoque
+  // e insere itens em dobro. O botao do modal ja fica desabilitado enquanto
+  // processa; esta e a garantia do lado de ca.
+  const processandoRef = useRef(false);
+
   const handleDevolucao = async (payload: any) => {
+    if (processandoRef.current) return;
+    processandoRef.current = true;
     try {
       setAtualizando(true);
 
@@ -473,11 +481,14 @@ export default function HistoricoVendasCompacto() {
       mostrarPopup("Erro no Processamento", `Não foi possível processar: ${error.message}`, "erro");
     } finally {
       setAtualizando(false);
+      processandoRef.current = false;
     }
   };
 
   // Processar fechamento de consignado
   const handleFecharConsignado = async (payload: any) => {
+    if (processandoRef.current) return;
+    processandoRef.current = true;
     try {
       setAtualizando(true);
 
@@ -577,6 +588,7 @@ export default function HistoricoVendasCompacto() {
       );
     } finally {
       setAtualizando(false);
+      processandoRef.current = false;
     }
   };
 
