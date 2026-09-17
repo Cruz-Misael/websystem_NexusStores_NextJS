@@ -3,8 +3,7 @@
 // Configurações › E-mail (sem mexer em variável de ambiente nem redeploy).
 import { supabase } from "@/src/lib/supabase/client";
 
-/** Postgres: relation does not exist — sql/email_remetente.sql ainda não rodou. */
-const TABELA_INEXISTENTE = "42P01";
+import { ehTabelaInexistente } from "@/src/lib/supabase/erros";
 
 export interface EmailSettings {
   from_name: string;
@@ -26,7 +25,7 @@ export async function carregarEmailSettings(): Promise<{ settings: EmailSettings
     .maybeSingle();
 
   if (error) {
-    if (error.code === TABELA_INEXISTENTE) return { settings: EMAIL_SETTINGS_PADRAO, migracaoPendente: true };
+    if (ehTabelaInexistente(error)) return { settings: EMAIL_SETTINGS_PADRAO, migracaoPendente: true };
     throw new Error(error.message);
   }
 

@@ -6,8 +6,7 @@
 //   3. observation  — os blocos "[FECHADO EM ...]" e "[REABERTO EM ...]" que o
 //                     fechamento de consignado empurrava como texto
 import { supabase } from "@/src/lib/supabase/client";
-
-const TABELA_INEXISTENTE = "42P01";
+import { ehTabelaInexistente } from "@/src/lib/supabase/erros";
 
 export type TipoEvento =
   | "troca"
@@ -264,7 +263,7 @@ export async function listarHistoricoVenda(
     .order("created_at", { ascending: false });
 
   if (errEv) {
-    if (errEv.code === TABELA_INEXISTENTE) migracaoPendente = true;
+    if (ehTabelaInexistente(errEv)) migracaoPendente = true;
     else throw new Error(errEv.message);
   }
 

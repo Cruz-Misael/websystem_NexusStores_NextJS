@@ -13,9 +13,7 @@ import {
   vendaParaCobranca,
 } from "@/src/lib/cobranca";
 
-/** Postgres: relation does not exist. Acontece quando sql/cobrancas.sql ainda
- *  não foi executado — é aviso de instalação pendente, não erro de uso. */
-const TABELA_INEXISTENTE = "42P01";
+import { ehTabelaInexistente } from "@/src/lib/supabase/erros";
 
 export type { CobrancaPendente };
 
@@ -61,7 +59,7 @@ async function anexarHistorico(cobrancas: CobrancaPendente[]): Promise<boolean> 
     .eq("status", "sent")
     .order("sent_at", { ascending: false });
 
-  if (error) return error.code === TABELA_INEXISTENTE;
+  if (error) return ehTabelaInexistente(error);
 
   for (const msg of data || []) {
     const alvo = cobrancas.find((c) => c.saleId === msg.sale_id);
@@ -92,7 +90,7 @@ export async function carregarConfigCobranca(): Promise<ConfigCobranca> {
     .maybeSingle();
 
   if (error) {
-    if (error.code === TABELA_INEXISTENTE) return { settings: SETTINGS_PADRAO, migracaoPendente: true };
+    if (ehTabelaInexistente(error)) return { settings: SETTINGS_PADRAO, migracaoPendente: true };
     throw new Error(error.message);
   }
 
