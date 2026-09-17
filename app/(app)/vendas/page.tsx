@@ -7,8 +7,10 @@ import { useDebounce } from "@/src/hooks/useDebounce";
 // Modais abertos por clique — carregados sob demanda.
 const DevolucaoTrocaModal = dynamic(() => import("@/components/troca/DevolucaoTrocaModal"), { ssr: false });
 const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
+const HistoricoVendaModal = dynamic(() => import("@/components/vendas/HistoricoVendaModal"), { ssr: false });
 import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, reabrirConsignado, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
+import { registrarEventoVenda } from "@/src/services/sale-events.service";
 import { supabase } from "@/src/lib/supabase/client";
 
 const METODO_LABELS: Record<string, string> = {
@@ -26,6 +28,7 @@ import {
   Filter,
   Download,
   Printer,
+  History,
   Receipt,
   XCircle,
   RotateCcw,
@@ -75,6 +78,7 @@ export default function HistoricoVendasCompacto() {
   const [busca, setBusca] = useState("");
   const debouncedBusca = useDebounce(busca);
   const [modalRecibo, setModalRecibo] = useState(false);
+  const [modalHistorico, setModalHistorico] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -417,7 +421,15 @@ export default function HistoricoVendasCompacto() {
   };
 
   // Processar devolução/troca (Ajustado para suportar adições)
+  // Trava de reentrancia: criarDevolucao e adicionarItemVenda nao sao
+  // idempotentes, entao a mesma confirmacao rodando duas vezes credita estoque
+  // e insere itens em dobro. O botao do modal ja fica desabilitado enquanto
+  // processa; esta e a garantia do lado de ca.
+  const processandoRef = useRef(false);
+
   const handleDevolucao = async (payload: any) => {
+    if (processandoRef.current) return;
+    processandoRef.current = true;
     try {
       setAtualizando(true);
 
@@ -459,6 +471,35 @@ export default function HistoricoVendasCompacto() {
       // Recarregar venda para atualizar UI
       const vendaAtualizada = await buscarVendaPorId(payload.vendaId);
 
+      // Guarda o que aconteceu, para a tela de Histórico. Os itens que ENTRAM
+      // numa troca não apareciam em lugar nenhum antes disto.
+      const nomeDoItem = (itemId: number) => {
+        const i = selecionada?.items.find(x => x.id === itemId);
+        return i?.product?.name || i?.product_name || "Produto";
+      };
+      const nomeDoSku = (sku: number) => {
+        const i = vendaAtualizada.items.find((x: any) => x.product_id === sku);
+        return i?.product?.name || i?.product_name || `SKU ${sku}`;
+      };
+      const saiu = (payload.itens || [])
+        .filter((i: any) => i.quantidade > 0)
+        .map((i: any) => ({ nome: nomeDoItem(i.itemId), qtd: i.quantidade }));
+      const entrou = (payload.itensAdicionados || [])
+        .map((i: any) => ({ nome: nomeDoSku(i.sku), qtd: i.quantidade }));
+
+      await registrarEventoVenda({
+        saleId: payload.vendaId,
+        tipo: payload.tipo === 'troca' ? 'troca' : 'devolucao',
+        resumo: [
+          saiu.length ? `${saiu.reduce((t: number, i: any) => t + i.qtd, 0)} saíram` : null,
+          entrou.length ? `${entrou.reduce((t: number, i: any) => t + i.qtd, 0)} entraram` : null,
+        ].filter(Boolean).join(' · ') || 'Ajuste de itens',
+        saiu,
+        entrou,
+        valorAntes: selecionada?.final_amount ?? null,
+        valorDepois: payload.valorFinal ?? null,
+      });
+
       setVendas(prev => prev.map(v =>
         v.id === vendaAtualizada.id ? vendaAtualizada : v
       ));
@@ -473,11 +514,14 @@ export default function HistoricoVendasCompacto() {
       mostrarPopup("Erro no Processamento", `Não foi possível processar: ${error.message}`, "erro");
     } finally {
       setAtualizando(false);
+      processandoRef.current = false;
     }
   };
 
   // Processar fechamento de consignado
   const handleFecharConsignado = async (payload: any) => {
+    if (processandoRef.current) return;
+    processandoRef.current = true;
     try {
       setAtualizando(true);
 
@@ -562,6 +606,22 @@ export default function HistoricoVendasCompacto() {
       setVendas(prev => prev.map(v =>
         v.id === vendaAtualizada.id ? vendaAtualizada : v
       ));
+      await registrarEventoVenda({
+        saleId: payload.vendaId,
+        tipo: 'fechamento_consignado',
+        resumo: `Acerto fechado — ${pct}% de desconto de lucro sobre o saldo`,
+        saiu: breakdown.itensDevolvidos.map(i => ({ nome: i.nome, qtd: i.quantidade })),
+        entrou: [],
+        valorAntes: selecionada?.final_amount ?? null,
+        valorDepois: payload.valorFinal ?? null,
+        extras: {
+          saldo,
+          comissao_percent: pct,
+          comissao_valor: saldo * pct / 100,
+          cobrado: payload.valorFinal,
+        },
+      });
+
       setSelecionada(vendaAtualizada);
       setModalAberto(false);
       setVendaConsignadoRecibo({ venda: vendaAtualizada, breakdown });
@@ -577,6 +637,7 @@ export default function HistoricoVendasCompacto() {
       );
     } finally {
       setAtualizando(false);
+      processandoRef.current = false;
     }
   };
 
@@ -602,6 +663,15 @@ export default function HistoricoVendasCompacto() {
         try {
           setAtualizando(true);
           await reabrirConsignado(selecionada.id);
+
+          await registrarEventoVenda({
+            saleId: selecionada.id,
+            tipo: 'reabertura_consignado',
+            resumo: 'Fechamento desfeito — a venda voltou a pendente',
+            valorAntes: selecionada.final_amount ?? null,
+            valorDepois: saldo ?? null,
+            extras: { saldo },
+          });
 
           const vendaAtualizada = await buscarVendaPorId(selecionada.id);
           setVendas(prev => prev.map(v => (v.id === vendaAtualizada.id ? vendaAtualizada : v)));
@@ -1228,6 +1298,13 @@ export default function HistoricoVendasCompacto() {
                     </button>
                   )}
                   <button
+                    onClick={() => setModalHistorico(true)}
+                    title="Histórico: trocas, devoluções e acertos desta venda"
+                    className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors border border-zinc-200"
+                  >
+                    <History size={15} />
+                  </button>
+                  <button
                     onClick={() => setModalRecibo(true)}
                     title="Imprimir comprovante"
                     className="p-1.5 text-zinc-500 hover:text-zinc-800 hover:bg-zinc-100 rounded-lg transition-colors border border-zinc-200"
@@ -1489,6 +1566,14 @@ export default function HistoricoVendasCompacto() {
           isConsignado={modoConsignado}
         />
       )}
+      {modalHistorico && selecionada && (
+        <HistoricoVendaModal
+          saleId={selecionada.id}
+          observacao={selecionada.observation}
+          onClose={() => setModalHistorico(false)}
+        />
+      )}
+
       {/* POPUP DE CONFIRMAÇÃO / INFORMAÇÃO */}
       <PopupConfirmacao
         aberto={popupAberto}
