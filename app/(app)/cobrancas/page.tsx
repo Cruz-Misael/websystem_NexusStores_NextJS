@@ -32,6 +32,7 @@ import {
   listarCobrancas,
   registrarEnvioWhatsapp,
 } from "@/src/services/collections.service";
+import { carregarEmailSettings } from "@/src/services/email-settings.service";
 import {
   CollectionSettings,
   SETTINGS_PADRAO,
@@ -107,6 +108,10 @@ export default function CobrancasPage() {
 
   const [cobrancas, setCobrancas] = useState<CobrancaPendente[]>([]);
   const [settings, setSettings] = useState<CollectionSettings>(SETTINGS_PADRAO);
+  // Sem remetente configurado, o Resend recusa todo envio que não seja para o
+  // dono da conta. Melhor travar o botão do que deixar a pessoa disparar para
+  // treze clientes e colher treze falhas.
+  const [remetenteOk, setRemetenteOk] = useState(true);
   const [nomeLoja, setNomeLoja] = useState("nossa loja");
   const [migracaoPendente, setMigracaoPendente] = useState(false);
   const [carregando, setCarregando] = useState(true);
@@ -141,11 +146,13 @@ export default function CobrancasPage() {
     setCarregando(true);
     setErro(null);
     try {
-      const [lista, config, loja] = await Promise.all([
+      const [lista, config, loja, email] = await Promise.all([
         listarCobrancas(),
         carregarConfigCobranca(),
         getNomeLoja(),
+        carregarEmailSettings(),
       ]);
+      setRemetenteOk(Boolean(email.settings.from_address?.trim()));
       setCobrancas(lista.cobrancas);
       setSettings(config.settings);
       setNomeLoja(loja);
@@ -316,7 +323,8 @@ export default function CobrancasPage() {
 
         <button
           onClick={() => setPopupLote(true)}
-          disabled={selecionadasValidas.length === 0 || enviando}
+          disabled={selecionadasValidas.length === 0 || enviando || !remetenteOk}
+          title={remetenteOk ? undefined : "Configure o remetente em Configurações › E-mail antes de enviar"}
           className="inline-flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-zinc-200 disabled:text-zinc-400 text-white text-sm font-semibold rounded-lg shadow-sm transition-colors active:scale-95 disabled:active:scale-100"
         >
           {enviando ? <Loader2 size={16} className="animate-spin" /> : <Send size={16} />}
@@ -324,6 +332,20 @@ export default function CobrancasPage() {
           {selecionadasValidas.length > 0 && ` (${selecionadasValidas.length})`}
         </button>
       </div>
+
+      {!remetenteOk && !carregando && (
+        <div className="mb-5 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <Mail className="text-amber-600 shrink-0 mt-0.5" size={18} />
+          <div className="text-sm text-amber-800">
+            <p className="font-bold">O e-mail ainda não está configurado</p>
+            <p className="text-amber-700 mt-0.5">
+              Sem um remetente próprio, o provedor recusa qualquer envio que não seja para o dono da conta — então os
+              botões de e-mail estão desligados. Configure em <strong>Configurações › E-mail</strong>. A cobrança por
+              WhatsApp funciona normalmente.
+            </p>
+          </div>
+        </div>
+      )}
 
       {migracaoPendente && (
         <div className="mb-5 flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -525,8 +547,14 @@ export default function CobrancasPage() {
 
                           <button
                             onClick={() => enviarEmails([c])}
-                            disabled={!c.email || enviando}
-                            title={c.email ? "Enviar o lembrete por e-mail agora" : "Cliente sem e-mail no cadastro"}
+                            disabled={!c.email || enviando || !remetenteOk}
+                            title={
+                              !remetenteOk
+                                ? "O envio de e-mail ainda não está configurado (Configurações › E-mail)"
+                                : c.email
+                                  ? "Enviar o lembrete por e-mail agora"
+                                  : "Cliente sem e-mail no cadastro"
+                            }
                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors bg-indigo-50 text-indigo-700 hover:bg-indigo-100 disabled:bg-zinc-50 disabled:text-zinc-300"
                           >
                             <Mail size={14} />
