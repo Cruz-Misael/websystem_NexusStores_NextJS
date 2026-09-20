@@ -32,7 +32,7 @@ comment on table public.email_settings is
 
 insert into public.email_settings (id) values (1) on conflict (id) do nothing;
 
--- RLS: só operador ativo. A função public.eh_operador_ativo() vem de
+-- RLS: só operador ativo. A função private.eh_operador_ativo() vem de
 -- sql/seguranca_rls.sql — rode aquele arquivo ANTES deste.
 do $$
 declare t text;
@@ -45,7 +45,8 @@ begin
     execute format('drop policy if exists servidor on public.%I', t);
     execute format(
       'create policy operador_ativo on public.%I for all to authenticated '
-      'using (public.eh_operador_ativo()) with check (public.eh_operador_ativo())', t);
+      'using ((select private.eh_operador_ativo())) '
+      'with check ((select private.eh_operador_ativo()))', t);
     -- As rotas /api/* entram pela chave de serviço
     execute format(
       'create policy servidor on public.%I for all to service_role '
