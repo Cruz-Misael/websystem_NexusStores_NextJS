@@ -37,18 +37,30 @@ comment on table public.sale_events is
 
 create index if not exists sale_events_sale_idx on public.sale_events (sale_id, created_at desc);
 
--- RLS no mesmo padrão das demais tabelas ------------------------------------
+-- RLS: só operador ativo. A função public.eh_operador_ativo() vem de
+-- sql/seguranca_rls.sql — rode aquele arquivo ANTES deste.
 do $$
+declare t text;
 begin
-  alter table public.sale_events enable row level security;
-
-  if not exists (
-    select 1 from pg_policies
-     where schemaname = 'public' and tablename = 'sale_events' and policyname = 'authenticated_all'
-  ) then
-    create policy authenticated_all on public.sale_events
-      for all to authenticated using (true) with check (true);
-  end if;
+  foreach t in array array['sale_events'] loop
+    execute format('alter table public.%I enable row level security', t);
+    -- Remove o padrão antigo, que liberava tudo para qualquer autenticado
+    execute format('drop policy if exists authenticated_all on public.%I', t);
+    execute format('drop policy if exists operador_ativo on public.%I', t);
+    execute format('drop policy if exists servidor on public.%I', t);
+    execute format(
+      'create policy operador_ativo on public.%I for all to authenticated '
+      'using (public.eh_operador_ativo()) with check (public.eh_operador_ativo())', t);
+    -- As rotas /api/* entram pela chave de serviço
+    execute format(
+      'create policy servidor on public.%I for all to service_role '
+      'using (true) with check (true)', t);
+    execute format('revoke all on public.%I from anon', t);
+    execute format('grant select, insert, update, delete on public.%I to authenticated, service_role', t);
+  end loop;
 end $$;
+
+grant usage, select on all sequences in schema public to authenticated, service_role;
+revoke all on all sequences in schema public from anon;
 
 select count(*) as eventos_registrados from public.sale_events;
