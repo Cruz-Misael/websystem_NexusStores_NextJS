@@ -39,3 +39,7 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Skills baixadas por "npx skills add" — o skills-lock.json basta para reinstalar
+.agents/skills/
+.claude/skills/
