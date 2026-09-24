@@ -73,8 +73,10 @@ import { CollectionSettings, SETTINGS_PADRAO, VARIAVEIS_MENSAGEM } from '@/src/l
 import { EmailSettings, EMAIL_SETTINGS_PADRAO, carregarEmailSettings, salvarEmailSettings, enviarEmailDeTeste } from '@/src/services/email-settings.service';
 // Aba de gráficos (recharts) carregada só quando aberta — fora do bundle inicial.
 const IndicadoresSite = dynamic(() => import('@/components/configuracoes/IndicadoresSite'), { ssr: false });
+// Editor da landing: formulário longo e autossuficiente, também sob demanda.
+const LandingConfig = dynamic(() => import('@/components/configuracoes/LandingConfig'), { ssr: false });
 
-type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'cobranca' | 'email' | 'meusite' | 'frete' | 'descontos' | 'indicadores';
+type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'cobranca' | 'email' | 'meusite' | 'landing' | 'frete' | 'descontos' | 'indicadores';
 type UsuarioCargo = 'admin' | 'gerente' | 'colaborador';
 type UsuarioStatus = 'ativo' | 'inativo' | 'pendente';
 
@@ -133,7 +135,7 @@ function ConfiguracoesContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'cobranca' || tab === 'email' || tab === 'meusite' || tab === 'frete' || tab === 'descontos' || tab === 'indicadores') return tab as TabType;
+    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'cobranca' || tab === 'email' || tab === 'meusite' || tab === 'landing' || tab === 'frete' || tab === 'descontos' || tab === 'indicadores') return tab as TabType;
     return 'loja';
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -832,7 +834,8 @@ function ConfiguracoesContent() {
     { id: 'pagamento' as TabType, label: 'Pagamento', icon: CreditCard, desc: 'Assinatura e vencimento', onlineStore: false, disabled: false },
     { id: 'cobranca' as TabType, label: 'Cobrança', icon: CalendarClock, desc: 'Lembretes de acerto', onlineStore: false, disabled: !isAdmin },
     { id: 'email' as TabType, label: 'E-mail', icon: Mail, desc: 'Remetente das mensagens', onlineStore: false, disabled: !isAdmin },
-    { id: 'meusite' as TabType, label: 'Meu Site', icon: Store, desc: 'Loja virtual pública', onlineStore: true, disabled: !isAdmin },
+    { id: 'meusite' as TabType, label: 'Meu Site', icon: Store, desc: 'Endereço, cor e contatos', onlineStore: true, disabled: !isAdmin },
+    { id: 'landing' as TabType, label: 'Landing', icon: FileText, desc: 'Textos da página pública', onlineStore: true, disabled: !isAdmin },
     { id: 'frete' as TabType, label: 'Frete', icon: Truck, desc: 'Envio e Melhor Envio', onlineStore: true, disabled: !isAdmin },
     { id: 'descontos' as TabType, label: 'Descontos', icon: Tag, desc: 'Cupons e promoções', onlineStore: true, disabled: !isAdmin },
     { id: 'indicadores' as TabType, label: 'Indicadores', icon: BarChart3, desc: 'Acessos e visitas do site', onlineStore: true, disabled: !isAdmin },
@@ -951,6 +954,9 @@ function ConfiguracoesContent() {
 
             {/* ===== ABA INDICADORES DO SITE ===== */}
             {activeTab === 'indicadores' && <IndicadoresSite />}
+
+            {/* ===== ABA LANDING (conteúdo da página pública) ===== */}
+            {activeTab === 'landing' && <LandingConfig />}
 
             {/* ===== ABA LOJA ===== */}
             {activeTab === 'loja' && (

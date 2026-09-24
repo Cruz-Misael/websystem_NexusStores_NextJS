@@ -1,5 +1,6 @@
 import { supabaseAdmin } from '@/src/lib/supabase/admin';
 import { getAuthenticatedUser } from '@/src/lib/supabase/server';
+import { bloqueioLojaOnline } from '@/src/lib/loja-online';
 import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Preference } from 'mercadopago';
 
@@ -7,6 +8,12 @@ const MAX_ITEMS = 100;
 const MAX_QTY = 999;
 
 export async function POST(req: NextRequest) {
+  // Criar preferência é o primeiro passo de uma compra. Com a loja desligada
+  // não existe compra — e o webhook segue no ar para quem já tinha pagamento
+  // em andamento quando o site mudou.
+  const desligada = await bloqueioLojaOnline();
+  if (desligada) return desligada;
+
   let body: any;
   try {
     body = await req.json();
