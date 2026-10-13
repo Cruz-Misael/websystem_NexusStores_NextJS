@@ -22,7 +22,9 @@ const METODO_LABELS: Record<string, string> = {
 };
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
-import { Sale, ConsignadoItemBreakdown } from "@/types/sales";
+import { Sale, ConsignadoItemBreakdown, LinhaConsignado, SaleItem } from "@/types/sales";
+import { enriquecerBreakdown } from "@/src/lib/consignado";
+import LinhaPecaConsignado from "@/components/vendas/LinhaPecaConsignado";
 import {
   Search,
   Filter,
@@ -526,20 +528,31 @@ export default function HistoricoVendasCompacto() {
       setAtualizando(true);
 
       // Capturar breakdown ANTES das alterações no banco
-      const itensOriginais = (selecionada?.items || []).map((i) => ({
+      // SKU e tamanho entram aqui, na origem: é o único momento em que se sabe
+      // com certeza qual linha da venda é cada peça. Depois, no texto, o que
+      // sobra é o nome — e nome repete entre tamanhos.
+      const fichaDe = (i: SaleItem) => ({
         nome: i.product?.name || i.product_name || "Produto",
+        sku: i.product?.sku ?? i.product_id ?? undefined,
+        tamanho: i.product?.size?.trim() || undefined,
+      });
+
+      const itensOriginais = (selecionada?.items || []).map((i) => ({
+        ...fichaDe(i),
         quantidade: i.quantity,
       }));
       const itensDevolvidos = payload.itens
         .map((item: any) => {
           const orig = selecionada?.items.find((i) => i.id === item.itemId);
-          return { nome: orig?.product?.name || orig?.product_name || "Produto", quantidade: item.quantidade };
+          return orig
+            ? { ...fichaDe(orig), quantidade: item.quantidade }
+            : { nome: "Produto", quantidade: item.quantidade };
         })
         .filter((i: any) => i.quantidade > 0);
       const itensFicaram = (selecionada?.items || [])
         .map((i) => {
           const dev = payload.itens.find((d: any) => d.itemId === i.id);
-          return { nome: i.product?.name || i.product_name || "Produto", quantidade: i.quantity - (dev?.quantidade || 0) };
+          return { ...fichaDe(i), quantidade: i.quantity - (dev?.quantidade || 0) };
         })
         .filter((i) => i.quantidade > 0);
       const breakdown: ConsignadoItemBreakdown = { itensOriginais, itensDevolvidos, itensFicaram };
@@ -581,9 +594,15 @@ export default function HistoricoVendasCompacto() {
       // 3. Atualizar status e valor final no banco
       const pct = payload.percentualLucro ?? 0;
       const saldo = payload.valorNetAnteComissao ?? payload.valorFinal;
-      const saiu = itensOriginais.map((i) => `${i.nome} (x${i.quantidade})`).join("; ") || "Nenhuma";
-      const devolveu = itensDevolvidos.length > 0 ? itensDevolvidos.map((i: any) => `${i.nome} (x${i.quantidade})`).join("; ") : "Nenhuma";
-      const ficou = itensFicaram.length > 0 ? itensFicaram.map((i) => `${i.nome} (x${i.quantidade})`).join("; ") : "Nenhuma";
+      // "NOME [sku 12290 · M] (x2)" — o trecho entre colchetes é opcional na
+      // leitura, então fechamentos gravados antes disto continuam sendo lidos.
+      const comoTexto = (i: { nome: string; quantidade: number; sku?: number | string; tamanho?: string }) => {
+        const ficha = i.sku !== undefined ? ` [sku ${i.sku}${i.tamanho ? ` · ${i.tamanho}` : ""}]` : "";
+        return `${i.nome}${ficha} (x${i.quantidade})`;
+      };
+      const saiu = itensOriginais.map(comoTexto).join("; ") || "Nenhuma";
+      const devolveu = itensDevolvidos.length > 0 ? itensDevolvidos.map(comoTexto).join("; ") : "Nenhuma";
+      const ficou = itensFicaram.length > 0 ? itensFicaram.map(comoTexto).join("; ") : "Nenhuma";
       const novaObs = [
         selecionada?.observation || '',
         `[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] Saldo: ${formatarMoeda(saldo)} | Desconto de lucro: ${pct}% (${formatarMoeda(saldo * pct / 100)}) | Cobrado: ${formatarMoeda(payload.valorFinal)}`,
@@ -706,10 +725,17 @@ export default function HistoricoVendasCompacto() {
     const parseList = (s: string) =>
       s === "Nenhuma"
         ? []
-        : s.split("; ").map((e) => {
-            const m = e.match(/^(.+?) \(x(\d+)\)$/);
-            return m ? { nome: m[1], quantidade: parseInt(m[2]) } : null;
-          }).filter((x): x is { nome: string; quantidade: number } => x !== null);
+        : s.split("; ").map((e): LinhaConsignado | null => {
+            // O bloco [sku ... · tam] é opcional: só os fechamentos novos o têm.
+            const m = e.match(/^(.+?)(?: \[sku ([^\]·]+?)(?: · ([^\]]+))?\])? \(x(\d+)\)$/);
+            if (!m) return null;
+            return {
+              nome: m[1],
+              sku: m[2]?.trim() || undefined,
+              tamanho: m[3]?.trim() || undefined,
+              quantidade: parseInt(m[4]),
+            };
+          }).filter((x) => x !== null);
     return {
       itensOriginais: parseList(match[1]),
       itensDevolvidos: parseList(match[2]),
@@ -1448,8 +1474,11 @@ export default function HistoricoVendasCompacto() {
 
                 {/* Breakdown de itens — consignado fechado */}
                 {isConsignado(selecionada) && selecionada.payment_status === "paid" && (() => {
-                  const bd = parseConsignadoBreakdown(selecionada.observation);
-                  if (!bd) return null;
+                  const cru = parseConsignadoBreakdown(selecionada.observation);
+                  if (!cru) return null;
+                  // Nome e quantidade vêm do texto da observação; SKU e tamanho
+                  // saem dos itens da venda.
+                  const bd = enriquecerBreakdown(cru, selecionada.items);
                   const totalSaiu = bd.itensOriginais.reduce((a, i) => a + i.quantidade, 0);
                   const totalDevolvidas = bd.itensDevolvidos.reduce((a, i) => a + i.quantidade, 0);
                   const totalFicou = bd.itensFicaram.reduce((a, i) => a + i.quantidade, 0);
@@ -1476,10 +1505,7 @@ export default function HistoricoVendasCompacto() {
                             <ShoppingBag size={10} /> Saiu da loja ({totalSaiu})
                           </p>
                           {bd.itensOriginais.map((i, idx) => (
-                            <div key={idx} className="flex justify-between text-xs text-zinc-600">
-                              <span className="truncate">{i.nome}</span>
-                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
-                            </div>
+                            <LinhaPecaConsignado key={idx} item={i} cor="text-zinc-600" />
                           ))}
                         </div>
                         {/* Devolveu */}
@@ -1490,10 +1516,7 @@ export default function HistoricoVendasCompacto() {
                           {bd.itensDevolvidos.length === 0 ? (
                             <p className="text-xs text-zinc-400 italic">Nenhuma</p>
                           ) : bd.itensDevolvidos.map((i, idx) => (
-                            <div key={idx} className="flex justify-between text-xs text-amber-700">
-                              <span className="truncate">{i.nome}</span>
-                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
-                            </div>
+                            <LinhaPecaConsignado key={idx} item={i} cor="text-amber-700" />
                           ))}
                         </div>
                         {/* Ficou */}
@@ -1504,10 +1527,7 @@ export default function HistoricoVendasCompacto() {
                           {bd.itensFicaram.length === 0 ? (
                             <p className="text-xs text-zinc-400 italic">Nenhuma</p>
                           ) : bd.itensFicaram.map((i, idx) => (
-                            <div key={idx} className="flex justify-between text-xs text-emerald-700">
-                              <span className="truncate">{i.nome}</span>
-                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
-                            </div>
+                            <LinhaPecaConsignado key={idx} item={i} cor="text-emerald-700" />
                           ))}
                         </div>
                       </div>

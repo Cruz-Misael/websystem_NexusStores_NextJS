@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { X, Printer } from "lucide-react";
 import { CompanyService } from "@/services/company.service";
 import { Sale, ConsignadoItemBreakdown } from "@/types/sales";
+import { enriquecerBreakdown } from "@/src/lib/consignado";
+import LinhaPecaConsignado from "@/components/vendas/LinhaPecaConsignado";
 import { buscarPessoaPorId } from "@/src/services/people.service";
 
 interface Props {
@@ -80,6 +82,13 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
     ? consignadoBreakdown.itensDevolvidos.reduce((acc, i) => acc + i.quantidade, 0)
     : 0;
 
+  // SKU e tamanho de cada peça do histórico. Cruza com venda.items inteiro, e
+  // não com `itens`: o que foi devolvido fica com quantidade 0 e some daquele
+  // filtro — justamente as peças da coluna "devolvidas".
+  const breakdown = consignadoBreakdown
+    ? enriquecerBreakdown(consignadoBreakdown, venda.items)
+    : undefined;
+
   // Mapa nome → barcode para lookup no breakdown
   const barcodeMap = new Map<string, string>();
   itens.forEach((item) => {
@@ -153,24 +162,24 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
       itensHtml = `
         <table style="width:100%;border-collapse:collapse">
           <thead><tr>
-            <th style="${thS}text-align:left">Produto / Cód. Barras</th>
+            <th style="${thS}text-align:left">Produto / SKU / Cód. Barras</th>
             <th style="${thS}text-align:center;width:64px">Saiu</th>
             <th style="${thS}text-align:center;width:64px">Devolveu</th>
             <th style="${thS}text-align:center;width:64px;color:#059669">Ficou</th>
           </tr></thead>
           <tbody>
-            ${consignadoBreakdown.itensOriginais
+            ${breakdown!.itensOriginais
               .map((item) => {
                 const dev =
-                  consignadoBreakdown.itensDevolvidos.find((d) => d.nome === item.nome)
+                  breakdown!.itensDevolvidos.find((d) => d.nome === item.nome)
                     ?.quantidade ?? 0;
                 const fica = item.quantidade - dev;
                 const bc = barcodeMap.get(item.nome);
-                const sizeConsig = itens.find(i => (i.product?.name || i.product_name) === item.nome)?.product?.size;
                 return `<tr style="break-inside:avoid;page-break-inside:avoid">
                   <td style="${tdS}color:#111827;font-weight:700">
                     <span>${item.nome}</span>
-                    ${sizeConsig ? `<span style="font-size:10px;font-weight:800;color:#4f46e5;background:#eef2ff;padding:1px 5px;border-radius:3px;margin-left:6px;text-transform:uppercase">${sizeConsig}</span>` : ""}
+                    ${item.tamanho ? `<span style="font-size:10px;font-weight:800;color:#4f46e5;background:#eef2ff;padding:1px 5px;border-radius:3px;margin-left:6px;text-transform:uppercase">${item.tamanho}</span>` : ""}
+                    ${item.sku !== undefined ? `<div style="font-size:10px;color:#6b7280;font-weight:600;margin-top:1px">SKU ${item.sku}</div>` : ""}
                     ${bc ? `<div style="font-size:10px;color:#9ca3af;font-weight:400;margin-top:1px">▪ ${bc}</div>` : ""}
                   </td>
                   <td style="${tdS}text-align:center;color:#374151;font-weight:600">${item.quantidade}</td>
@@ -539,38 +548,29 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                 <div className="space-y-3">
                   <div>
                     <p className="text-[9px] font-black uppercase text-zinc-400 mb-1">Saiu da loja</p>
-                    {consignadoBreakdown.itensOriginais.map((item, i) => {
+                    {breakdown!.itensOriginais.map((item, i) => {
                       const bc = barcodeMap.get(item.nome);
                       return (
-                        <div key={i} className="mb-1">
-                          <div className="flex justify-between">
-                            <span className="font-bold truncate max-w-[170px]">{item.nome}</span>
-                            <span className="text-zinc-500 shrink-0 ml-1">× {item.quantidade}</span>
-                          </div>
-                          {bc && <p className="text-[9px] text-zinc-400">▪ {bc}</p>}
+                        <div key={i}>
+                          <LinhaPecaConsignado item={item} cor="text-zinc-900 font-bold" />
+                          {bc && <p className="text-[9px] text-zinc-400 -mt-1 mb-1">▪ {bc}</p>}
                         </div>
                       );
                     })}
                   </div>
-                  {consignadoBreakdown.itensDevolvidos.length > 0 && (
+                  {breakdown!.itensDevolvidos.length > 0 && (
                     <div>
                       <p className="text-[9px] font-black uppercase text-zinc-400 mb-1">↩ Devolvidas — {totalDevolvidos} un.</p>
-                      {consignadoBreakdown.itensDevolvidos.map((item, i) => (
-                        <div key={i} className="flex justify-between text-zinc-400 line-through text-[10px]">
-                          <span className="truncate max-w-[170px]">{item.nome}</span>
-                          <span className="shrink-0 ml-1">× {item.quantidade}</span>
-                        </div>
+                      {breakdown!.itensDevolvidos.map((item, i) => (
+                        <LinhaPecaConsignado key={i} item={item} cor="text-zinc-400" />
                       ))}
                     </div>
                   )}
-                  {consignadoBreakdown.itensFicaram.length > 0 && (
+                  {breakdown!.itensFicaram.length > 0 && (
                     <div>
                       <p className="text-[9px] font-black uppercase text-zinc-400 mb-1">✓ Ficou com o cliente</p>
-                      {consignadoBreakdown.itensFicaram.map((item, i) => (
-                        <div key={i} className="flex justify-between font-black text-zinc-900">
-                          <span className="truncate max-w-[170px]">{item.nome}</span>
-                          <span className="shrink-0 ml-1">× {item.quantidade}</span>
-                        </div>
+                      {breakdown!.itensFicaram.map((item, i) => (
+                        <LinhaPecaConsignado key={i} item={item} cor="text-zinc-900 font-black" />
                       ))}
                     </div>
                   )}
