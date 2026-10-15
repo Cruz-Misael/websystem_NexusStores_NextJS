@@ -15,11 +15,12 @@ import {
   FileImage,
   Calendar
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { criarPessoa, atualizarPessoa, buscarPessoaPorId } from "@/src/services/people.service";
 import { criarDocumento, listarDocumentosPorPessoa, deletarDocumento } from "@/src/services/document.service";
 import ListaDocumentos from "./ListaDocumentos";
 import toast from "react-hot-toast";
+import { buscarEnderecoPorCep, cepCompleto, limparCep } from "@/src/lib/cep";
 
 /* ========= TIPOS ========= */
 
@@ -261,6 +262,55 @@ export default function ClienteModal({
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  /* ========= ENDEREÇO PELO CEP ========= */
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const [avisoCep, setAvisoCep] = useState<string | null>(null);
+  // Guarda o último CEP consultado para não repetir a busca a cada tecla
+  // depois que o endereço já veio.
+  const cepConsultado = useRef<string>("");
+  const campoNumeroRef = useRef<HTMLInputElement>(null);
+
+  const preencherPeloCep = useCallback(async (cepBruto: string) => {
+    const cep = limparCep(cepBruto);
+    if (!cepCompleto(cep) || cep === cepConsultado.current) return;
+
+    cepConsultado.current = cep;
+    setBuscandoCep(true);
+    setAvisoCep(null);
+
+    const r = await buscarEnderecoPorCep(cep);
+    setBuscandoCep(false);
+
+    if (!r.ok) {
+      // Deixa o cadastro seguir na mão: CEP de cidade pequena, endereço novo e
+      // zona rural muitas vezes não estão em base nenhuma.
+      setAvisoCep(
+        r.motivo === "nao_encontrado"
+          ? "CEP não encontrado — preencha o endereço manualmente."
+          : "Não foi possível consultar o CEP agora. Pode preencher à mão."
+      );
+      return;
+    }
+
+    const { logradouro, bairro, cidade, uf } = r.endereco;
+    setForm((prev) => ({
+      ...prev,
+      // Só sobrescreve o que veio preenchido: num CEP de cidade inteira o
+      // logradouro vem vazio, e seria ruim apagar o que a pessoa já digitou.
+      endereco: logradouro || prev.endereco,
+      bairro: bairro || prev.bairro,
+      cidade: cidade || prev.cidade,
+      estado: uf || prev.estado,
+    }));
+
+    if (!logradouro) {
+      setAvisoCep("Este CEP cobre a cidade toda — complete a rua à mão.");
+    }
+
+    // O que falta sempre é número e complemento: leva o cursor para lá.
+    setTimeout(() => campoNumeroRef.current?.focus(), 50);
+  }, []);
+
   const formatarDocumento = (value: string) => {
     const numeros = value.replace(/\D/g, '');
     if (numeros.length <= 11) {
@@ -442,12 +492,26 @@ export default function ClienteModal({
                 </div>
 
                 <div className="grid grid-cols-4 gap-4">
-                  <Input
-                    label="CEP"
-                    value={form.cep}
-                    placeholder="00000-000"
-                    onChange={(v) => handleChange("cep", formatarCEP(v))}
-                  />
+                  <div>
+                    <Input
+                      label="CEP"
+                      value={form.cep}
+                      placeholder="00000-000"
+                      carregando={buscandoCep}
+                      onChange={(v) => {
+                        const formatado = formatarCEP(v);
+                        handleChange("cep", formatado);
+                        setAvisoCep(null);
+                        // Dispara sozinho ao fechar os 8 dígitos — ninguém
+                        // precisa apertar nada.
+                        if (cepCompleto(formatado)) preencherPeloCep(formatado);
+                      }}
+                      onBlur={() => preencherPeloCep(form.cep)}
+                    />
+                    {avisoCep && (
+                      <p className="text-[10px] text-amber-600 mt-1 ml-1 leading-tight">{avisoCep}</p>
+                    )}
+                  </div>
                   <div className="col-span-2">
                     <Input
                       label="Cidade"
@@ -479,6 +543,7 @@ export default function ClienteModal({
                       label="Nº"
                       value={form.numero}
                       placeholder="123"
+                      inputRef={campoNumeroRef}
                       onChange={(v) => handleChange("numero", v)}
                     />
                   </div>
@@ -638,7 +703,10 @@ function Input({
   type = "text",
   required = false,
   maxLength,
+  carregando = false,
+  inputRef,
   onChange,
+  onBlur,
 }: {
   label: string;
   value: string;
@@ -647,7 +715,11 @@ function Input({
   type?: string;
   required?: boolean;
   maxLength?: number;
+  /** Mostra um giro à direita enquanto algo é consultado (o CEP, por ora). */
+  carregando?: boolean;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
   onChange: (value: string) => void;
+  onBlur?: () => void;
 }) {
   return (
     <div className="space-y-1">
@@ -661,16 +733,24 @@ function Input({
           </span>
         )}
         <input
+          ref={inputRef}
           type={type}
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           required={required}
           maxLength={maxLength}
           className={`w-full bg-zinc-50 border border-zinc-200 rounded-xl ${
             icon ? "pl-9" : "pl-4"
-          } pr-4 py-2.5 text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all placeholder:text-zinc-300`}
+          } ${carregando ? "pr-9" : "pr-4"} py-2.5 text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all placeholder:text-zinc-300`}
         />
+        {carregando && (
+          <Loader2
+            size={14}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500 animate-spin"
+          />
+        )}
       </div>
     </div>
   );
