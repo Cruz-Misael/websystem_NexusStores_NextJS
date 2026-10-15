@@ -66,7 +66,17 @@ export function enriquecerBreakdown(
       // Passou do fim da fila: a peça existe, mas não dá para dizer qual
       // variação é. Melhor repetir a primeira do que inventar.
       const ficha = fila[posicao] ?? fila[0];
-      return { ...linha, sku: ficha.sku, tamanho: ficha.tamanho };
+
+      // O que já veio na linha foi gravado no fechamento, com a linha da venda
+      // em mãos — é a verdade, e a fila (que é palpite por ordem) não pode
+      // passar por cima dela. Sobrescrever aqui fez a venda #179 exibir o
+      // tamanho G no lugar do P que a cliente tinha ficado, e a operadora,
+      // achando que a peça não havia sido registrada, devolveu de novo.
+      return {
+        ...linha,
+        sku: linha.sku ?? ficha.sku,
+        tamanho: linha.tamanho ?? ficha.tamanho,
+      };
     });
   };
 
