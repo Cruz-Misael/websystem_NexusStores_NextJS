@@ -8,10 +8,12 @@ import { useDebounce } from "@/src/hooks/useDebounce";
 const DevolucaoTrocaModal = dynamic(() => import("@/components/troca/DevolucaoTrocaModal"), { ssr: false });
 const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
 const HistoricoVendaModal = dynamic(() => import("@/components/vendas/HistoricoVendaModal"), { ssr: false });
-import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, reabrirConsignado, MetodoPagamento } from "@/src/services/sales.service";
+import { saldoEmAbertoDoCliente, listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, reabrirConsignado, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 import { registrarEventoVenda } from "@/src/services/sale-events.service";
 import { contagemExplicada, contagemPecas, resumoMovimentacao } from "@/src/lib/movimentacao";
+import { Estouro, estouroDeLimite } from "@/src/lib/limite";
+import PinGerenteModal, { ExplicacaoLimite } from "@/components/ui/PinGerenteModal";
 import Tamanho from "@/components/ui/Tamanho";
 import { supabase } from "@/src/lib/supabase/client";
 
@@ -431,11 +433,36 @@ export default function HistoricoVendasCompacto() {
   // processa; esta e a garantia do lado de ca.
   const processandoRef = useRef(false);
 
-  const handleDevolucao = async (payload: any) => {
+  // Troca barrada pelo limite de mercadoria: guarda o que seria feito enquanto
+  // o gerente nao digita o PIN.
+  const [trocaAguardandoPin, setTrocaAguardandoPin] =
+    useState<{ payload: any; estouro: Estouro } | null>(null);
+
+  const handleDevolucao = async (payload: any, autorizadoPorGerente = false) => {
     if (processandoRef.current) return;
     processandoRef.current = true;
     try {
       setAtualizando(true);
+
+      // Limite de mercadoria. A trava existia so no caixa, entao a troca
+      // acrescentava peca sem passar por conferencia nenhuma: a venda #267
+      // nasceu em R$ 1.714,54 e chegou a R$ 2.852,44 com teto de R$ 2.500.
+      // O saldo exclui esta venda, que entra pelo valor novo.
+      if (!autorizadoPorGerente && selecionada?.customer?.id) {
+        const estouro = estouroDeLimite({
+          limite: (selecionada.customer as { sales_limit?: number | null }).sales_limit,
+          saldoEmAberto: await saldoEmAbertoDoCliente(selecionada.customer.id, selecionada.id),
+          valorDaVenda: payload.valorFinal ?? selecionada.final_amount ?? 0,
+          ficaEmAberto: selecionada.payment_status === 'pending',
+          // Devolucao pura baixa o valor da venda e nao precisa de gerente,
+          // mesmo numa venda que ja esteja acima do teto.
+          valorAnterior: selecionada.final_amount ?? 0,
+        });
+        if (estouro) {
+          setTrocaAguardandoPin({ payload, estouro });
+          return;
+        }
+      }
 
       // 1. Processar Devoluções
       let devolucaoCriada: { id?: number } | null = null;
@@ -1615,6 +1642,19 @@ export default function HistoricoVendasCompacto() {
           onClose={() => setModalAberto(false)}
           onConfirm={modoConsignado ? handleFecharConsignado : handleDevolucao}
           isConsignado={modoConsignado}
+        />
+      )}
+      {trocaAguardandoPin && (
+        <PinGerenteModal
+          subtitulo="Limite de mercadoria do cliente"
+          rotuloConfirmar="Liberar troca"
+          explicacao={<ExplicacaoLimite estouro={trocaAguardandoPin.estouro} />}
+          onAutorizado={async () => {
+            const { payload } = trocaAguardandoPin;
+            setTrocaAguardandoPin(null);
+            await handleDevolucao(payload, true);
+          }}
+          onCancelar={() => setTrocaAguardandoPin(null)}
         />
       )}
       {modalHistorico && selecionada && (
