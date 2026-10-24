@@ -20,11 +20,10 @@ import {
 } from "@/src/services/product.service";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import {
+  TITULO_ENTROU,
+  TITULO_SAIU,
   contagemExplicada,
   contagemPecas,
-  recipienteDe,
-  tituloEntrou,
-  tituloSaiu,
 } from "@/src/lib/movimentacao";
 
 // Um termo com letras e >= 2 caracteres e busca por nome; so digitos continuam
@@ -79,6 +78,8 @@ interface NovoItem {
   quantidade: number;
   precoUnitario: number;
   codigoBarras: string;
+  /** Vem do cadastro do produto — é o que a conferência física procura. */
+  tamanho?: string;
 }
 
 // Produto vindo do estoque (product.service). Só os campos que o modal usa —
@@ -229,7 +230,8 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
         nome: produto.name,
         quantidade: 1,
         precoUnitario: produto.price || 0,
-        codigoBarras: produto.barcode ? String(produto.barcode) : String(produto.sku)
+        codigoBarras: produto.barcode ? String(produto.barcode) : String(produto.sku),
+        tamanho: produto.size || undefined,
       }];
     });
     setMensagemSucesso(`${produto.name} adicionado.`);
@@ -472,7 +474,6 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   // Contagem em PEÇAS, que é como a loja confere: o resto da tela fala em
   // dinheiro, e a pergunta na hora de bipar é "quantas saíram, quantas
   // voltaram, quantas ficam".
-  const recipiente = recipienteDe(isConsignado);
   const pecasQueSairam = venda?.itens?.reduce((t, i) => t + i.quantidade, 0) ?? 0;
   const pecasAdicionadas = itensNovos.reduce((t, i) => t + i.quantidade, 0);
   // Itens = linhas da lista; peças = unidades. Uma linha com 2 unidades é
@@ -574,12 +575,12 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                   contrário. */}
               <div className="hidden sm:flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
                 <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-tight text-center">
-                  {recipiente === 'kit' ? 'No kit' : 'Na compra'}
+                  No kit
                   <br />
                   <span className="text-zinc-300">em peças</span>
                 </p>
                 <div className="w-px h-6 bg-zinc-200" />
-                <div className="text-center" title={`Peças que a cliente levou ${recipiente === 'kit' ? 'no kit' : 'na compra'}`}>
+                <div className="text-center" title="Peças que a cliente levou no kit">
                   <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-none">Tinha</p>
                   <p className="text-sm font-bold text-zinc-700 leading-tight">{pecasQueSairam}</p>
                 </div>
@@ -616,7 +617,7 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
               <div className="px-4 pt-4 pb-2">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">
-                    {tituloSaiu(recipiente)}
+                    {TITULO_SAIU}
                   </span>
                   {quantidadeRemovida > 0 && (
                     <span
@@ -754,7 +755,7 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
               <div className="flex-1 flex flex-col border-l border-zinc-100">
                 <div className="px-4 pt-4 pb-2">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">{tituloEntrou(recipiente)}</span>
+                    <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">{TITULO_ENTROU}</span>
                     {itensNovos.length > 0 && (
                       <span
                         className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded"
@@ -839,8 +840,11 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                     itensNovos.map(item => (
                       <div key={item.sku} className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-zinc-200 bg-zinc-50 transition-all">
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-zinc-800 truncate">{item.nome}</p>
-                          <p className="text-[10px] text-zinc-400 font-mono">SKU: {item.sku} · R$ {item.precoUnitario.toFixed(2)}</p>
+                          <p className="text-sm font-semibold text-zinc-800 line-clamp-2 leading-tight flex items-start gap-1.5" title={item.nome}>
+                            <Tamanho valor={item.tamanho} />
+                            <span>{item.nome}</span>
+                          </p>
+                          <p className="text-[10px] text-zinc-400 font-mono truncate mt-0.5">SKU: {item.sku} · R$ {item.precoUnitario.toFixed(2)}</p>
                         </div>
                         <div className="flex items-center gap-0.5 shrink-0">
                           <button onClick={() => handleRemoverNovoItem(item.sku)} className="w-6 h-6 flex items-center justify-center hover:bg-zinc-200 text-zinc-500 rounded transition-colors">

@@ -11,7 +11,7 @@ const HistoricoVendaModal = dynamic(() => import("@/components/vendas/HistoricoV
 import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, reabrirConsignado, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 import { registrarEventoVenda } from "@/src/services/sale-events.service";
-import { recipienteDe, resumoMovimentacao } from "@/src/lib/movimentacao";
+import { resumoMovimentacao } from "@/src/lib/movimentacao";
 import { supabase } from "@/src/lib/supabase/client";
 
 const METODO_LABELS: Record<string, string> = {
@@ -497,7 +497,6 @@ export default function HistoricoVendasCompacto() {
         resumo: resumoMovimentacao(
           saiu.reduce((t: number, i: any) => t + i.qtd, 0),
           entrou.reduce((t: number, i: any) => t + i.qtd, 0),
-          recipienteDe(selecionada?.payment_method === 'consignado'),
         ) ?? 'Ajuste de itens',
         saiu,
         entrou,
@@ -1613,7 +1612,6 @@ export default function HistoricoVendasCompacto() {
         <HistoricoVendaModal
           saleId={selecionada.id}
           observacao={selecionada.observation}
-          isConsignado={selecionada.payment_method === 'consignado'}
           onClose={() => setModalHistorico(false)}
         />
       )}
