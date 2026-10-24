@@ -19,7 +19,13 @@ import {
   listarProdutosPaginado,
 } from "@/src/services/product.service";
 import { useDebounce } from "@/src/hooks/useDebounce";
-import { recipienteDe, tituloEntrou, tituloSaiu } from "@/src/lib/movimentacao";
+import {
+  contagemExplicada,
+  contagemPecas,
+  recipienteDe,
+  tituloEntrou,
+  tituloSaiu,
+} from "@/src/lib/movimentacao";
 
 // Um termo com letras e >= 2 caracteres e busca por nome; so digitos continuam
 // sendo tratados como bipagem de codigo de barras / SKU.
@@ -469,6 +475,9 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   const recipiente = recipienteDe(isConsignado);
   const pecasQueSairam = venda?.itens?.reduce((t, i) => t + i.quantidade, 0) ?? 0;
   const pecasAdicionadas = itensNovos.reduce((t, i) => t + i.quantidade, 0);
+  // Itens = linhas da lista; peças = unidades. Uma linha com 2 unidades é
+  // 1 item e 2 peças, e era isso que o cabeçalho não dizia.
+  const itensDevolvidosCount = Object.values(itensDevolvidos).filter((q) => q > 0).length;
   const pecasQueFicam = pecasQueSairam - quantidadeRemovida + pecasAdicionadas;
 
   const pctLucro = Math.min(100, Math.max(0, parseFloat(percentualLucro) || 0));
@@ -564,8 +573,10 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                   podiam ser lidos como saída e entrada da loja, que é o
                   contrário. */}
               <div className="hidden sm:flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
-                <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">
+                <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-tight text-center">
                   {recipiente === 'kit' ? 'No kit' : 'Na compra'}
+                  <br />
+                  <span className="text-zinc-300">em peças</span>
                 </p>
                 <div className="w-px h-6 bg-zinc-200" />
                 <div className="text-center" title={`Peças que a cliente levou ${recipiente === 'kit' ? 'no kit' : 'na compra'}`}>
@@ -608,8 +619,11 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                     {tituloSaiu(recipiente)}
                   </span>
                   {quantidadeRemovida > 0 && (
-                    <span className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
-                      {quantidadeRemovida} un.
+                    <span
+                      className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded"
+                      title={contagemExplicada(quantidadeRemovida, itensDevolvidosCount)}
+                    >
+                      {contagemPecas(quantidadeRemovida, itensDevolvidosCount)}
                     </span>
                   )}
                 </div>
@@ -742,8 +756,11 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                   <div className="flex items-center justify-between mb-3">
                     <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">{tituloEntrou(recipiente)}</span>
                     {itensNovos.length > 0 && (
-                      <span className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
-                        {itensNovos.length} item(ns)
+                      <span
+                        className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded"
+                        title={contagemExplicada(pecasAdicionadas, itensNovos.length)}
+                      >
+                        {contagemPecas(pecasAdicionadas, itensNovos.length)}
                       </span>
                     )}
                   </div>
@@ -858,10 +875,10 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
             {isConsignado && (
               <div className="rounded-lg border border-zinc-200 overflow-hidden bg-white">
                 <div className="grid grid-cols-[1fr_28px_28px_28px] text-[10px] font-bold uppercase tracking-wider text-zinc-400 bg-zinc-50 px-3 py-2 gap-1 border-b border-zinc-100">
-                  <span>Produto</span>
-                  <span className="text-center">↑</span>
-                  <span className="text-center">↩</span>
-                  <span className="text-center">✓</span>
+                  <span>Produto <span className="font-normal normal-case tracking-normal text-zinc-300">· em peças</span></span>
+                  <span className="text-center" title="Peças que a cliente levou">↑</span>
+                  <span className="text-center" title="Peças que estão voltando para a loja">↩</span>
+                  <span className="text-center" title="Peças que ficam com a cliente">✓</span>
                 </div>
                 {venda.itens.filter(i => i.quantidade > 0).map(item => {
                   const dev = itensDevolvidos[item.id] ?? 0;
