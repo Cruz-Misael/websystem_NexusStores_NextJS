@@ -560,7 +560,7 @@ export default function Recibo({ venda, onClose, consignadoBreakdown }: Props) {
                   </div>
                   {breakdown!.itensDevolvidos.length > 0 && (
                     <div>
-                      <p className="text-[9px] font-black uppercase text-zinc-400 mb-1">↩ Devolvidas — {totalDevolvidos} un.</p>
+                      <p className="text-[9px] font-black uppercase text-zinc-400 mb-1">↩ Voltou para a loja — {totalDevolvidos} un.</p>
                       {breakdown!.itensDevolvidos.map((item, i) => (
                         <LinhaPecaConsignado key={i} item={item} cor="text-zinc-400" />
                       ))}

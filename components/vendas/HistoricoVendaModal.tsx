@@ -24,6 +24,12 @@ import {
   TipoEvento,
   listarHistoricoVenda,
 } from "@/src/services/sale-events.service";
+import {
+  recipienteDe,
+  resumoMovimentacao,
+  tituloEntrou,
+  tituloSaiu,
+} from "@/src/lib/movimentacao";
 
 const money = (v: number | undefined | null) =>
   v === undefined || v === null
@@ -64,13 +70,29 @@ function ListaPecas({ titulo, pecas, cor }: { titulo: string; pecas: ItemHistori
   );
 }
 
+/**
+ * O resumo de troca/devolução foi gravado no banco com a redação antiga
+ * ("15 saíram · 11 entraram"), que não dizia de onde saiu nem para onde foi.
+ * Como as peças estão guardadas no evento, dá para reescrever a frase na hora
+ * de mostrar — assim o histórico velho também fica legível, sem mexer no banco.
+ */
+function resumoDoItem(item: ItemHistorico, recipiente: ReturnType<typeof recipienteDe>) {
+  if (item.tipo !== "troca" && item.tipo !== "devolucao") return item.resumo;
+  const nSaiu = item.saiu.reduce((t, p) => t + p.qtd, 0);
+  const nEntrou = item.entrou.reduce((t, p) => t + p.qtd, 0);
+  return resumoMovimentacao(nSaiu, nEntrou, recipiente) ?? item.resumo;
+}
+
 interface Props {
   saleId: number;
   observacao: string | null;
+  /** Define a palavra usada na tela: "kit" no consignado, "compra" na venda comum. */
+  isConsignado?: boolean;
   onClose: () => void;
 }
 
-export default function HistoricoVendaModal({ saleId, observacao, onClose }: Props) {
+export default function HistoricoVendaModal({ saleId, observacao, isConsignado, onClose }: Props) {
+  const recipiente = recipienteDe(isConsignado);
   const [itens, setItens] = useState<ItemHistorico[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -172,7 +194,7 @@ export default function HistoricoVendaModal({ saleId, observacao, onClose }: Pro
                                 </span>
                               )}
                             </p>
-                            <p className="text-xs text-zinc-500 mt-0.5">{item.resumo}</p>
+                            <p className="text-xs text-zinc-500 mt-0.5">{resumoDoItem(item, recipiente)}</p>
                           </div>
                           <span className="text-[11px] text-zinc-400 whitespace-nowrap shrink-0">
                             {quandoTexto(item.quando)}
@@ -180,11 +202,11 @@ export default function HistoricoVendaModal({ saleId, observacao, onClose }: Pro
                         </div>
 
                         <ListaPecas
-                          titulo={item.tipo === "reabertura_consignado" ? "Peças" : "Voltaram para a loja"}
+                          titulo={item.tipo === "reabertura_consignado" ? "Peças" : tituloSaiu(recipiente)}
                           pecas={item.saiu}
                           cor="bg-amber-50 text-amber-700"
                         />
-                        <ListaPecas titulo="Levou no lugar" pecas={item.entrou} cor="bg-emerald-50 text-emerald-700" />
+                        <ListaPecas titulo={tituloEntrou(recipiente)} pecas={item.entrou} cor="bg-emerald-50 text-emerald-700" />
 
                         {(item.saldo !== undefined || item.cobrado !== undefined || item.valorDepois != null) && (
                           <div className="mt-3 pt-3 border-t border-zinc-100 grid grid-cols-2 sm:grid-cols-4 gap-3">

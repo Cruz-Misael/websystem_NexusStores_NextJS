@@ -19,6 +19,7 @@ import {
   listarProdutosPaginado,
 } from "@/src/services/product.service";
 import { useDebounce } from "@/src/hooks/useDebounce";
+import { recipienteDe, tituloEntrou, tituloSaiu } from "@/src/lib/movimentacao";
 
 // Um termo com letras e >= 2 caracteres e busca por nome; so digitos continuam
 // sendo tratados como bipagem de codigo de barras / SKU.
@@ -465,6 +466,7 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   // Contagem em PEÇAS, que é como a loja confere: o resto da tela fala em
   // dinheiro, e a pergunta na hora de bipar é "quantas saíram, quantas
   // voltaram, quantas ficam".
+  const recipiente = recipienteDe(isConsignado);
   const pecasQueSairam = venda?.itens?.reduce((t, i) => t + i.quantidade, 0) ?? 0;
   const pecasAdicionadas = itensNovos.reduce((t, i) => t + i.quantidade, 0);
   const pecasQueFicam = pecasQueSairam - quantidadeRemovida + pecasAdicionadas;
@@ -556,31 +558,37 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
               </div>
             </div>
             <div className="flex items-center gap-3">
-              {/* Placar em peças, atualizando a cada bipada. */}
+              {/* Placar em peças, atualizando a cada bipada. Os números são todos
+                  contados do mesmo lugar — o kit da cliente —, e o rótulo da
+                  esquerda diz qual é esse lugar: sem ele, "saem" e "entram"
+                  podiam ser lidos como saída e entrada da loja, que é o
+                  contrário. */}
               <div className="hidden sm:flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
-                <div className="text-center">
-                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-none">Saíram</p>
+                <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest">
+                  {recipiente === 'kit' ? 'No kit' : 'Na compra'}
+                </p>
+                <div className="w-px h-6 bg-zinc-200" />
+                <div className="text-center" title={`Peças que a cliente levou ${recipiente === 'kit' ? 'no kit' : 'na compra'}`}>
+                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-none">Tinha</p>
                   <p className="text-sm font-bold text-zinc-700 leading-tight">{pecasQueSairam}</p>
                 </div>
                 <div className="w-px h-6 bg-zinc-200" />
-                <div className="text-center">
-                  <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest leading-none">Devolvidas</p>
+                <div className="text-center" title="Peças que estão voltando para a loja agora">
+                  <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest leading-none">Saem</p>
                   <p className="text-sm font-bold text-amber-600 leading-tight">{quantidadeRemovida}</p>
                 </div>
                 {pecasAdicionadas > 0 && (
                   <>
                     <div className="w-px h-6 bg-zinc-200" />
-                    <div className="text-center">
-                      <p className="text-[9px] font-black text-violet-500 uppercase tracking-widest leading-none">Entraram</p>
+                    <div className="text-center" title="Peças que estão saindo da loja com a cliente agora">
+                      <p className="text-[9px] font-black text-violet-500 uppercase tracking-widest leading-none">Entram</p>
                       <p className="text-sm font-bold text-violet-600 leading-tight">{pecasAdicionadas}</p>
                     </div>
                   </>
                 )}
                 <div className="w-px h-6 bg-zinc-200" />
-                <div className="text-center">
-                  <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest leading-none">
-                    {isConsignado ? 'Ficam' : 'Restam'}
-                  </p>
+                <div className="text-center" title="Peças que continuam com a cliente depois desta operação">
+                  <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest leading-none">Ficam</p>
                   <p className="text-sm font-black text-emerald-600 leading-tight">{pecasQueFicam}</p>
                 </div>
               </div>
@@ -597,7 +605,7 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
               <div className="px-4 pt-4 pb-2">
                 <div className="flex items-center justify-between mb-3">
                   <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">
-                    {isConsignado ? 'Peças devolvidas' : 'Entrada no estoque'}
+                    {tituloSaiu(recipiente)}
                   </span>
                   {quantidadeRemovida > 0 && (
                     <span className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
@@ -732,7 +740,7 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
               <div className="flex-1 flex flex-col border-l border-zinc-100">
                 <div className="px-4 pt-4 pb-2">
                   <div className="flex items-center justify-between mb-3">
-                    <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">Saída da loja</span>
+                    <span className="text-[11px] font-semibold text-zinc-500 uppercase tracking-widest">{tituloEntrou(recipiente)}</span>
                     {itensNovos.length > 0 && (
                       <span className="text-[11px] font-bold text-zinc-600 bg-zinc-100 px-2 py-0.5 rounded">
                         {itensNovos.length} item(ns)

@@ -11,6 +11,7 @@ const HistoricoVendaModal = dynamic(() => import("@/components/vendas/HistoricoV
 import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, reabrirConsignado, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 import { registrarEventoVenda } from "@/src/services/sale-events.service";
+import { recipienteDe, resumoMovimentacao } from "@/src/lib/movimentacao";
 import { supabase } from "@/src/lib/supabase/client";
 
 const METODO_LABELS: Record<string, string> = {
@@ -493,15 +494,11 @@ export default function HistoricoVendasCompacto() {
       await registrarEventoVenda({
         saleId: payload.vendaId,
         tipo: payload.tipo === 'troca' ? 'troca' : 'devolucao',
-        resumo: (() => {
-          const nVoltou = saiu.reduce((t: number, i: any) => t + i.qtd, 0);
-          const nLevou = entrou.reduce((t: number, i: any) => t + i.qtd, 0);
-          const partes = [
-            nVoltou ? `${nVoltou} ${nVoltou === 1 ? 'peça devolvida' : 'peças devolvidas'}` : null,
-            nLevou ? `${nLevou} ${nLevou === 1 ? 'peça levada no lugar' : 'peças levadas no lugar'}` : null,
-          ].filter(Boolean);
-          return partes.join(' · ') || 'Ajuste de itens';
-        })(),
+        resumo: resumoMovimentacao(
+          saiu.reduce((t: number, i: any) => t + i.qtd, 0),
+          entrou.reduce((t: number, i: any) => t + i.qtd, 0),
+          recipienteDe(selecionada?.payment_method === 'consignado'),
+        ) ?? 'Ajuste de itens',
         saiu,
         entrou,
         valorAntes: selecionada?.final_amount ?? null,
@@ -1522,7 +1519,7 @@ export default function HistoricoVendasCompacto() {
                         {/* Devolveu */}
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1 flex items-center gap-1">
-                            <RotateCcw size={10} /> Devolvidas ({totalDevolvidas})
+                            <RotateCcw size={10} /> Voltou para a loja ({totalDevolvidas})
                           </p>
                           {bd.itensDevolvidos.length === 0 ? (
                             <p className="text-xs text-zinc-400 italic">Nenhuma</p>
@@ -1616,6 +1613,7 @@ export default function HistoricoVendasCompacto() {
         <HistoricoVendaModal
           saleId={selecionada.id}
           observacao={selecionada.observation}
+          isConsignado={selecionada.payment_method === 'consignado'}
           onClose={() => setModalHistorico(false)}
         />
       )}
