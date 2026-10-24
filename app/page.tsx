@@ -1,12 +1,12 @@
 'use client';
 
-import { useRef, useState, useEffect } from 'react';
+import { useRef } from 'react';
 import Link from 'next/link';
 import { motion, useInView, useScroll, useTransform } from 'framer-motion';
 import {
   ShoppingBag, BarChart3, Users, Package,
   Shield, CreditCard, Bot, ArrowRight,
-  Building2, Layers, ShoppingCart, Star,
+  Building2, ShoppingCart,
   Check, TrendingUp, ChevronDown, Zap,
 } from 'lucide-react';
 
@@ -27,7 +27,7 @@ const sectors = [
   {
     icon: Building2,
     name: 'Sex Shop',
-    desc: 'Gestão completa para lojas adultas com total privacidade nos dados e relatórios discretos.',
+    desc: 'Gestão completa para lojas adultas: estoque, caixa e clientes, com acesso só para quem a loja autorizar.',
     gradient: 'from-violet-500/20 to-purple-600/10',
     border: 'hover:border-violet-500/40',
     iconBg: 'bg-violet-500/15',
@@ -42,22 +42,13 @@ const sectors = [
     iconBg: 'bg-indigo-500/15',
     iconColor: 'text-indigo-400',
   },
-  {
-    icon: Layers,
-    name: 'Multi-lojas',
-    desc: 'Gerencie várias unidades em um único painel centralizado, com relatórios consolidados.',
-    gradient: 'from-emerald-500/20 to-teal-600/10',
-    border: 'hover:border-emerald-500/40',
-    iconBg: 'bg-emerald-500/15',
-    iconColor: 'text-emerald-400',
-  },
 ];
 
 const features = [
   {
     icon: CreditCard,
     title: 'PDV Completo',
-    desc: 'Frente de caixa rápida com múltiplas formas de pagamento, parcelamento, sangria e fechamento de caixa com totais automáticos.',
+    desc: 'Frente de caixa rápida com várias formas de pagamento, leitura de código de barras, desconto liberado por PIN de gerente e recibo na hora.',
     span: 'lg:col-span-2',
     accent: 'indigo',
   },
@@ -71,7 +62,7 @@ const features = [
   {
     icon: Users,
     title: 'Clientes & CRM',
-    desc: 'Histórico completo, perfil detalhado, trocas e fidelização dos seus melhores clientes.',
+    desc: 'Cadastro completo, histórico de compras, trocas e devoluções, e ranking dos clientes que mais compram.',
     span: '',
     accent: 'blue',
   },
@@ -85,14 +76,14 @@ const features = [
   {
     icon: Bot,
     title: 'NexusIA',
-    desc: 'Assistente de inteligência artificial para insights de vendas, alertas estratégicos e análise preditiva do seu negócio.',
+    desc: 'Assistente de inteligência artificial que explica como usar o sistema e avisa o que pede atenção: estoque crítico e vendas com pagamento atrasado.',
     span: '',
     accent: 'purple',
   },
   {
     icon: Shield,
-    title: 'Seguro e Confiável',
-    desc: 'Dados na nuvem com backups automáticos, auditoria de ações e controle de acesso por perfil.',
+    title: 'Acesso Controlado',
+    desc: 'Dados na nuvem, entrada só para usuários autorizados, perfis de acesso e histórico de cada venda.',
     span: '',
     accent: 'amber',
   },
@@ -102,34 +93,6 @@ const steps = [
   { num: '01', title: 'Configure sua loja', desc: 'Cadastre seus produtos, operadores e formas de pagamento em minutos.' },
   { num: '02', title: 'Comece a vender', desc: 'PDV intuitivo, funciona no computador ou tablet, sem instalação.' },
   { num: '03', title: 'Acompanhe os resultados', desc: 'Relatórios em tempo real, IA com insights e controle total.' },
-];
-
-const testimonials = [
-  {
-    quote: 'Antes usávamos planilha. Hoje tenho tudo no Nexus — estoque, caixa, clientes. Reduziu nosso tempo de fechamento de 1 hora para 5 minutos.',
-    author: 'Ana Paula M.',
-    role: 'Proprietária · Boutique Flor de Lótus',
-    rating: 5,
-  },
-  {
-    quote: 'A privacidade no relatório de vendas foi um diferencial enorme pra gente. O sistema entende as necessidades do nosso segmento.',
-    author: 'Carlos Roberto S.',
-    role: 'Sócio · Sexy Shop Brasil',
-    rating: 5,
-  },
-  {
-    quote: 'Gerencio 3 lojas de um só painel. Consigo ver o estoque de cada unidade em tempo real e tomar decisões muito mais rápido.',
-    author: 'Mariana Silva',
-    role: 'Diretora · Rede Íntimo & Chique',
-    rating: 5,
-  },
-];
-
-const stats = [
-  { to: 200, suffix: '+', label: 'Lojas ativas' },
-  { to: 50, suffix: 'k+', label: 'Produtos gerenciados' },
-  { to: 98, suffix: '%', label: 'Satisfação' },
-  { to: 24, suffix: '/7', label: 'Disponibilidade' },
 ];
 
 /* ═══════════════════════════════════════════════
@@ -160,27 +123,6 @@ function Reveal({
       {children}
     </motion.div>
   );
-}
-
-function Counter({ to, suffix = '' }: { to: number; suffix?: string }) {
-  const ref = useRef<HTMLSpanElement>(null);
-  const isInView = useInView(ref, { once: true });
-  const [v, setV] = useState(0);
-
-  useEffect(() => {
-    if (!isInView) return;
-    const start = performance.now();
-    const dur = 1800;
-    const tick = (now: number) => {
-      const p = Math.min((now - start) / dur, 1);
-      const eased = 1 - Math.pow(1 - p, 4);
-      setV(Math.round(eased * to));
-      if (p < 1) requestAnimationFrame(tick);
-    };
-    requestAnimationFrame(tick);
-  }, [isInView, to]);
-
-  return <span ref={ref}>{v}{suffix}</span>;
 }
 
 function DashboardMockup() {
@@ -222,7 +164,7 @@ function DashboardMockup() {
             {[
               { c: 'from-indigo-500/25 to-indigo-700/10', v: 'R$ 18k', label: 'Faturamento' },
               { c: 'from-violet-500/25 to-violet-700/10', v: '243',    label: 'Vendas' },
-              { c: 'from-emerald-500/25 to-emerald-700/10', v: '98%',  label: 'Satisfação' },
+              { c: 'from-emerald-500/25 to-emerald-700/10', v: '3',    label: 'Rupturas' },
               { c: 'from-amber-500/25 to-amber-700/10', v: 'R$ 74',    label: 'Ticket' },
             ].map((k, i) => (
               <motion.div
@@ -461,7 +403,7 @@ export default function HomePage() {
                 transition={{ delay: 0.6 }}
                 className="flex flex-wrap items-center gap-4 text-xs text-zinc-500"
               >
-                {['Sem taxa de instalação', 'Suporte em português', 'Dados 100% seguros'].map((t) => (
+                {['Sem taxa de instalação', 'Suporte em português', 'Dados na nuvem'].map((t) => (
                   <span key={t} className="flex items-center gap-1.5">
                     <Check className="w-3 h-3 text-indigo-400" />
                     {t}
@@ -500,22 +442,6 @@ export default function HomePage() {
             <ChevronDown className="w-4 h-4 text-zinc-600" />
           </motion.div>
         </motion.div>
-      </section>
-
-      {/* ── Stats ─────────────────────────────────────── */}
-      <section className="relative bg-zinc-950 border-t border-zinc-800/60">
-        <div className="max-w-4xl mx-auto px-4">
-          <div className="grid grid-cols-2 md:grid-cols-4 divide-x divide-zinc-800/60">
-            {stats.map(({ to, suffix, label }, i) => (
-              <Reveal key={label} delay={i * 0.1} className="px-6 py-10 text-center">
-                <p className="text-4xl font-black text-white tracking-tight mb-1">
-                  <Counter to={to} suffix={suffix} />
-                </p>
-                <p className="text-xs text-zinc-500 uppercase tracking-widest font-semibold">{label}</p>
-              </Reveal>
-            ))}
-          </div>
-        </div>
       </section>
 
       {/* ── Como Funciona ─────────────────────────────── */}
@@ -591,11 +517,11 @@ export default function HomePage() {
               Feito para o seu negócio
             </h2>
             <p className="text-slate-400 text-sm max-w-md mx-auto">
-              Personalizado para lojas de moda íntima, sex shops, boutiques e redes varejistas
+              Personalizado para lojas de moda íntima, sex shops e boutiques
             </p>
           </Reveal>
 
-          <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
             {sectors.map(({ icon: Icon, name, desc, gradient, border, iconBg, iconColor }, i) => (
               <Reveal key={name} delay={i * 0.1}>
                 <div className={`relative h-full p-6 rounded-2xl bg-gradient-to-br ${gradient} border border-white/60 ${border} hover:shadow-lg hover:-translate-y-1.5 transition-all duration-300 group overflow-hidden`}>
@@ -604,45 +530,6 @@ export default function HomePage() {
                   </div>
                   <h3 className="font-black text-slate-900 mb-2">{name}</h3>
                   <p className="text-sm text-slate-500 leading-relaxed">{desc}</p>
-                </div>
-              </Reveal>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── Testimonials ──────────────────────────────── */}
-      <section className="py-24 bg-slate-50 border-t border-slate-100">
-        <div className="max-w-5xl mx-auto px-4">
-          <Reveal className="text-center mb-14">
-            <p className="text-xs font-black uppercase tracking-widest text-indigo-600 mb-3">Depoimentos</p>
-            <h2 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tight">
-              Quem já usa, recomenda
-            </h2>
-          </Reveal>
-
-          <div className="grid md:grid-cols-3 gap-6">
-            {testimonials.map(({ quote, author, role, rating }, i) => (
-              <Reveal key={author} delay={i * 0.12}>
-                <div className="h-full p-6 bg-white rounded-2xl border border-slate-200 shadow-sm hover:shadow-md hover:-translate-y-1 transition-all duration-300">
-                  {/* Stars */}
-                  <div className="flex gap-0.5 mb-4">
-                    {Array.from({ length: rating }).map((_, j) => (
-                      <Star key={j} className="w-3.5 h-3.5 fill-amber-400 text-amber-400" />
-                    ))}
-                  </div>
-                  <p className="text-sm text-slate-600 leading-relaxed mb-5 italic">
-                    &ldquo;{quote}&rdquo;
-                  </p>
-                  <div className="flex items-center gap-3 pt-4 border-t border-slate-100">
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-indigo-500 to-violet-500 flex items-center justify-center text-white text-sm font-black shrink-0">
-                      {author.charAt(0)}
-                    </div>
-                    <div>
-                      <p className="text-sm font-bold text-slate-900 leading-tight">{author}</p>
-                      <p className="text-[11px] text-slate-400">{role}</p>
-                    </div>
-                  </div>
                 </div>
               </Reveal>
             ))}
