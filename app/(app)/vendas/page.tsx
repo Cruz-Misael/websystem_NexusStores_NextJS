@@ -1,23 +1,43 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useDebounce } from "@/src/hooks/useDebounce";
-import DevolucaoTrocaModal from "@/components/troca/DevolucaoTrocaModal";
-import Recibo from "@/components/vendas/Recibo";
-import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado } from "@/src/services/sales.service";
+
+// Modais abertos por clique — carregados sob demanda.
+const DevolucaoTrocaModal = dynamic(() => import("@/components/troca/DevolucaoTrocaModal"), { ssr: false });
+const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
+const HistoricoVendaModal = dynamic(() => import("@/components/vendas/HistoricoVendaModal"), { ssr: false });
+import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, reabrirConsignado, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
+import { registrarEventoVenda } from "@/src/services/sale-events.service";
+import { contagemExplicada, contagemPecas, resumoMovimentacao } from "@/src/lib/movimentacao";
+import Tamanho from "@/components/ui/Tamanho";
+import { supabase } from "@/src/lib/supabase/client";
+
+const METODO_LABELS: Record<string, string> = {
+  credit_card: "Crédito",
+  debit: "Débito",
+  cash: "Dinheiro",
+  pix: "PIX",
+  consignado: "Consignado",
+};
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
-import { Sale, ConsignadoItemBreakdown } from "@/types/sales";
+import { Sale, ConsignadoItemBreakdown, LinhaConsignado, SaleItem } from "@/types/sales";
+import { enriquecerBreakdown } from "@/src/lib/consignado";
+import LinhaPecaConsignado from "@/components/vendas/LinhaPecaConsignado";
 import {
   Search,
   Filter,
   Download,
   Printer,
+  History,
   Receipt,
   XCircle,
   RotateCcw,
   ChevronRight,
+  ChevronLeft,
   Calendar,
   CreditCard,
   ShoppingCart,
@@ -62,6 +82,7 @@ export default function HistoricoVendasCompacto() {
   const [busca, setBusca] = useState("");
   const debouncedBusca = useDebounce(busca);
   const [modalRecibo, setModalRecibo] = useState(false);
+  const [modalHistorico, setModalHistorico] = useState(false);
   const [modalAberto, setModalAberto] = useState(false);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState<string | null>(null);
@@ -69,6 +90,13 @@ export default function HistoricoVendasCompacto() {
   const [filtroStatus, setFiltroStatus] = useState<string>("todos");
   const [filtroData, setFiltroData] = useState<string>("");
   const [modoConsignado, setModoConsignado] = useState(false);
+
+  // ── Paginação (server-side) ──
+  const ITENS_POR_PAGINA = 30;
+  const [pagina, setPagina] = useState(1);
+  const [totalPaginas, setTotalPaginas] = useState(1);
+  const [totalVendas, setTotalVendas] = useState(0);
+  const [exportando, setExportando] = useState(false);
 
   // ── Edição de cliente ──
   const [editandoCliente, setEditandoCliente] = useState(false);
@@ -83,6 +111,10 @@ export default function HistoricoVendasCompacto() {
   const [editandoDataConsignado, setEditandoDataConsignado] = useState(false);
   const [novaDataConsignado, setNovaDataConsignado] = useState("");
   const [salvandoDataConsignado, setSalvandoDataConsignado] = useState(false);
+
+  // Observação interna da venda (não sai na notinha)
+  const [notaInterna, setNotaInterna] = useState("");
+  const [salvandoNota, setSalvandoNota] = useState(false);
 
   const [vendaConsignadoRecibo, setVendaConsignadoRecibo] = useState<{
     venda: Sale;
@@ -99,6 +131,25 @@ export default function HistoricoVendasCompacto() {
     textoConfirmar: "Confirmar",
     textoCancelar: "Cancelar",
   });
+
+  // Reabrir consignado é ação de administrador (a regra também é validada no banco)
+  const [ehAdmin, setEhAdmin] = useState(false);
+
+  useEffect(() => {
+    async function carregarPapel() {
+      const { data: { user: authUser } } = await supabase.auth.getUser();
+      if (!authUser) return;
+
+      const { data: profile } = await supabase
+        .from("authorized_users")
+        .select("role")
+        .eq("user_id", authUser.id)
+        .single();
+
+      setEhAdmin(profile?.role === "admin");
+    }
+    carregarPapel();
+  }, []);
 
   const [toastAberto, setToastAberto] = useState(false);
   const [toastConfig, setToastConfig] = useState({
@@ -135,6 +186,67 @@ export default function HistoricoVendasCompacto() {
     setPopupAberto(false);
   };
 
+  // ======= EDIÇÃO DO MÉTODO DE PAGAMENTO =======
+  const [editandoMetodo, setEditandoMetodo] = useState(false);
+  const [novoMetodo, setNovoMetodo] = useState<MetodoPagamento>("cash");
+  const [novaDataMetodoConsignado, setNovaDataMetodoConsignado] = useState("");
+  const [salvandoMetodo, setSalvandoMetodo] = useState(false);
+
+  // Fecha o editor ao trocar de venda selecionada
+  useEffect(() => {
+    setEditandoMetodo(false);
+  }, [selecionada?.id]);
+
+  const executarAlteracaoMetodo = async () => {
+    if (!selecionada) return;
+    fecharPopup();
+    setSalvandoMetodo(true);
+    try {
+      const atualizada = await atualizarMetodoPagamento(
+        selecionada.id,
+        novoMetodo,
+        novoMetodo === 'consignado' ? novaDataMetodoConsignado : undefined
+      );
+      setVendas(prev => prev.map(v => v.id === atualizada.id ? atualizada : v));
+      setSelecionada(atualizada);
+      setEditandoMetodo(false);
+      mostrarToast(`Método de pagamento alterado para ${METODO_LABELS[novoMetodo] || novoMetodo}`, "sucesso");
+    } catch (e: any) {
+      mostrarToast(e.message || "Erro ao alterar método de pagamento", "erro");
+    } finally {
+      setSalvandoMetodo(false);
+    }
+  };
+
+  const handleAlterarMetodo = () => {
+    if (!selecionada) return;
+    if (novoMetodo === selecionada.payment_method) {
+      setEditandoMetodo(false);
+      return;
+    }
+    if (novoMetodo === 'consignado' && !novaDataMetodoConsignado) {
+      mostrarToast("Informe a data prevista de pagamento do consignado", "erro");
+      return;
+    }
+
+    const viraPendente = novoMetodo === 'consignado' && selecionada.payment_status === 'paid';
+    const viraPago = novoMetodo !== 'consignado' && selecionada.payment_status === 'pending';
+
+    if (viraPendente || viraPago) {
+      mostrarPopup(
+        "Alterar método de pagamento",
+        viraPendente
+          ? `A venda #${selecionada.id} passará a ser um consignado PENDENTE, com acerto previsto para ${new Date(novaDataMetodoConsignado + 'T12:00:00').toLocaleDateString('pt-BR')}. Confirmar?`
+          : `A venda #${selecionada.id} deixará de ser consignado e será marcada como PAGA em ${METODO_LABELS[novoMetodo]}. Confirmar?`,
+        "aviso",
+        executarAlteracaoMetodo
+      );
+    } else {
+      executarAlteracaoMetodo();
+    }
+  };
+  // =============================================
+
   // Busca de clientes para edição
   useEffect(() => {
     if (!editandoCliente) return;
@@ -163,6 +275,22 @@ export default function HistoricoVendasCompacto() {
     }
   };
 
+  const handleSalvarNotaInterna = async () => {
+    if (!selecionada) return;
+    setSalvandoNota(true);
+    try {
+      await atualizarNotaInterna(selecionada.id, notaInterna);
+      const notaFinal = notaInterna.trim() || null;
+      setSelecionada({ ...selecionada, internal_note: notaFinal });
+      setVendas(prev => prev.map(v => v.id === selecionada.id ? { ...v, internal_note: notaFinal } : v));
+      mostrarToast("Observação interna salva!", "sucesso");
+    } catch (e: any) {
+      mostrarToast(`Erro ao salvar observação: ${e.message}`, "erro");
+    } finally {
+      setSalvandoNota(false);
+    }
+  };
+
   const handleAlterarDataConsignado = async () => {
     if (!selecionada || !novaDataConsignado) return;
     setSalvandoDataConsignado(true);
@@ -182,15 +310,22 @@ export default function HistoricoVendasCompacto() {
     }
   };
 
-  // Carregar vendas do backend
-  const carregarVendas = async () => {
+  // Carregar vendas do backend (paginado e filtrado no servidor)
+  const carregarVendas = async (paginaAlvo = pagina) => {
     try {
       setCarregando(true);
       setErro(null);
 
-      const result = await listarVendas(1, 100);
+      const result = await listarVendas(paginaAlvo, ITENS_POR_PAGINA, {
+        busca: debouncedBusca,
+        status: filtroStatus,
+        data: filtroData,
+      });
       setVendas(result.sales);
+      setTotalPaginas(result.totalPaginas || 1);
+      setTotalVendas(result.total || 0);
 
+      // Seleciona a primeira da lista quando nada está selecionado
       if (result.sales.length > 0 && !selecionada) {
         setSelecionada(result.sales[0]);
       }
@@ -203,9 +338,27 @@ export default function HistoricoVendasCompacto() {
     }
   };
 
+  // Recarrega ao mudar de página (também faz a carga inicial no mount)
   useEffect(() => {
-    carregarVendas();
-  }, []);
+    carregarVendas(pagina);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pagina]);
+
+  // Ao mudar filtros/busca, volta para a página 1 (o efeito acima recarrega).
+  // Ignora a primeira renderização para não duplicar a carga inicial.
+  const primeiraCarga = useRef(true);
+  useEffect(() => {
+    if (primeiraCarga.current) {
+      primeiraCarga.current = false;
+      return;
+    }
+    if (pagina !== 1) {
+      setPagina(1); // dispara o efeito de página acima
+    } else {
+      carregarVendas(1);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedBusca, filtroStatus, filtroData]);
 
   useEffect(() => {
     setEditandoCliente(false);
@@ -213,6 +366,7 @@ export default function HistoricoVendasCompacto() {
     setResultadosCliente([]);
     setEditandoDataConsignado(false);
     setNovaDataConsignado("");
+    setNotaInterna(selecionada?.internal_note || "");
   }, [selecionada?.id]);
 
   // Cancelar venda
@@ -271,13 +425,22 @@ export default function HistoricoVendasCompacto() {
   };
 
   // Processar devolução/troca (Ajustado para suportar adições)
+  // Trava de reentrancia: criarDevolucao e adicionarItemVenda nao sao
+  // idempotentes, entao a mesma confirmacao rodando duas vezes credita estoque
+  // e insere itens em dobro. O botao do modal ja fica desabilitado enquanto
+  // processa; esta e a garantia do lado de ca.
+  const processandoRef = useRef(false);
+
   const handleDevolucao = async (payload: any) => {
+    if (processandoRef.current) return;
+    processandoRef.current = true;
     try {
       setAtualizando(true);
 
       // 1. Processar Devoluções
+      let devolucaoCriada: { id?: number } | null = null;
       if (payload.itens.length > 0) {
-        await criarDevolucao({
+        devolucaoCriada = await criarDevolucao({
           vendaId: payload.vendaId,
           itens: payload.itens.map((item: any) => ({
             itemId: item.itemId,
@@ -313,6 +476,38 @@ export default function HistoricoVendasCompacto() {
       // Recarregar venda para atualizar UI
       const vendaAtualizada = await buscarVendaPorId(payload.vendaId);
 
+      // Guarda o que aconteceu, para a tela de Histórico. Os itens que ENTRAM
+      // numa troca não apareciam em lugar nenhum antes disto.
+      const nomeDoItem = (itemId: number) => {
+        const i = selecionada?.items.find(x => x.id === itemId);
+        return i?.product?.name || i?.product_name || "Produto";
+      };
+      const nomeDoSku = (sku: number) => {
+        const i = vendaAtualizada.items.find((x: any) => x.product_id === sku);
+        return i?.product?.name || i?.product_name || `SKU ${sku}`;
+      };
+      const saiu = (payload.itens || [])
+        .filter((i: any) => i.quantidade > 0)
+        .map((i: any) => ({ nome: nomeDoItem(i.itemId), qtd: i.quantidade }));
+      const entrou = (payload.itensAdicionados || [])
+        .map((i: any) => ({ nome: nomeDoSku(i.sku), qtd: i.quantidade }));
+
+      await registrarEventoVenda({
+        saleId: payload.vendaId,
+        tipo: payload.tipo === 'troca' ? 'troca' : 'devolucao',
+        resumo: resumoMovimentacao(
+          saiu.reduce((t: number, i: any) => t + i.qtd, 0),
+          entrou.reduce((t: number, i: any) => t + i.qtd, 0),
+        ) ?? 'Ajuste de itens',
+        saiu,
+        entrou,
+        valorAntes: selecionada?.final_amount ?? null,
+        valorDepois: payload.valorFinal ?? null,
+        // Amarra o evento à devolução: sem isto o histórico mostra o mesmo
+        // fato duas vezes, uma por cada fonte.
+        extras: devolucaoCriada?.id ? { return_id: devolucaoCriada.id } : undefined,
+      });
+
       setVendas(prev => prev.map(v =>
         v.id === vendaAtualizada.id ? vendaAtualizada : v
       ));
@@ -327,36 +522,51 @@ export default function HistoricoVendasCompacto() {
       mostrarPopup("Erro no Processamento", `Não foi possível processar: ${error.message}`, "erro");
     } finally {
       setAtualizando(false);
+      processandoRef.current = false;
     }
   };
 
   // Processar fechamento de consignado
   const handleFecharConsignado = async (payload: any) => {
+    if (processandoRef.current) return;
+    processandoRef.current = true;
     try {
       setAtualizando(true);
 
       // Capturar breakdown ANTES das alterações no banco
-      const itensOriginais = (selecionada?.items || []).map((i) => ({
+      // SKU e tamanho entram aqui, na origem: é o único momento em que se sabe
+      // com certeza qual linha da venda é cada peça. Depois, no texto, o que
+      // sobra é o nome — e nome repete entre tamanhos.
+      const fichaDe = (i: SaleItem) => ({
         nome: i.product?.name || i.product_name || "Produto",
+        sku: i.product?.sku ?? i.product_id ?? undefined,
+        tamanho: i.product?.size?.trim() || undefined,
+      });
+
+      const itensOriginais = (selecionada?.items || []).map((i) => ({
+        ...fichaDe(i),
         quantidade: i.quantity,
       }));
       const itensDevolvidos = payload.itens
         .map((item: any) => {
           const orig = selecionada?.items.find((i) => i.id === item.itemId);
-          return { nome: orig?.product?.name || orig?.product_name || "Produto", quantidade: item.quantidade };
+          return orig
+            ? { ...fichaDe(orig), quantidade: item.quantidade }
+            : { nome: "Produto", quantidade: item.quantidade };
         })
         .filter((i: any) => i.quantidade > 0);
       const itensFicaram = (selecionada?.items || [])
         .map((i) => {
           const dev = payload.itens.find((d: any) => d.itemId === i.id);
-          return { nome: i.product?.name || i.product_name || "Produto", quantidade: i.quantity - (dev?.quantidade || 0) };
+          return { ...fichaDe(i), quantidade: i.quantity - (dev?.quantidade || 0) };
         })
         .filter((i) => i.quantidade > 0);
       const breakdown: ConsignadoItemBreakdown = { itensOriginais, itensDevolvidos, itensFicaram };
 
       // 1. Processar devolução dos itens não vendidos
+      let devolucaoDoAcerto: { id?: number } | null = null;
       if (payload.itens.length > 0) {
-        await criarDevolucao({
+        devolucaoDoAcerto = await criarDevolucao({
           vendaId: payload.vendaId,
           itens: payload.itens.map((item: any) => ({
             itemId: item.itemId,
@@ -391,9 +601,15 @@ export default function HistoricoVendasCompacto() {
       // 3. Atualizar status e valor final no banco
       const pct = payload.percentualLucro ?? 0;
       const saldo = payload.valorNetAnteComissao ?? payload.valorFinal;
-      const saiu = itensOriginais.map((i) => `${i.nome} (x${i.quantidade})`).join("; ") || "Nenhuma";
-      const devolveu = itensDevolvidos.length > 0 ? itensDevolvidos.map((i: any) => `${i.nome} (x${i.quantidade})`).join("; ") : "Nenhuma";
-      const ficou = itensFicaram.length > 0 ? itensFicaram.map((i) => `${i.nome} (x${i.quantidade})`).join("; ") : "Nenhuma";
+      // "NOME [sku 12290 · M] (x2)" — o trecho entre colchetes é opcional na
+      // leitura, então fechamentos gravados antes disto continuam sendo lidos.
+      const comoTexto = (i: { nome: string; quantidade: number; sku?: number | string; tamanho?: string }) => {
+        const ficha = i.sku !== undefined ? ` [sku ${i.sku}${i.tamanho ? ` · ${i.tamanho}` : ""}]` : "";
+        return `${i.nome}${ficha} (x${i.quantidade})`;
+      };
+      const saiu = itensOriginais.map(comoTexto).join("; ") || "Nenhuma";
+      const devolveu = itensDevolvidos.length > 0 ? itensDevolvidos.map(comoTexto).join("; ") : "Nenhuma";
+      const ficou = itensFicaram.length > 0 ? itensFicaram.map(comoTexto).join("; ") : "Nenhuma";
       const novaObs = [
         selecionada?.observation || '',
         `[FECHADO EM ${new Date().toLocaleDateString('pt-BR')}] Saldo: ${formatarMoeda(saldo)} | Desconto de lucro: ${pct}% (${formatarMoeda(saldo * pct / 100)}) | Cobrado: ${formatarMoeda(payload.valorFinal)}`,
@@ -416,6 +632,23 @@ export default function HistoricoVendasCompacto() {
       setVendas(prev => prev.map(v =>
         v.id === vendaAtualizada.id ? vendaAtualizada : v
       ));
+      await registrarEventoVenda({
+        saleId: payload.vendaId,
+        tipo: 'fechamento_consignado',
+        resumo: `Acerto fechado — ${pct}% de desconto de lucro sobre o saldo`,
+        saiu: breakdown.itensDevolvidos.map(i => ({ nome: i.nome, qtd: i.quantidade })),
+        entrou: [],
+        valorAntes: selecionada?.final_amount ?? null,
+        valorDepois: payload.valorFinal ?? null,
+        extras: {
+          saldo,
+          comissao_percent: pct,
+          comissao_valor: saldo * pct / 100,
+          cobrado: payload.valorFinal,
+          ...(devolucaoDoAcerto?.id ? { return_id: devolucaoDoAcerto.id } : {}),
+        },
+      });
+
       setSelecionada(vendaAtualizada);
       setModalAberto(false);
       setVendaConsignadoRecibo({ venda: vendaAtualizada, breakdown });
@@ -431,21 +664,86 @@ export default function HistoricoVendasCompacto() {
       );
     } finally {
       setAtualizando(false);
+      processandoRef.current = false;
     }
+  };
+
+  // Reabrir consignado fechado: volta para pendente sem tocar em estoque/devoluções
+  const handleReabrirConsignado = () => {
+    if (!selecionada) return;
+
+    const saldo = selecionada.consignado_net_before_commission ?? selecionada.final_amount;
+    const breakdown = parseConsignadoBreakdown(selecionada.observation);
+    const devolvidas = (breakdown?.itensDevolvidos || []).reduce((acc, i) => acc + i.quantidade, 0);
+
+    const aviso = devolvidas > 0
+      ? `\n\nAtenção: ${devolvidas} ${devolvidas === 1 ? "peça foi devolvida" : "peças foram devolvidas"} no fechamento. Elas continuam devolvidas e no estoque — reabrir não estorna a devolução.`
+      : "";
+
+    mostrarPopup(
+      "Reabrir Consignado",
+      `A venda #${selecionada.id} volta para PENDENTE com saldo de ${formatarMoeda(saldo)}. `
+        + "A data de acerto e o desconto de lucro do fechamento serão apagados, e a venda sai do faturamento do período."
+        + aviso,
+      "aviso",
+      async () => {
+        try {
+          setAtualizando(true);
+          await reabrirConsignado(selecionada.id);
+
+          await registrarEventoVenda({
+            saleId: selecionada.id,
+            tipo: 'reabertura_consignado',
+            resumo: 'Fechamento desfeito — a venda voltou a pendente',
+            valorAntes: selecionada.final_amount ?? null,
+            valorDepois: saldo ?? null,
+            extras: { saldo },
+          });
+
+          const vendaAtualizada = await buscarVendaPorId(selecionada.id);
+          setVendas(prev => prev.map(v => (v.id === vendaAtualizada.id ? vendaAtualizada : v)));
+          setSelecionada(vendaAtualizada);
+
+          fecharPopup();
+          mostrarToast("Consignado reaberto. A venda voltou para pendente.", "sucesso");
+        } catch (error) {
+          console.error("Erro ao reabrir consignado:", error);
+          fecharPopup();
+          const msg = error instanceof Error ? error.message : String(error);
+          mostrarToast(`Erro ao reabrir: ${msg}`, "erro");
+        } finally {
+          setAtualizando(false);
+        }
+      },
+      "Sim, Reabrir",
+      "Não, Voltar"
+    );
   };
 
   // ======= UTILITÁRIOS CONSIGNADO =======
   function parseConsignadoBreakdown(obs: string | null): ConsignadoItemBreakdown | null {
     if (!obs) return null;
-    const match = obs.match(/Saídas: (.+?) \| Devolvidas: (.+?) \| Mantidas: (.+?)(?:\n|$)/);
+    // Regex global + última ocorrência: se o consignado foi reaberto e fechado
+    // outra vez, a observação guarda vários marcadores e vale o mais recente.
+    const re = /Saídas: (.+?) \| Devolvidas: (.+?) \| Mantidas: (.+?)(?:\n|$)/g;
+    let atual: RegExpExecArray | null;
+    let match: RegExpExecArray | null = null;
+    while ((atual = re.exec(obs)) !== null) match = atual;
     if (!match) return null;
     const parseList = (s: string) =>
       s === "Nenhuma"
         ? []
-        : s.split("; ").map((e) => {
-            const m = e.match(/^(.+?) \(x(\d+)\)$/);
-            return m ? { nome: m[1], quantidade: parseInt(m[2]) } : null;
-          }).filter((x): x is { nome: string; quantidade: number } => x !== null);
+        : s.split("; ").map((e): LinhaConsignado | null => {
+            // O bloco [sku ... · tam] é opcional: só os fechamentos novos o têm.
+            const m = e.match(/^(.+?)(?: \[sku ([^\]·]+?)(?: · ([^\]]+))?\])? \(x(\d+)\)$/);
+            if (!m) return null;
+            return {
+              nome: m[1],
+              sku: m[2]?.trim() || undefined,
+              tamanho: m[3]?.trim() || undefined,
+              quantidade: parseInt(m[4]),
+            };
+          }).filter((x) => x !== null);
     return {
       itensOriginais: parseList(match[1]),
       itensDevolvidos: parseList(match[2]),
@@ -483,23 +781,22 @@ export default function HistoricoVendasCompacto() {
     currency: "BRL"
   }).format(val);
 
-  const vendasFiltradas = useMemo(() =>
-    vendas.filter(v => {
-      const buscaMatch =
-        v.customer?.name?.toLowerCase().includes(debouncedBusca.toLowerCase()) ||
-        v.id.toString().includes(debouncedBusca);
-      const statusMatch = filtroStatus === "todos" || getStatusFromVenda(v) === filtroStatus;
-      const dataMatch = filtroData
-        ? new Date(v.sale_date).toISOString().split('T')[0] === filtroData
-        : true;
-      return buscaMatch && statusMatch && dataMatch;
-    }),
-    [vendas, debouncedBusca, filtroStatus, filtroData]
-  );
+  // A filtragem (busca/status/data) agora é feita no servidor; a lista exibida
+  // já vem filtrada e paginada.
+  const vendasFiltradas = vendas;
 
-  const exportarCSV = () => {
-    const cabecalho = ["ID", "Data", "Cliente", "Itens", "Pagamento", "Status", "Subtotal", "Desconto", "Total"];
-    const linhas = vendasFiltradas.map((v) => [
+  const exportarCSV = async () => {
+    setExportando(true);
+    try {
+      // Exporta TODOS os registros que batem no filtro atual (não só a página).
+      const result = await listarVendas(1, 10000, {
+        busca: debouncedBusca,
+        status: filtroStatus,
+        data: filtroData,
+      });
+      const dados = result.sales as Sale[];
+      const cabecalho = ["ID", "Data", "Cliente", "Itens", "Pagamento", "Status", "Subtotal", "Desconto", "Total"];
+      const linhas = dados.map((v) => [
       v.id,
       new Date(v.sale_date).toLocaleString("pt-BR"),
       v.customer?.name || "Consumidor Final",
@@ -513,13 +810,16 @@ export default function HistoricoVendasCompacto() {
     const csv = [cabecalho, ...linhas]
       .map((row) => row.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))
       .join("\n");
-    const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `vendas_${new Date().toISOString().split("T")[0]}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+      const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `vendas_${new Date().toISOString().split("T")[0]}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExportando(false);
+    }
   };
 
   if (carregando && vendas.length === 0) {
@@ -646,10 +946,11 @@ export default function HistoricoVendasCompacto() {
                 <div className="w-px h-4 bg-zinc-200 mx-1" />
                 <button
                   onClick={exportarCSV}
-                  className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors"
-                  title="Exportar CSV"
+                  disabled={exportando}
+                  className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-zinc-50 rounded-md transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  title="Exportar CSV (todos os registros do filtro)"
                 >
-                  <Download size={16} />
+                  {exportando ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
                 </button>
               </div>
             </div>
@@ -695,7 +996,7 @@ export default function HistoricoVendasCompacto() {
               <AlertCircle className="h-8 w-8 text-red-500 mx-auto mb-2" />
               <p className="text-red-600 text-xs mb-2">{erro}</p>
               <button
-                onClick={carregarVendas}
+                onClick={() => carregarVendas()}
                 className="text-indigo-600 hover:text-indigo-700 text-xs font-medium"
               >
                 Tentar novamente
@@ -762,9 +1063,28 @@ export default function HistoricoVendasCompacto() {
           )}
         </div>
 
-        {/* Total de registros */}
-        <div className="p-2 border-t border-gray-100 text-[10px] text-gray-400 text-center bg-gray-50">
-          {vendasFiltradas.length} registro(s) encontrado(s)
+        {/* Paginação + total */}
+        <div className="p-2 border-t border-gray-100 bg-gray-50 flex items-center justify-between gap-2">
+          <button
+            onClick={() => setPagina((p) => Math.max(1, p - 1))}
+            disabled={pagina <= 1 || carregando}
+            className="p-1.5 rounded-md text-zinc-500 hover:text-indigo-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Página anterior"
+          >
+            <ChevronLeft size={16} />
+          </button>
+          <div className="text-[10px] text-gray-500 text-center leading-tight">
+            <div>Página {pagina} de {totalPaginas || 1}</div>
+            <div className="text-gray-400">{totalVendas} venda(s)</div>
+          </div>
+          <button
+            onClick={() => setPagina((p) => Math.min(totalPaginas || 1, p + 1))}
+            disabled={pagina >= (totalPaginas || 1) || carregando}
+            className="p-1.5 rounded-md text-zinc-500 hover:text-indigo-600 hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            title="Próxima página"
+          >
+            <ChevronRight size={16} />
+          </button>
         </div>
       </div>
 
@@ -801,6 +1121,15 @@ export default function HistoricoVendasCompacto() {
                       {new Date(selecionada.sale_date).toLocaleDateString('pt-BR')}
                     </span>
 
+                    {selecionada.settled_at && (
+                      <>
+                        <span className="text-zinc-200">·</span>
+                        <span className="shrink-0 text-emerald-600 font-semibold">
+                          Acerto: {new Date(selecionada.settled_at).toLocaleDateString('pt-BR')}
+                        </span>
+                      </>
+                    )}
+
                     <span className="text-zinc-200">·</span>
 
                     {/* Cliente editável */}
@@ -830,7 +1159,12 @@ export default function HistoricoVendasCompacto() {
                                 )}
                                 {resultadosCliente.map(c => (
                                   <button key={c.id} onClick={() => handleSalvarCliente({ id: c.id, name: c.name })} disabled={salvandoCliente} className="w-full text-left px-3 py-1.5 hover:bg-indigo-50 border-b border-zinc-50 last:border-0">
-                                    <p className="text-xs font-medium text-zinc-800 truncate">{c.name}</p>
+                                    <p className="text-xs font-medium text-zinc-800 truncate flex items-center gap-1.5">
+                                      <span className="truncate">{c.name}</span>
+                                      {c.person_type === "consultora" && (
+                                        <span className="shrink-0 text-[8px] bg-indigo-100 text-indigo-700 px-1 py-0.5 rounded font-black uppercase tracking-wide">Consultor(a)</span>
+                                      )}
+                                    </p>
                                     {c.phone && <p className="text-[10px] text-zinc-400">{c.phone}</p>}
                                   </button>
                                 ))}
@@ -853,7 +1187,65 @@ export default function HistoricoVendasCompacto() {
                     </div>
 
                     <span className="text-zinc-200">·</span>
-                    <span className="shrink-0 capitalize">{selecionada.payment_method || '—'}</span>
+                    {editandoMetodo ? (
+                      <span className="flex items-center gap-1 shrink-0">
+                        <select
+                          value={novoMetodo}
+                          onChange={e => setNovoMetodo(e.target.value as MetodoPagamento)}
+                          className="text-xs border border-indigo-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-indigo-400 bg-white text-zinc-800"
+                        >
+                          {Object.entries(METODO_LABELS).map(([valor, label]) => (
+                            <option key={valor} value={valor}>{label}</option>
+                          ))}
+                        </select>
+                        {novoMetodo === 'consignado' && (
+                          <input
+                            type="date"
+                            value={novaDataMetodoConsignado}
+                            onChange={e => setNovaDataMetodoConsignado(e.target.value)}
+                            title="Data prevista do acerto"
+                            className="text-xs border border-orange-300 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-orange-400 bg-white"
+                          />
+                        )}
+                        <button
+                          onClick={handleAlterarMetodo}
+                          disabled={salvandoMetodo}
+                          title="Salvar método de pagamento"
+                          className="text-emerald-600 hover:text-emerald-700 disabled:opacity-50"
+                        >
+                          {salvandoMetodo ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle size={12} />}
+                        </button>
+                        <button
+                          onClick={() => setEditandoMetodo(false)}
+                          title="Cancelar"
+                          className="text-zinc-400 hover:text-red-500"
+                        >
+                          <X size={12} />
+                        </button>
+                      </span>
+                    ) : selecionada.payment_status === 'cancelled' ? (
+                      <span className="shrink-0 capitalize">
+                        {METODO_LABELS[selecionada.payment_method || ''] || selecionada.payment_method || '—'}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setNovoMetodo((selecionada.payment_method as MetodoPagamento) || "cash");
+                          setNovaDataMetodoConsignado(
+                            extrairDataConsignado(selecionada.observation) ||
+                            new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+                          );
+                          setEditandoMetodo(true);
+                        }}
+                        className="shrink-0 flex items-center gap-1 text-zinc-500 hover:text-indigo-600 group transition-colors"
+                        title="Editar método de pagamento"
+                      >
+                        <span className="font-medium text-zinc-600">
+                          {METODO_LABELS[selecionada.payment_method || ''] || selecionada.payment_method || '—'}
+                        </span>
+                        <Pencil size={9} className="opacity-0 group-hover:opacity-50 transition-opacity" />
+                      </button>
+                    )}
 
                     {isConsignado(selecionada) && (() => {
                       const dp = extrairDataConsignado(selecionada.observation);
@@ -929,6 +1321,23 @@ export default function HistoricoVendasCompacto() {
                         : <><CheckCircle size={13} /> Confirmar Pagamento</>}
                     </button>
                   )}
+                  {ehAdmin && isConsignado(selecionada) && selecionada.payment_status === 'paid' && (
+                    <button
+                      onClick={handleReabrirConsignado}
+                      disabled={atualizando}
+                      title="Reabrir consignado (volta para pendente)"
+                      className="px-3 py-1.5 bg-white border border-amber-300 text-amber-700 rounded-lg font-semibold text-xs flex items-center gap-1.5 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+                    >
+                      <RotateCcw size={13} /> Reabrir
+                    </button>
+                  )}
+                  <button
+                    onClick={() => setModalHistorico(true)}
+                    title="Histórico: trocas, devoluções e acertos desta venda"
+                    className="p-1.5 text-zinc-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors border border-zinc-200"
+                  >
+                    <History size={15} />
+                  </button>
                   <button
                     onClick={() => setModalRecibo(true)}
                     title="Imprimir comprovante"
@@ -958,11 +1367,18 @@ export default function HistoricoVendasCompacto() {
                 <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                   <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
                     <h3 className="font-semibold text-gray-700 text-xs uppercase tracking-wide">Itens do Pedido</h3>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-500">{selecionada.items?.filter(i => i.quantity > 0).length || 0} itens</span>
-                      <span className="text-xs text-gray-400">·</span>
-                      <span className="text-xs text-gray-500">{selecionada.items?.reduce((acc, i) => acc + (i.quantity > 0 ? i.quantity : 0), 0) || 0} unidades</span>
-                    </div>
+                    <span
+                      className="text-xs text-gray-500"
+                      title={contagemExplicada(
+                        selecionada.items?.reduce((acc, i) => acc + (i.quantity > 0 ? i.quantity : 0), 0) || 0,
+                        selecionada.items?.filter(i => i.quantity > 0).length || 0,
+                      )}
+                    >
+                      {contagemPecas(
+                        selecionada.items?.reduce((acc, i) => acc + (i.quantity > 0 ? i.quantity : 0), 0) || 0,
+                        selecionada.items?.filter(i => i.quantity > 0).length || 0,
+                      )}
+                    </span>
                   </div>
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -977,8 +1393,9 @@ export default function HistoricoVendasCompacto() {
                       {selecionada.items?.filter(item => item.quantity > 0).map((item) => (
                         <tr key={item.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                           <td className="px-4 py-3">
-                            <p className="font-medium text-gray-800">
-                              {item.product?.name || item.product_name || "Produto não identificado"}
+                            <p className="font-medium text-gray-800 flex items-start gap-1.5">
+                              <Tamanho valor={item.product?.size} />
+                              <span>{item.product?.name || item.product_name || "Produto não identificado"}</span>
                             </p>
                             <p className="text-xs text-gray-400">
                               SKU: {item.product?.sku || item.product_id}
@@ -1044,52 +1461,89 @@ export default function HistoricoVendasCompacto() {
                   </div>
                 )}
 
+                {/* Observação interna (uso interno — não sai na notinha) */}
+                <div className="bg-amber-50/60 border border-amber-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-amber-700">
+                      Observação Interna
+                    </p>
+                    <span className="text-[10px] text-amber-600/80 italic">não aparece na notinha</span>
+                  </div>
+                  <textarea
+                    value={notaInterna}
+                    onChange={(e) => setNotaInterna(e.target.value)}
+                    rows={3}
+                    placeholder="Anote aqui algo sobre esta venda (ex.: cliente pediu troca, pendência, combinado...)"
+                    className="w-full bg-white border border-amber-200 rounded-lg p-3 text-xs text-zinc-700 resize-none focus:outline-none focus:ring-2 focus:ring-amber-400/40 focus:border-amber-400 transition-all"
+                  />
+                  <div className="flex justify-end mt-2">
+                    <button
+                      onClick={handleSalvarNotaInterna}
+                      disabled={salvandoNota || (notaInterna.trim() === (selecionada.internal_note || "").trim())}
+                      className="px-4 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-[11px] font-bold uppercase tracking-wide transition-all disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"
+                    >
+                      {salvandoNota ? <Loader2 size={12} className="animate-spin" /> : null}
+                      Salvar observação
+                    </button>
+                  </div>
+                </div>
+
                 {/* Breakdown de itens — consignado fechado */}
                 {isConsignado(selecionada) && selecionada.payment_status === "paid" && (() => {
-                  const bd = parseConsignadoBreakdown(selecionada.observation);
-                  if (!bd) return null;
+                  const cru = parseConsignadoBreakdown(selecionada.observation);
+                  if (!cru) return null;
+                  // Nome e quantidade vêm do texto da observação; SKU e tamanho
+                  // saem dos itens da venda.
+                  const bd = enriquecerBreakdown(cru, selecionada.items);
+                  const totalSaiu = bd.itensOriginais.reduce((a, i) => a + i.quantidade, 0);
+                  const totalDevolvidas = bd.itensDevolvidos.reduce((a, i) => a + i.quantidade, 0);
+                  const totalFicou = bd.itensFicaram.reduce((a, i) => a + i.quantidade, 0);
                   return (
                     <div className="bg-violet-50 border border-violet-200 rounded-lg p-4 space-y-3">
-                      <h4 className="text-xs font-bold text-violet-700 uppercase tracking-wide">Peças do Consignado</h4>
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <h4 className="text-xs font-bold text-violet-700 uppercase tracking-wide">Peças do Consignado</h4>
+                          {selecionada.settled_at && (
+                            <span className="text-[10px] font-semibold text-violet-500">
+                              · Fechado em {new Date(selecionada.settled_at).toLocaleDateString('pt-BR')}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-[11px] font-bold">
+                          <span className="text-emerald-700">{totalFicou} vendida{totalFicou === 1 ? "" : "s"}</span>
+                          <span className="text-amber-700">{totalDevolvidas} devolvida{totalDevolvidas === 1 ? "" : "s"}</span>
+                        </div>
+                      </div>
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         {/* Saiu */}
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-zinc-400 mb-1 flex items-center gap-1">
-                            <ShoppingBag size={10} /> Saiu da loja
+                            <ShoppingBag size={10} /> Saiu da loja ({totalSaiu})
                           </p>
                           {bd.itensOriginais.map((i, idx) => (
-                            <div key={idx} className="flex justify-between text-xs text-zinc-600">
-                              <span className="truncate">{i.nome}</span>
-                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
-                            </div>
+                            <LinhaPecaConsignado key={idx} item={i} cor="text-zinc-600" />
                           ))}
                         </div>
                         {/* Devolveu */}
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-amber-500 mb-1 flex items-center gap-1">
-                            <RotateCcw size={10} /> Devolvidas
+                            <RotateCcw size={10} /> Voltou para a loja ({totalDevolvidas})
                           </p>
                           {bd.itensDevolvidos.length === 0 ? (
                             <p className="text-xs text-zinc-400 italic">Nenhuma</p>
                           ) : bd.itensDevolvidos.map((i, idx) => (
-                            <div key={idx} className="flex justify-between text-xs text-amber-700">
-                              <span className="truncate">{i.nome}</span>
-                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
-                            </div>
+                            <LinhaPecaConsignado key={idx} item={i} cor="text-amber-700" />
                           ))}
                         </div>
                         {/* Ficou */}
                         <div>
                           <p className="text-[10px] font-black uppercase tracking-widest text-emerald-600 mb-1 flex items-center gap-1">
-                            <CheckCircle size={10} /> Ficou com o cliente
+                            <CheckCircle size={10} /> Ficou com o cliente ({totalFicou})
                           </p>
                           {bd.itensFicaram.length === 0 ? (
                             <p className="text-xs text-zinc-400 italic">Nenhuma</p>
                           ) : bd.itensFicaram.map((i, idx) => (
-                            <div key={idx} className="flex justify-between text-xs text-emerald-700">
-                              <span className="truncate">{i.nome}</span>
-                              <span className="shrink-0 ml-1 font-medium">× {i.quantidade}</span>
-                            </div>
+                            <LinhaPecaConsignado key={idx} item={i} cor="text-emerald-700" />
                           ))}
                         </div>
                       </div>
@@ -1136,7 +1590,26 @@ export default function HistoricoVendasCompacto() {
               quantidade: item.quantity,
               precoUnitario: item.unit_price,
               codigoBarras: item.product ? item.product_barcode || item.product?.sku?.toString() || "" : "",
-              variante: item.product?.sku?.toString() || item.product_sku
+              variante: item.product?.sku?.toString() || item.product_sku,
+              // SKU e tamanho alimentam a busca por nome do modal, que mostra a
+              // mesma ficha do dropdown do caixa (nome, SKU, barras, TAM).
+              sku: item.product?.sku ?? item.product_id ?? undefined,
+              tamanho: item.product?.size || undefined,
+              // Só marca quando entrou bem depois da venda: as linhas originais
+              // compartilham a data da venda, e um dia de folga evita apontar
+              // como "troca" um item lançado na mesma tarde.
+              entrouEm:
+                item.created_at &&
+                new Date(item.created_at).getTime() >
+                  new Date(selecionada.sale_date).getTime() + 86400000
+                  ? item.created_at
+                  : undefined,
+              // Quantas linhas desta mesma peça existem na venda — é o que
+              // explica o CONJUNTO BARBIE aparecendo devolvido e em mãos ao
+              // mesmo tempo: são duas peças iguais, não uma contradição.
+              linhasDaMesmaPeca: selecionada.items.filter(
+                (x) => x.product_id === item.product_id
+              ).length,
             }))
           }}
           onClose={() => setModalAberto(false)}
@@ -1144,6 +1617,14 @@ export default function HistoricoVendasCompacto() {
           isConsignado={modoConsignado}
         />
       )}
+      {modalHistorico && selecionada && (
+        <HistoricoVendaModal
+          saleId={selecionada.id}
+          observacao={selecionada.observation}
+          onClose={() => setModalHistorico(false)}
+        />
+      )}
+
       {/* POPUP DE CONFIRMAÇÃO / INFORMAÇÃO */}
       <PopupConfirmacao
         aberto={popupAberto}

@@ -30,6 +30,9 @@ export interface SaleItem {
   product_barcode?: string;
   unit_cost: number;
   discount_per_item: number;
+  // Quando esta peça entrou na venda. Igual à data da venda nas linhas
+  // originais; posterior quando entrou por troca.
+  created_at?: string;
   // Objeto do produto aninhado
   product: NestedProduct;
 }
@@ -46,6 +49,8 @@ export interface Sale {
   payment_method: string | null;
   payment_status: 'pending' | 'paid' | 'cancelled';
   observation: string | null;
+  internal_note: string | null;
+  settled_at: string | null;
   consignado_commission_percent: number | null;
   consignado_net_before_commission: number | null;
   // Objetos aninhados
@@ -56,10 +61,20 @@ export interface Sale {
 }
 
 // Breakdown de itens para fechamento de consignado
+// Uma linha do histórico de peças do consignado. O texto gravado na observação
+// guarda só nome e quantidade; sku e tamanho entram depois, cruzando com os
+// itens da venda (ver src/lib/consignado.ts), então são opcionais.
+export interface LinhaConsignado {
+  nome: string;
+  quantidade: number;
+  sku?: number | string;
+  tamanho?: string;
+}
+
 export interface ConsignadoItemBreakdown {
-  itensOriginais: { nome: string; quantidade: number }[];
-  itensDevolvidos: { nome: string; quantidade: number }[];
-  itensFicaram: { nome: string; quantidade: number }[];
+  itensOriginais: LinhaConsignado[];
+  itensDevolvidos: LinhaConsignado[];
+  itensFicaram: LinhaConsignado[];
 }
 
 // DTO (Data Transfer Object) para criar uma nova venda

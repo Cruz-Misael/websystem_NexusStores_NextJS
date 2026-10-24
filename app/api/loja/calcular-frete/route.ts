@@ -1,7 +1,11 @@
 import { supabaseAdmin } from '@/src/lib/supabase/admin';
+import { bloqueioLojaOnline } from '@/src/lib/loja-online';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(req: NextRequest) {
+  const desligada = await bloqueioLojaOnline();
+  if (desligada) return desligada;
+
   let body: any;
   try {
     body = await req.json();

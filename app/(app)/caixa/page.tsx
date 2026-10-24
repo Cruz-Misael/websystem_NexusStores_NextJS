@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import dynamic from "next/dynamic";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import {
   Search,
@@ -13,16 +14,27 @@ import {
   Maximize2,
   Loader2,
   AlertCircle,
+  Lock,
+  ShieldAlert,
 } from "lucide-react";
-import { criarVenda } from "@/src/services/sales.service";
+import { criarVenda, contarVendasDoCliente } from "@/src/services/sales.service";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
 import { CreateSaleDTO } from "@/types/sales";
-import { listarPessoasPaginado } from "@/src/services/people.service";
+import { listarPessoasPaginado, atualizarLimiteCliente } from "@/src/services/people.service";
 import { listarProdutosPaginado, buscarProdutoPorSKU, buscarProdutoPorBarcode, criarProduto, atualizarProduto } from "@/src/services/product.service";
-import { listarOperadores, Operator } from "@/src/services/operator.service";
-import Recibo from "@/components/vendas/Recibo";
+import { listarOperadores, validarPinGerente, Operator } from "@/src/services/operator.service";
 import { Sale } from "@/types/sales";
+import { CompanyService } from "@/services/company.service";
+
+// Recibo só aparece após finalizar a venda — fora do bundle inicial do caixa.
+const Recibo = dynamic(() => import("@/components/vendas/Recibo"), { ssr: false });
+
+// Teto de desconto que qualquer operador pode aplicar sozinho. Acima disso, a
+// venda só fecha com o PIN de um gerente — a mesma trava do limite por cliente.
+const DESCONTO_MAX_SEM_PIN = 10; // %
+// Atalhos do painel de desconto.
+const DESCONTOS_RAPIDOS = [5, 10, 15];
 
 // Tipos
 interface ItemCarrinho {
@@ -42,6 +54,8 @@ interface Cliente {
   name: string;
   email?: string;
   phone?: string;
+  sales_limit?: number | null;
+  person_type?: string | null;
 }
 
 export default function CaixaPDVPro() {
@@ -59,6 +73,23 @@ export default function CaixaPDVPro() {
   const [buscaOperador, setBuscaOperador] = useState("");
   const [finalizando, setFinalizando] = useState(false);
   const [vendaFinalizada, setVendaFinalizada] = useState<Sale | null>(null);
+
+  // Limite de venda para cliente novo
+  const [modalLimiteAberto, setModalLimiteAberto] = useState(false);
+  const [clienteParaLimite, setClienteParaLimite] = useState<Cliente | null>(null);
+  const [limiteInput, setLimiteInput] = useState("");
+  const [salvandoLimite, setSalvandoLimite] = useState(false);
+
+  // Autorização de gerente por PIN (venda acima do limite ou desconto alto)
+  const [modalPinAberto, setModalPinAberto] = useState(false);
+  const [motivoPin, setMotivoPin] = useState<'limite' | 'desconto'>('limite');
+  const [pinInput, setPinInput] = useState("");
+  const [pinErro, setPinErro] = useState("");
+  const [validandoPin, setValidandoPin] = useState(false);
+
+  // Desconto da venda (não se aplica a consignado — ver comentário no cálculo)
+  const [descontoTipo, setDescontoTipo] = useState<'percent' | 'valor'>('percent');
+  const [descontoInput, setDescontoInput] = useState("");
   const [sugestoesFiltradas, setSugestoesFiltradas] = useState<any[]>([]);
   const [dropdownAberto, setDropdownAberto] = useState(false);
   const [indiceSelecionado, setIndiceSelecionado] = useState(-1);
@@ -74,7 +105,10 @@ export default function CaixaPDVPro() {
   // Modal de consignado
   const [mostrarModalConsignado, setMostrarModalConsignado] = useState(false);
   const [dataPrevistaPagamento, setDataPrevistaPagamento] = useState("");
-  const [observacaoConsignado, setObservacaoConsignado] = useState(`OBRIGAÇÕES DA CONSIGNATÁRIA\n\n• Cuidados com o material:\n  - Manter as peças em perfeito estado, sem amassar, sujar ou danificar.\n  - Conferir as peças recebidas, confirmar a quantidade e dar OK do recebimento.\n  - Organizar adequadamente para devolução.\n\n• Controle de vendas:\n  - Passar a data do Acerto em até 3 dias após recebimento do Kit.\n  - Enviar relação detalhada das vendas até 3 dias antes do pagamento.\n  - Informar: descrição, quantidade e valor unitário dos itens vendidos.\n\n• Devolução:\n  - Restituir todos os itens não vendidos nas mesmas condições de recebimento.\n  - Cumprir prazo estipulado para devolução.\n  - Multas por atraso: 5% do valor total do kit até 3 dias | 10% após 3 dias.\n\n• Responsabilidade por danos/perdas:\n  - Indenização integral pelo valor do kit em caso de: danos irreparáveis, extravio de peças ou devolução em condições inadequadas.\n\nDe Acordo: __________________________`);
+  const [observacaoConsignado, setObservacaoConsignado] = useState("");
+
+  // Observação padrão (rodapé da nota) usada para pré-preencher o consignado.
+  const [observacaoPadrao, setObservacaoPadrao] = useState("");
 
   // Modal de produto sem estoque
   const [produtoSemEstoque, setProdutoSemEstoque] = useState<any | null>(null);
@@ -228,10 +262,25 @@ export default function CaixaPDVPro() {
     if (modalOperadorAberto) carregarOperadores();
   }, [modalOperadorAberto]);
 
+  // Carrega o rodapé/observação padrão da nota (configurações) uma vez.
+  useEffect(() => {
+    CompanyService.getCompany()
+      .then((c) => setObservacaoPadrao(c?.receipt_note?.trim() || ""))
+      .catch(() => {});
+  }, []);
+
+  // Ao abrir o modal de consignado, pré-preenche a observação com o padrão
+  // (só quando o campo ainda está vazio, para não sobrescrever o que já foi digitado).
+  useEffect(() => {
+    if (mostrarModalConsignado && observacaoPadrao && !observacaoConsignado.trim()) {
+      setObservacaoConsignado(observacaoPadrao);
+    }
+  }, [mostrarModalConsignado, observacaoPadrao]);
+
   // Persistência de foco no input de bipar
   useEffect(() => {
     const focusInput = () => {
-      const modalAberta = modalClienteAberto || mostrarModalConsignado || popupAberto || modalOperadorAberto || dropdownAberto;
+      const modalAberta = modalClienteAberto || mostrarModalConsignado || popupAberto || modalOperadorAberto || dropdownAberto || modalLimiteAberto || modalPinAberto;
       if (!modalAberta && inputRef.current && document.activeElement?.tagName !== 'INPUT') {
         inputRef.current.focus();
       }
@@ -265,7 +314,7 @@ export default function CaixaPDVPro() {
       window.removeEventListener("click", handleGlobalClick);
       window.removeEventListener("keydown", handleKeyDownGlobal);
     };
-  }, [modalClienteAberto, mostrarModalConsignado, popupAberto, modalOperadorAberto, dropdownAberto]);
+  }, [modalClienteAberto, mostrarModalConsignado, popupAberto, modalOperadorAberto, dropdownAberto, modalLimiteAberto, modalPinAberto]);
 
   const carregarOperadores = async () => {
     try {
@@ -309,7 +358,23 @@ export default function CaixaPDVPro() {
   // Totais
   const subtotal = carrinho.reduce((acc, item) => acc + (item.precoUnitario * item.quantidade), 0);
   const totalItens = carrinho.reduce((acc, item) => acc + item.quantidade, 0);
-  const desconto = 0;
+  // Desconto: o operador digita em % ou em R$. O valor nunca passa do subtotal.
+  // Consignado fica de fora de propósito — o abatimento dele é o percentual de
+  // lucro aplicado no fechamento, na tela de Vendas; somar os dois cobraria o
+  // desconto duas vezes na mesma venda.
+  const descontoDigitado = (() => {
+    const bruto = parseFloat(descontoInput.replace(",", "."));
+    return Number.isFinite(bruto) && bruto > 0 ? bruto : 0;
+  })();
+  const descontoBruto = descontoTipo === 'percent'
+    ? subtotal * (descontoDigitado / 100)
+    : descontoDigitado;
+  const desconto = pagamentoAtivo === 'consignado'
+    ? 0
+    : Math.min(Math.max(descontoBruto, 0), subtotal);
+  const descontoPercentual = subtotal > 0 ? (desconto / subtotal) * 100 : 0;
+  // Margem de 0.01 evita que 10% caia na trava por arredondamento de ponto flutuante.
+  const descontoExigePin = descontoPercentual > DESCONTO_MAX_SEM_PIN + 0.01;
   const totalFinal = subtotal - desconto;
 
   // Formatação
@@ -387,7 +452,7 @@ export default function CaixaPDVPro() {
       setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" });
     } catch (error) {
       console.error("Erro ao buscar produto:", error);
-      mostrarToast("Erro ao buscar produto", "erro");
+      mostrarToast(error instanceof Error ? error.message : "Erro ao buscar produto", "erro");
     } finally {
       setBuscandoProduto(false);
       // Garante que o foco volte após a limpeza do estado
@@ -473,13 +538,56 @@ export default function CaixaPDVPro() {
     );
   };
 
-  const selecionarCliente = (cliente: Cliente) => {
+  const selecionarCliente = async (cliente: Cliente) => {
     setClienteSelecionado(cliente);
     setModalClienteAberto(false);
     setBuscaCliente("");
+
+    // "Consumidor Final" (id 0) não tem limite
+    if (!cliente.id || cliente.id === 0) return;
+
+    // Se o cliente já tem um limite definido, respeita e segue
+    if (cliente.sales_limit !== null && cliente.sales_limit !== undefined) return;
+
+    // Sem limite definido: verifica se é cliente novo (nenhuma compra ainda)
+    try {
+      const qtdVendas = await contarVendasDoCliente(cliente.id);
+      if (qtdVendas === 0) {
+        setClienteParaLimite(cliente);
+        setLimiteInput("");
+        setModalLimiteAberto(true);
+      }
+    } catch (err) {
+      console.error("Erro ao verificar cliente novo:", err);
+    }
   };
 
-  const finalizarVenda = async () => {
+  const salvarLimiteCliente = async () => {
+    if (!clienteParaLimite) return;
+    const valor = parseFloat(limiteInput.replace(",", "."));
+    if (isNaN(valor) || valor < 0) {
+      mostrarToast("Informe um valor de limite válido", "info");
+      return;
+    }
+    setSalvandoLimite(true);
+    try {
+      await atualizarLimiteCliente(clienteParaLimite.id, valor);
+      // Reflete o limite no cliente atualmente selecionado
+      setClienteSelecionado(prev =>
+        prev && prev.id === clienteParaLimite.id ? { ...prev, sales_limit: valor } : prev
+      );
+      mostrarToast(`Limite de ${money(valor)} definido para ${clienteParaLimite.name}.`, "sucesso");
+      setModalLimiteAberto(false);
+      setClienteParaLimite(null);
+      setLimiteInput("");
+    } catch (e: any) {
+      mostrarToast(`Erro ao salvar limite: ${e.message}`, "erro");
+    } finally {
+      setSalvandoLimite(false);
+    }
+  };
+
+  const finalizarVenda = async (autorizadoPorGerente = false) => {
     if (carrinho.length === 0) {
       mostrarToast("Carrinho vazio!", "info");
       return;
@@ -487,6 +595,34 @@ export default function CaixaPDVPro() {
 
     if (pagamentoAtivo === 'consignado' && !dataPrevistaPagamento) {
       setMostrarModalConsignado(true);
+      return;
+    }
+
+    // Desconto acima do teto: exige o PIN de um gerente. A checagem fica aqui,
+    // no fecho, e não na digitação — assim não há como baixar o desconto para
+    // liberar e subir de novo antes de finalizar.
+    if (!autorizadoPorGerente && descontoExigePin) {
+      setMotivoPin('desconto');
+      setPinInput("");
+      setPinErro("");
+      setModalPinAberto(true);
+      return;
+    }
+
+    // Limite de venda para cliente novo: se o total ultrapassar o limite,
+    // exige o PIN de um operador com categoria "Gerente" para liberar.
+    const limiteCliente = clienteSelecionado?.sales_limit;
+    if (
+      !autorizadoPorGerente &&
+      clienteSelecionado?.id &&
+      limiteCliente !== null &&
+      limiteCliente !== undefined &&
+      totalFinal > limiteCliente
+    ) {
+      setMotivoPin('limite');
+      setPinInput("");
+      setPinErro("");
+      setModalPinAberto(true);
       return;
     }
 
@@ -538,6 +674,8 @@ export default function CaixaPDVPro() {
       setPagamentoAtivo('credito');
       setDataPrevistaPagamento("");
       setObservacaoConsignado("");
+      setDescontoInput("");
+      setDescontoTipo('percent');
 
       // Mostrar recibo da venda finalizada
       setVendaFinalizada(venda as Sale);
@@ -547,6 +685,30 @@ export default function CaixaPDVPro() {
       mostrarPopup("Erro na Venda", `Não foi possível finalizar: ${error.message}`, "erro");
     } finally {
       setFinalizando(false);
+    }
+  };
+
+  const confirmarPinGerente = async () => {
+    if (!pinInput.trim()) {
+      setPinErro("Digite o PIN do gerente.");
+      return;
+    }
+    setValidandoPin(true);
+    setPinErro("");
+    try {
+      const ok = await validarPinGerente(pinInput.trim());
+      if (ok) {
+        setModalPinAberto(false);
+        setPinInput("");
+        // Prossegue com a venda já autorizada (não reabre o modal de PIN)
+        await finalizarVenda(true);
+      } else {
+        setPinErro("PIN inválido ou operador não é gerente.");
+      }
+    } catch (e: any) {
+      setPinErro(`Erro ao validar PIN: ${e.message}`);
+    } finally {
+      setValidandoPin(false);
     }
   };
 
@@ -794,26 +956,125 @@ export default function CaixaPDVPro() {
                 </p>
               </div>
             </div>
+            {clienteSelecionado?.id != null && clienteSelecionado.id !== 0 &&
+              clienteSelecionado.sales_limit !== null && clienteSelecionado.sales_limit !== undefined && (
+                <div
+                  className={`mt-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-md border ${
+                    totalFinal > clienteSelecionado.sales_limit
+                      ? 'bg-red-50 border-red-200 text-red-600'
+                      : 'bg-amber-50 border-amber-200 text-amber-700'
+                  }`}
+                >
+                  <AlertCircle size={12} />
+                  Limite por venda: {money(clienteSelecionado.sales_limit)}
+                  {totalFinal > clienteSelecionado.sales_limit && ' • exige PIN de gerente'}
+                </div>
+              )}
           </div>
 
-          {/* Resumo Financeiro */}
-          <div className="flex-1 p-6 flex flex-col justify-center space-y-4 overflow-y-auto min-h-0">
+          {/* Resumo Financeiro — `justify-start`, e não `justify-center`: com o
+              bloco de desconto a coluna passou a encher a altura disponível, e
+              centralizar dentro de um container que rola esconde o topo. */}
+          <div className="flex-1 px-6 py-4 flex flex-col justify-start space-y-3 overflow-y-auto min-h-0">
             <div className="space-y-2">
               <div className="flex justify-between text-zinc-500 text-sm">
                 <span>Subtotal</span>
                 <span className="font-mono">{money(subtotal)}</span>
               </div>
-              <div className="flex justify-between text-zinc-500 text-sm">
-                <span>Descontos</span>
-                <span className="font-mono">{money(desconto)}</span>
-              </div>
+
+              {pagamentoAtivo === 'consignado' ? (
+                <div className="flex justify-between text-zinc-400 text-sm">
+                  <span>Desconto</span>
+                  <span className="text-[11px] text-right">no fechamento do consignado</span>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-zinc-500 text-sm">Desconto</span>
+                    <div className="flex items-center gap-1">
+                      <div className="flex bg-white border border-zinc-200 rounded-md overflow-hidden">
+                        {([
+                          { id: 'percent' as const, label: '%' },
+                          { id: 'valor' as const, label: 'R$' },
+                        ]).map(op => (
+                          <button
+                            key={op.id}
+                            onClick={() => setDescontoTipo(op.id)}
+                            className={`px-2 py-1 text-[11px] font-bold transition-colors ${
+                              descontoTipo === op.id
+                                ? 'bg-zinc-800 text-white'
+                                : 'text-zinc-500 hover:bg-zinc-50'
+                            }`}
+                          >
+                            {op.label}
+                          </button>
+                        ))}
+                      </div>
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        value={descontoInput}
+                        onChange={e => setDescontoInput(e.target.value.replace(/[^\d.,]/g, ''))}
+                        placeholder="0"
+                        disabled={carrinho.length === 0}
+                        className="w-16 h-7 px-2 text-right text-sm font-mono bg-white border border-zinc-200 rounded-md outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all disabled:opacity-50"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Valor abatido à esquerda e atalhos à direita na MESMA linha:
+                      a coluna é estreita e cada linha extra empurra o método de
+                      pagamento para fora da tela. Clicar no atalho já ativo
+                      limpa o desconto, o que dispensa um botão "limpar". */}
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`font-mono text-sm flex items-center gap-1 ${
+                        desconto <= 0 ? 'text-transparent' : descontoExigePin ? 'text-amber-600' : 'text-emerald-600'
+                      }`}
+                      title={descontoExigePin ? `Acima de ${DESCONTO_MAX_SEM_PIN}%: exige PIN de gerente para finalizar` : undefined}
+                    >
+                      {desconto > 0 ? `− ${money(desconto)}` : '−'}
+                      {descontoExigePin && (
+                        <>
+                          <Lock size={11} className="shrink-0" />
+                          <span className="text-[10px] font-bold uppercase tracking-wide">PIN</span>
+                        </>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {DESCONTOS_RAPIDOS.map(pct => {
+                        const ativo = descontoTipo === 'percent' && descontoDigitado === pct;
+                        return (
+                          <button
+                            key={pct}
+                            onClick={() => {
+                              setDescontoTipo('percent');
+                              setDescontoInput(ativo ? "" : String(pct));
+                            }}
+                            disabled={carrinho.length === 0}
+                            title={ativo ? "Remover desconto" : `Aplicar ${pct}%`}
+                            className={`px-2 py-0.5 rounded-md border text-[11px] font-bold transition-colors disabled:opacity-40 ${
+                              ativo
+                                ? 'bg-indigo-600 border-indigo-600 text-white'
+                                : 'bg-white border-zinc-200 text-zinc-500 hover:border-indigo-300 hover:text-indigo-600'
+                            }`}
+                          >
+                            {pct}%
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                </div>
+              )}
             </div>
 
-            <div className="py-6 border-y border-dashed border-zinc-300 shrink-0">
+            <div className="py-3 border-y border-dashed border-zinc-300 shrink-0">
               <div className="flex justify-between items-end mb-1">
                 <span className="text-sm font-bold text-zinc-400 uppercase">Total a Pagar</span>
               </div>
-              <div className="text-5xl font-bold text-zinc-900 tracking-tight font-mono text-right">
+              <div className="text-4xl font-bold text-zinc-900 tracking-tight font-mono text-right">
                 {money(totalFinal).replace('R$', '').trim()}
               </div>
             </div>
@@ -846,57 +1107,61 @@ export default function CaixaPDVPro() {
               </div>
             )}
 
-            {/* Grid de Pagamento */}
+            {/* Grid de Pagamento — os quatro pagamentos à vista ficam em 2x2 e o
+                Consignado sai do grid, numa faixa própria: ele não é forma de
+                pagamento imediata, e como quinto item deixava uma célula vazia
+                custando uma linha inteira de altura na coluna. */}
             <div className="shrink-0">
-              <label className="text-[10px] font-bold text-zinc-400 uppercase mb-2 block">Método de Pagamento</label>
+              <label className="text-[10px] font-bold text-zinc-400 uppercase mb-1.5 block">Método de Pagamento</label>
               <div className="grid grid-cols-2 gap-2">
                 {[
                   { id: 'credito', icon: CreditCard, label: 'Crédito', key: 'F6' },
                   { id: 'debito', icon: CreditCard, label: 'Débito', key: 'F7' },
                   { id: 'pix', icon: QrCode, label: 'Pix', key: 'F8' },
                   { id: 'dinheiro', icon: Banknote, label: 'Dinheiro', key: 'F9' },
-                  { id: 'consignado', icon: ShoppingBag, label: 'Consignado', key: 'F10', cor: 'orange' },
                 ].map(metodo => (
                   <button
                     key={metodo.id}
-                    onClick={() => {
-                      if (metodo.id === 'consignado') {
-                        setMostrarModalConsignado(true);
-                        setPagamentoAtivo('consignado');
-                      } else {
-                        setPagamentoAtivo(metodo.id);
-                      }
-                    }}
-                    className={`relative flex flex-col items-center justify-center p-3 rounded-lg border transition-all ${pagamentoAtivo === metodo.id
+                    onClick={() => setPagamentoAtivo(metodo.id)}
+                    className={`relative flex flex-col items-center justify-center p-2 rounded-lg border transition-all ${pagamentoAtivo === metodo.id
                       ? 'bg-zinc-800 text-white border-zinc-800 shadow-md transform scale-[1.02]'
-                      : metodo.id === 'consignado'
-                        ? 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
-                        : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+                      : 'bg-white text-zinc-600 border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
                       }`}
                   >
-                    <metodo.icon size={20} className="mb-1.5" />
+                    <metodo.icon size={20} className="mb-1" />
                     <span className="text-xs font-medium">{metodo.label}</span>
-                    {metodo.id === 'consignado' && pagamentoAtivo === 'consignado' && (
-                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full border-2 border-white"></div>
-                    )}
-                    <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${metodo.id === 'consignado'
-                      ? 'text-orange-400'
-                      : pagamentoAtivo === metodo.id
-                        ? 'text-zinc-400'
-                        : 'text-zinc-300'
-                      }`}>
+                    <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${
+                      pagamentoAtivo === metodo.id ? 'text-zinc-400' : 'text-zinc-300'
+                    }`}>
                       {metodo.key}
                     </span>
                   </button>
                 ))}
               </div>
+
+              <button
+                onClick={() => { setMostrarModalConsignado(true); setPagamentoAtivo('consignado'); }}
+                className={`relative mt-2 w-full flex items-center justify-center gap-2 py-2 rounded-lg border transition-all ${
+                  pagamentoAtivo === 'consignado'
+                    ? 'bg-zinc-800 text-white border-zinc-800 shadow-md'
+                    : 'bg-orange-50 text-orange-700 border-orange-200 hover:border-orange-300 hover:bg-orange-100'
+                }`}
+              >
+                <ShoppingBag size={16} />
+                <span className="text-xs font-medium">Consignado</span>
+                <span className={`absolute top-1 right-2 text-[9px] font-bold opacity-50 ${
+                  pagamentoAtivo === 'consignado' ? 'text-zinc-400' : 'text-orange-400'
+                }`}>
+                  F10
+                </span>
+              </button>
             </div>
           </div>
 
           {/* Footer de Ação */}
           <div className="p-4 bg-white border-t border-zinc-200 shrink-0">
             <button
-              onClick={finalizarVenda}
+              onClick={() => finalizarVenda()}
               disabled={finalizando || carrinho.length === 0}
               className={`w-full h-14 rounded-lg font-bold text-lg shadow-lg transition-all flex items-center justify-between px-6 group active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed ${pagamentoAtivo === 'consignado'
                 ? 'bg-orange-600 hover:bg-orange-700 text-white shadow-orange-200'
@@ -977,7 +1242,12 @@ export default function CaixaPDVPro() {
                   onClick={() => selecionarCliente(cliente)}
                   className="w-full text-left p-3 hover:bg-indigo-50 rounded-lg transition-colors border-b border-zinc-100 last:border-0"
                 >
-                  <p className="font-medium text-zinc-800">{cliente.name}</p>
+                  <p className="font-medium text-zinc-800 flex items-center gap-1.5">
+                    <span className="truncate">{cliente.name}</span>
+                    {cliente.person_type === "consultora" && (
+                      <span className="shrink-0 text-[9px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase tracking-wide">Consultor(a)</span>
+                    )}
+                  </p>
                   <p className="text-xs text-zinc-500 truncate">
                     {cliente.phone && `${cliente.phone} • `}
                     {cliente.email}
@@ -1155,7 +1425,7 @@ export default function CaixaPDVPro() {
                 onClick={() => {
                   setMostrarModalConsignado(false);
                   setDataPrevistaPagamento("");
-                  setObservacaoConsignado(`OBRIGAÇÕES DA CONSIGNATÁRIA\n\n• Cuidados com o material:\n  - Manter as peças em perfeito estado, sem amassar, sujar ou danificar.\n  - Conferir as peças recebidas, confirmar a quantidade e dar OK do recebimento.\n  - Organizar adequadamente para devolução.\n\n• Controle de vendas:\n  - Passar a data do Acerto em até 3 dias após recebimento do Kit.\n  - Enviar relação detalhada das vendas até 3 dias antes do pagamento.\n  - Informar: descrição, quantidade e valor unitário dos itens vendidos.\n\n• Devolução:\n  - Restituir todos os itens não vendidos nas mesmas condições de recebimento.\n  - Cumprir prazo estipulado para devolução.\n  - Multas por atraso: 5% do valor total do kit até 3 dias | 10% após 3 dias.\n\n• Responsabilidade por danos/perdas:\n  - Indenização integral pelo valor do kit em caso de: danos irreparáveis, extravio de peças ou devolução em condições inadequadas.\n\nDe Acordo: __________________________`);
+                  setObservacaoConsignado("");
                   setPagamentoAtivo('credito');
                 }}
                 className="px-5 py-2.5 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
@@ -1315,6 +1585,131 @@ export default function CaixaPDVPro() {
               >
                 {salvando ? <Loader2 size={16} className="animate-spin" /> : null}
                 Cadastrar e continuar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: DEFINIR LIMITE DE CLIENTE NOVO */}
+      {modalLimiteAberto && clienteParaLimite && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-200 bg-amber-50 flex items-center gap-3">
+              <div className="w-9 h-9 bg-amber-100 rounded-lg flex items-center justify-center">
+                <ShieldAlert size={20} className="text-amber-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-zinc-900">Cliente Novo</h2>
+                <p className="text-xs text-zinc-500 truncate max-w-[220px]">{clienteParaLimite.name}</p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <p className="text-sm text-zinc-600">
+                Este é o primeiro atendimento deste cliente. Defina um <strong>limite de valor por venda</strong> (R$).
+                Vendas acima do limite exigirão o PIN de um gerente para serem liberadas.
+              </p>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">Limite por venda (R$)</label>
+                <input
+                  type="number"
+                  min={0}
+                  step={0.01}
+                  placeholder="0,00"
+                  value={limiteInput}
+                  onChange={e => setLimiteInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') salvarLimiteCliente(); }}
+                  className="w-full h-11 px-3 text-lg font-bold border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+                  autoFocus
+                />
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex gap-3">
+              <button
+                onClick={() => { setModalLimiteAberto(false); setClienteParaLimite(null); setLimiteInput(""); }}
+                className="flex-1 h-10 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
+              >
+                Sem limite
+              </button>
+              <button
+                onClick={salvarLimiteCliente}
+                disabled={salvandoLimite || !limiteInput.trim()}
+                className="flex-1 h-10 bg-amber-600 hover:bg-amber-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {salvandoLimite ? <Loader2 size={16} className="animate-spin" /> : null}
+                Definir limite
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: AUTORIZAÇÃO DE GERENTE (PIN) */}
+      {modalPinAberto && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white w-full max-w-sm rounded-xl shadow-2xl overflow-hidden">
+            <div className="px-6 py-4 border-b border-zinc-200 bg-red-50 flex items-center gap-3">
+              <div className="w-9 h-9 bg-red-100 rounded-lg flex items-center justify-center">
+                <Lock size={20} className="text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-zinc-900">Autorização de Gerente</h2>
+                <p className="text-xs text-zinc-500">
+                  {motivoPin === 'desconto'
+                    ? 'Desconto acima do permitido'
+                    : 'Venda acima do limite do cliente'}
+                </p>
+              </div>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="text-sm text-zinc-600 space-y-1">
+                {motivoPin === 'desconto' ? (
+                  <p>
+                    Desconto de <strong>{descontoPercentual.toFixed(descontoPercentual % 1 === 0 ? 0 : 1)}%</strong>{' '}
+                    (<strong>{money(desconto)}</strong>) passa do teto de{' '}
+                    <strong>{DESCONTO_MAX_SEM_PIN}%</strong> liberado ao operador.
+                  </p>
+                ) : (
+                  <p>
+                    Total <strong>{money(totalFinal)}</strong> ultrapassa o limite de{' '}
+                    <strong>{money(clienteSelecionado?.sales_limit ?? 0)}</strong> deste cliente.
+                  </p>
+                )}
+                <p>Digite o PIN de um operador com categoria <strong>Gerente</strong> para liberar.</p>
+              </div>
+              <div>
+                <label className="text-xs font-bold text-zinc-500 uppercase mb-1 block">PIN do gerente</label>
+                <input
+                  type="password"
+                  inputMode="numeric"
+                  placeholder="••••"
+                  value={pinInput}
+                  onChange={e => { setPinInput(e.target.value.replace(/\D/g, '').slice(0, 6)); setPinErro(""); }}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmarPinGerente(); }}
+                  className="w-full h-11 px-3 text-center text-2xl tracking-[0.5em] font-bold border border-zinc-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
+                  autoFocus
+                />
+                {pinErro && (
+                  <p className="mt-2 text-xs text-red-600 flex items-center gap-1">
+                    <AlertCircle size={12} /> {pinErro}
+                  </p>
+                )}
+              </div>
+            </div>
+            <div className="px-6 py-4 bg-zinc-50 border-t border-zinc-200 flex gap-3">
+              <button
+                onClick={() => { setModalPinAberto(false); setPinInput(""); setPinErro(""); }}
+                className="flex-1 h-10 bg-white border border-zinc-300 text-zinc-700 rounded-lg text-sm font-medium hover:bg-zinc-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarPinGerente}
+                disabled={validandoPin || !pinInput.trim()}
+                className="flex-1 h-10 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-bold transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              >
+                {validandoPin ? <Loader2 size={16} className="animate-spin" /> : null}
+                Liberar venda
               </button>
             </div>
           </div>

@@ -9,8 +9,19 @@ import {
   Bell, Search, HelpCircle, Settings, ChevronDown,
   Command, Slash, Menu, Sparkles, LogOut,
   Package, Clock, Check, Trash2, X, Keyboard,
-  RefreshCw, CheckCheck,
+  RefreshCw, CheckCheck, UserRoundPen, AlertTriangle,
 } from "lucide-react";
+
+// Aparência de cada tipo de alerta. "Acerto Hoje" e "Acerto Atrasado" precisam
+// se distinguir de relance: um é cobrança em tempo, o outro já furou o prazo.
+const ESTILO_NOTIFICACAO = {
+  stock_critical:  { fundo: "bg-red-100",   cor: "text-red-500",   Icone: Package },
+  sale_delayed:    { fundo: "bg-red-100",   cor: "text-red-500",   Icone: AlertTriangle },
+  sale_due_today:  { fundo: "bg-amber-100", cor: "text-amber-500", Icone: Clock },
+  customer_stale:  { fundo: "bg-blue-100",  cor: "text-blue-500",  Icone: UserRoundPen },
+} as const;
+
+const ESTILO_PADRAO = { fundo: "bg-amber-100", cor: "text-amber-500", Icone: Clock };
 
 const PAGE_NAMES: Record<string, string> = {
   "/dashboard":     "Dashboard",
@@ -295,16 +306,14 @@ export default function TopbarCompacta({ onOpenPlans }: TopbarProps) {
                           } hover:bg-zinc-50`}
                         >
                           {/* Ícone */}
-                          <div className={`mt-0.5 shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
-                            n.type === "stock_critical"
-                              ? "bg-red-100"
-                              : "bg-amber-100"
-                          }`}>
-                            {n.type === "stock_critical"
-                              ? <Package size={13} className="text-red-500" />
-                              : <Clock size={13} className="text-amber-500" />
-                            }
-                          </div>
+                          {(() => {
+                            const { fundo, cor, Icone } = ESTILO_NOTIFICACAO[n.type] ?? ESTILO_PADRAO;
+                            return (
+                              <div className={`mt-0.5 shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${fundo}`}>
+                                <Icone size={13} className={cor} />
+                              </div>
+                            );
+                          })()}
 
                           {/* Conteúdo */}
                           <div className="flex-1 min-w-0">

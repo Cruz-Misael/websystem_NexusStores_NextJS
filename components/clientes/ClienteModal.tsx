@@ -15,15 +15,17 @@ import {
   FileImage,
   Calendar
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { criarPessoa, atualizarPessoa, buscarPessoaPorId } from "@/src/services/people.service";
 import { criarDocumento, listarDocumentosPorPessoa, deletarDocumento } from "@/src/services/document.service";
 import ListaDocumentos from "./ListaDocumentos";
 import toast from "react-hot-toast";
+import { buscarEnderecoPorCep, cepCompleto, limparCep } from "@/src/lib/cep";
 
 /* ========= TIPOS ========= */
 
 export type ClienteForm = {
+  tipoPessoa: "cliente" | "consultora";
   nome: string;
   email: string;
   whatsapp: string;
@@ -37,11 +39,13 @@ export type ClienteForm = {
   estado: string;
   observacoes: string; // observation
   dataNascimento: string; // birth_date
+  limiteVenda: string; // sales_limit
   anexos: File[];
 };
 
 interface PessoaDB {
   id: number;
+  person_type?: string | null;
   name: string;
   email: string;
   phone: string;
@@ -55,6 +59,7 @@ interface PessoaDB {
   state: string | null;
   observation: string | null;
   birth_date: string | null;
+  sales_limit: number | null;
   documents?: Array<{
     id: number;
     document_file: string;
@@ -76,6 +81,7 @@ interface Props {
 /* ========= ESTADO INICIAL ========= */
 
 const estadoInicial: ClienteForm = {
+  tipoPessoa: "consultora",
   nome: "",
   email: "",
   whatsapp: "",
@@ -89,6 +95,7 @@ const estadoInicial: ClienteForm = {
   estado: "",
   observacoes: "",
   dataNascimento: "",
+  limiteVenda: "",
   anexos: [],
 };
 
@@ -128,6 +135,7 @@ export default function ClienteModal({
       
       // Mapeia os dados do banco para o formulário
       setForm({
+        tipoPessoa: pessoa.person_type === "consultora" ? "consultora" : "cliente",
         nome: pessoa.name || "",
         email: pessoa.email || "",
         whatsapp: pessoa.phone || "",
@@ -141,6 +149,7 @@ export default function ClienteModal({
         estado: pessoa.state || "",
         observacoes: pessoa.observation || "",
         dataNascimento: pessoa.birth_date || "",
+        limiteVenda: pessoa.sales_limit != null ? String(pessoa.sales_limit) : "",
         anexos: [],
       });
       
@@ -180,6 +189,7 @@ export default function ClienteModal({
 
       // 1. Preparar dados da pessoa
       const pessoaData = {
+        person_type: form.tipoPessoa,
         name: form.nome,
         email: form.email || null,
         phone: form.whatsapp || null,
@@ -193,6 +203,9 @@ export default function ClienteModal({
         state: form.estado || null,
         observation: form.observacoes || null,
         birth_date: form.dataNascimento || null,
+        sales_limit: form.limiteVenda.trim()
+          ? parseFloat(form.limiteVenda.replace(",", "."))
+          : null,
       };
 
       console.log("Dados a serem salvos:", pessoaData);
@@ -248,6 +261,55 @@ export default function ClienteModal({
   ) => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
+
+  /* ========= ENDEREÇO PELO CEP ========= */
+  const [buscandoCep, setBuscandoCep] = useState(false);
+  const [avisoCep, setAvisoCep] = useState<string | null>(null);
+  // Guarda o último CEP consultado para não repetir a busca a cada tecla
+  // depois que o endereço já veio.
+  const cepConsultado = useRef<string>("");
+  const campoNumeroRef = useRef<HTMLInputElement>(null);
+
+  const preencherPeloCep = useCallback(async (cepBruto: string) => {
+    const cep = limparCep(cepBruto);
+    if (!cepCompleto(cep) || cep === cepConsultado.current) return;
+
+    cepConsultado.current = cep;
+    setBuscandoCep(true);
+    setAvisoCep(null);
+
+    const r = await buscarEnderecoPorCep(cep);
+    setBuscandoCep(false);
+
+    if (!r.ok) {
+      // Deixa o cadastro seguir na mão: CEP de cidade pequena, endereço novo e
+      // zona rural muitas vezes não estão em base nenhuma.
+      setAvisoCep(
+        r.motivo === "nao_encontrado"
+          ? "CEP não encontrado — preencha o endereço manualmente."
+          : "Não foi possível consultar o CEP agora. Pode preencher à mão."
+      );
+      return;
+    }
+
+    const { logradouro, bairro, cidade, uf } = r.endereco;
+    setForm((prev) => ({
+      ...prev,
+      // Só sobrescreve o que veio preenchido: num CEP de cidade inteira o
+      // logradouro vem vazio, e seria ruim apagar o que a pessoa já digitou.
+      endereco: logradouro || prev.endereco,
+      bairro: bairro || prev.bairro,
+      cidade: cidade || prev.cidade,
+      estado: uf || prev.estado,
+    }));
+
+    if (!logradouro) {
+      setAvisoCep("Este CEP cobre a cidade toda — complete a rua à mão.");
+    }
+
+    // O que falta sempre é número e complemento: leva o cursor para lá.
+    setTimeout(() => campoNumeroRef.current?.focus(), 50);
+  }, []);
 
   const formatarDocumento = (value: string) => {
     const numeros = value.replace(/\D/g, '');
@@ -338,6 +400,35 @@ export default function ClienteModal({
                   </h3>
                 </div>
 
+                {/* Tipo de pessoa: cliente x consultora */}
+                <div className="mb-5">
+                  <label className="text-[10px] font-bold text-zinc-500 ml-1 uppercase tracking-tighter">
+                    Tipo de cadastro
+                  </label>
+                  <div className="mt-1 grid grid-cols-2 gap-2">
+                    {([
+                      { valor: "cliente", titulo: "Cliente" },
+                      { valor: "consultora", titulo: "Consultor(a)" },
+                    ] as const).map((opt) => {
+                      const ativo = form.tipoPessoa === opt.valor;
+                      return (
+                        <button
+                          key={opt.valor}
+                          type="button"
+                          onClick={() => handleChange("tipoPessoa", opt.valor)}
+                          className={`px-4 py-2.5 rounded-xl text-xs font-black uppercase tracking-widest border transition-all ${
+                            ativo
+                              ? "bg-indigo-600 border-indigo-600 text-white shadow-sm"
+                              : "bg-zinc-50 border-zinc-200 text-zinc-500 hover:border-zinc-300"
+                          }`}
+                        >
+                          {opt.titulo}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-5">
                   <Input
                     icon={<User size={14} />}
@@ -380,6 +471,14 @@ export default function ClienteModal({
                     placeholder=""
                     onChange={(v) => handleChange("dataNascimento", v)}
                   />
+
+                  <Input
+                    label="Limite de Venda (R$)"
+                    type="number"
+                    value={form.limiteVenda}
+                    placeholder="Vazio = sem limite"
+                    onChange={(v) => handleChange("limiteVenda", v)}
+                  />
                 </div>
               </section>
 
@@ -393,12 +492,26 @@ export default function ClienteModal({
                 </div>
 
                 <div className="grid grid-cols-4 gap-4">
-                  <Input
-                    label="CEP"
-                    value={form.cep}
-                    placeholder="00000-000"
-                    onChange={(v) => handleChange("cep", formatarCEP(v))}
-                  />
+                  <div>
+                    <Input
+                      label="CEP"
+                      value={form.cep}
+                      placeholder="00000-000"
+                      carregando={buscandoCep}
+                      onChange={(v) => {
+                        const formatado = formatarCEP(v);
+                        handleChange("cep", formatado);
+                        setAvisoCep(null);
+                        // Dispara sozinho ao fechar os 8 dígitos — ninguém
+                        // precisa apertar nada.
+                        if (cepCompleto(formatado)) preencherPeloCep(formatado);
+                      }}
+                      onBlur={() => preencherPeloCep(form.cep)}
+                    />
+                    {avisoCep && (
+                      <p className="text-[10px] text-amber-600 mt-1 ml-1 leading-tight">{avisoCep}</p>
+                    )}
+                  </div>
                   <div className="col-span-2">
                     <Input
                       label="Cidade"
@@ -430,6 +543,7 @@ export default function ClienteModal({
                       label="Nº"
                       value={form.numero}
                       placeholder="123"
+                      inputRef={campoNumeroRef}
                       onChange={(v) => handleChange("numero", v)}
                     />
                   </div>
@@ -589,7 +703,10 @@ function Input({
   type = "text",
   required = false,
   maxLength,
+  carregando = false,
+  inputRef,
   onChange,
+  onBlur,
 }: {
   label: string;
   value: string;
@@ -598,7 +715,11 @@ function Input({
   type?: string;
   required?: boolean;
   maxLength?: number;
+  /** Mostra um giro à direita enquanto algo é consultado (o CEP, por ora). */
+  carregando?: boolean;
+  inputRef?: React.RefObject<HTMLInputElement | null>;
   onChange: (value: string) => void;
+  onBlur?: () => void;
 }) {
   return (
     <div className="space-y-1">
@@ -612,16 +733,24 @@ function Input({
           </span>
         )}
         <input
+          ref={inputRef}
           type={type}
           value={value}
           placeholder={placeholder}
           onChange={(e) => onChange(e.target.value)}
+          onBlur={onBlur}
           required={required}
           maxLength={maxLength}
           className={`w-full bg-zinc-50 border border-zinc-200 rounded-xl ${
             icon ? "pl-9" : "pl-4"
-          } pr-4 py-2.5 text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all placeholder:text-zinc-300`}
+          } ${carregando ? "pr-9" : "pr-4"} py-2.5 text-sm focus:outline-none focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 transition-all placeholder:text-zinc-300`}
         />
+        {carregando && (
+          <Loader2
+            size={14}
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-indigo-500 animate-spin"
+          />
+        )}
       </div>
     </div>
   );

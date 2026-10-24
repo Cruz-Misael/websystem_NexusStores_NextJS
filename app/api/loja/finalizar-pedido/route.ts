@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '@/src/lib/supabase/admin';
+import { bloqueioLojaOnline } from '@/src/lib/loja-online';
 import { NextRequest, NextResponse } from 'next/server';
 import { MercadoPagoConfig, Payment } from 'mercadopago';
 
@@ -42,6 +43,9 @@ async function verificarPagamentoAprovado(orderId: string, mpPaymentId?: string)
 // Cria uma venda na tabela sales a partir de um website_order confirmado.
 // Idempotente: checa se já existe venda com este pedido antes de criar.
 export async function POST(req: NextRequest) {
+  const desligada = await bloqueioLojaOnline();
+  if (desligada) return desligada;
+
   const { order_id, mp_payment_id } = await req.json();
   if (!order_id || typeof order_id !== 'string') {
     return NextResponse.json({ error: 'order_id obrigatório' }, { status: 400 });

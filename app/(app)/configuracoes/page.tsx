@@ -46,6 +46,8 @@ import {
   UserCog,
   CreditCard,
   Calendar,
+  CalendarClock,
+  MessageCircle,
   Lock,
   AlertTriangle,
   CheckCircle2,
@@ -61,11 +63,20 @@ import {
   Tag,
   Percent,
   ToggleLeft,
+  BarChart3,
 } from 'lucide-react';
+import dynamic from 'next/dynamic';
 import { BillingService, BillingConfig, calcularProximoVencimento, calcularStatus } from '@/src/services/billing.service';
 import { getWebsiteConfig, upsertWebsiteConfig, uploadBanner, WebsiteConfig } from '@/src/services/website.service';
+import { carregarConfigCobranca, salvarConfigCobranca } from '@/src/services/collections.service';
+import { CollectionSettings, SETTINGS_PADRAO, VARIAVEIS_MENSAGEM } from '@/src/lib/cobranca';
+import { EmailSettings, EMAIL_SETTINGS_PADRAO, carregarEmailSettings, salvarEmailSettings, enviarEmailDeTeste } from '@/src/services/email-settings.service';
+// Aba de gráficos (recharts) carregada só quando aberta — fora do bundle inicial.
+const IndicadoresSite = dynamic(() => import('@/components/configuracoes/IndicadoresSite'), { ssr: false });
+// Editor da landing: formulário longo e autossuficiente, também sob demanda.
+const LandingConfig = dynamic(() => import('@/components/configuracoes/LandingConfig'), { ssr: false });
 
-type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'meusite' | 'frete' | 'descontos';
+type TabType = 'loja' | 'usuarios' | 'categorias' | 'operadores' | 'pagamento' | 'cobranca' | 'email' | 'meusite' | 'landing' | 'frete' | 'descontos' | 'indicadores';
 type UsuarioCargo = 'admin' | 'gerente' | 'colaborador';
 type UsuarioStatus = 'ativo' | 'inativo' | 'pendente';
 
@@ -97,6 +108,9 @@ interface FormLojaData {
   city: string;
   state: string;
   cep: string;
+  receiptNote: string;
+  receiptImage: File | null;
+  receiptImagePreview: string;
 }
 
 const defaultPermissions: OperatorPermissions = {
@@ -121,7 +135,7 @@ function ConfiguracoesContent() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<TabType>(() => {
     const tab = searchParams.get('tab');
-    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'meusite' || tab === 'frete' || tab === 'descontos') return tab as TabType;
+    if (tab === 'pagamento' || tab === 'loja' || tab === 'usuarios' || tab === 'categorias' || tab === 'operadores' || tab === 'cobranca' || tab === 'email' || tab === 'meusite' || tab === 'landing' || tab === 'frete' || tab === 'descontos' || tab === 'indicadores') return tab as TabType;
     return 'loja';
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -131,6 +145,7 @@ function ConfiguracoesContent() {
   const [usuarioEditando, setUsuarioEditando] = useState<UsuarioParaEdicao | null>(null);
   const [modoModal, setModoModal] = useState<'criacao' | 'edicao'>('criacao');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const receiptFileInputRef = useRef<HTMLInputElement>(null);
 
   // --- Loja ---
   const [companyId, setCompanyId] = useState<string | undefined>(undefined);
@@ -139,6 +154,7 @@ function ConfiguracoesContent() {
     telefone: '', email: '', website: '', logo: null, logoPreview: '',
     address_street: '', address_number: '', address_complement: '',
     neighbourhood: '', city: '', state: '', cep: '',
+    receiptNote: '', receiptImage: null, receiptImagePreview: '',
   });
 
   // --- Usuários ---
@@ -227,6 +243,78 @@ function ConfiguracoesContent() {
   const [bannerRemoved, setBannerRemoved] = useState(false);
   const bannerInputRef = useRef<HTMLInputElement>(null);
 
+  // ========== COBRANÇA ==========
+  const [formCobranca, setFormCobranca] = useState<CollectionSettings>(SETTINGS_PADRAO);
+  const [salvandoCobranca, setSalvandoCobranca] = useState(false);
+  const [cobrancaMigracaoPendente, setCobrancaMigracaoPendente] = useState(false);
+
+  const loadCobranca = async () => {
+    try {
+      const { settings, migracaoPendente } = await carregarConfigCobranca();
+      setFormCobranca(settings);
+      setCobrancaMigracaoPendente(migracaoPendente);
+    } catch (error) {
+      toast.error(`Não foi possível carregar a configuração de cobrança: ${error instanceof Error ? error.message : error}`);
+    }
+  };
+
+  const handleSalvarCobranca = async () => {
+    setSalvandoCobranca(true);
+    try {
+      await salvarConfigCobranca({
+        ...formCobranca,
+        min_days_between_emails: Math.max(1, Number(formCobranca.min_days_between_emails) || 1),
+      });
+      toast.success('Configuração de cobrança salva!');
+      setCobrancaMigracaoPendente(false);
+    } catch (error) {
+      toast.error(`Erro ao salvar: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      setSalvandoCobranca(false);
+    }
+  };
+
+  // ========== E-MAIL (REMETENTE) ==========
+  const [formEmail, setFormEmail] = useState<EmailSettings>(EMAIL_SETTINGS_PADRAO);
+  const [salvandoEmail, setSalvandoEmail] = useState(false);
+  const [emailMigracaoPendente, setEmailMigracaoPendente] = useState(false);
+  const [enviandoTeste, setEnviandoTeste] = useState(false);
+  const [destinoTeste, setDestinoTeste] = useState('');
+
+  const loadEmailSettings = async () => {
+    try {
+      const { settings, migracaoPendente } = await carregarEmailSettings();
+      setFormEmail(settings);
+      setEmailMigracaoPendente(migracaoPendente);
+    } catch (error) {
+      toast.error(`Não foi possível carregar o remetente: ${error instanceof Error ? error.message : error}`);
+    }
+  };
+
+  const handleSalvarEmail = async () => {
+    setSalvandoEmail(true);
+    try {
+      await salvarEmailSettings(formEmail);
+      toast.success('Remetente salvo!');
+      setEmailMigracaoPendente(false);
+    } catch (error) {
+      toast.error(`Erro ao salvar: ${error instanceof Error ? error.message : error}`);
+    } finally {
+      setSalvandoEmail(false);
+    }
+  };
+
+  const handleEnviarTeste = async () => {
+    setEnviandoTeste(true);
+    try {
+      const r = await enviarEmailDeTeste(destinoTeste.trim() || undefined);
+      if (r.ok) toast.success(`Teste enviado para ${r.to}. Se não chegar, olhe a caixa de spam.`);
+      else toast.error(r.error || 'Falha ao enviar o teste', { duration: 9000 });
+    } finally {
+      setEnviandoTeste(false);
+    }
+  };
+
   // ========== LOJA ==========
 
   const handleLojaInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
@@ -253,6 +341,8 @@ function ConfiguracoesContent() {
     try {
       let logoUrl = formLoja.logoPreview;
       if (formLoja.logo) logoUrl = await CompanyService.uploadLogo(formLoja.logo);
+      let receiptImageUrl = formLoja.receiptImagePreview;
+      if (formLoja.receiptImage) receiptImageUrl = await CompanyService.uploadReceiptImage(formLoja.receiptImage);
       const companyData: CompanyData = {
         id: companyId,
         name: formLoja.nomeCompleto, fantasy_name: formLoja.nomeFantasia,
@@ -266,6 +356,8 @@ function ConfiguracoesContent() {
         city: formLoja.city || undefined,
         state: formLoja.state || undefined,
         cep: formLoja.cep || undefined,
+        receipt_note: formLoja.receiptNote.trim() || null,
+        receipt_image_url: receiptImageUrl || null,
       };
       const saved = await CompanyService.saveCompany(companyData);
       if (!companyId) setCompanyId(saved.id);
@@ -290,6 +382,21 @@ function ConfiguracoesContent() {
   const handleRemoveLogo = () => {
     setFormLoja(prev => ({ ...prev, logo: null, logoPreview: '' }));
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleReceiptImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { toast.error('A imagem deve ter no máximo 2MB.'); return; }
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { toast.error('Formato inválido. Use JPG, PNG ou WebP.'); return; }
+    const reader = new FileReader();
+    reader.onloadend = () => setFormLoja(prev => ({ ...prev, receiptImage: file, receiptImagePreview: reader.result as string }));
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveReceiptImage = () => {
+    setFormLoja(prev => ({ ...prev, receiptImage: null, receiptImagePreview: '' }));
+    if (receiptFileInputRef.current) receiptFileInputRef.current.value = '';
   };
 
   // ========== USUÁRIOS ==========
@@ -687,7 +794,7 @@ function ConfiguracoesContent() {
     loadCurrentUserRole();
   }, []);
 
-  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); loadWebsiteConfig(); loadCupons(); }, []);
+  useEffect(() => { loadCompanyData(); loadAuthorizedUsers(); loadCategorias(); loadOperadores(); loadBilling(); loadWebsiteConfig(); loadCupons(); loadCobranca(); loadEmailSettings(); }, []);
 
   const loadCompanyData = async () => {
     try {
@@ -702,6 +809,8 @@ function ConfiguracoesContent() {
           address_street: company.address_street || '', address_number: company.address_number || '',
           address_complement: company.address_complement || '', neighbourhood: company.neighbourhood || '',
           city: company.city || '', state: company.state || '', cep: company.cep || '',
+          receiptNote: company.receipt_note || '',
+          receiptImage: null, receiptImagePreview: company.receipt_image_url || '',
         });
       }
     } catch { toast.error('Erro ao carregar dados da empresa'); }
@@ -723,9 +832,13 @@ function ConfiguracoesContent() {
     { id: 'categorias' as TabType, label: 'Categorias', icon: Layers, desc: 'Categorias de produtos', onlineStore: false, disabled: false },
     { id: 'operadores' as TabType, label: 'Operadores', icon: UserCog, desc: 'Operadores do caixa', onlineStore: false, disabled: false },
     { id: 'pagamento' as TabType, label: 'Pagamento', icon: CreditCard, desc: 'Assinatura e vencimento', onlineStore: false, disabled: false },
-    { id: 'meusite' as TabType, label: 'Meu Site', icon: Store, desc: 'Loja virtual pública', onlineStore: true, disabled: !isAdmin },
+    { id: 'cobranca' as TabType, label: 'Cobrança', icon: CalendarClock, desc: 'Lembretes de acerto', onlineStore: false, disabled: !isAdmin },
+    { id: 'email' as TabType, label: 'E-mail', icon: Mail, desc: 'Remetente das mensagens', onlineStore: false, disabled: !isAdmin },
+    { id: 'meusite' as TabType, label: 'Meu Site', icon: Store, desc: 'Endereço, cor e contatos', onlineStore: true, disabled: !isAdmin },
+    { id: 'landing' as TabType, label: 'Landing', icon: FileText, desc: 'Textos da página pública', onlineStore: true, disabled: !isAdmin },
     { id: 'frete' as TabType, label: 'Frete', icon: Truck, desc: 'Envio e Melhor Envio', onlineStore: true, disabled: !isAdmin },
     { id: 'descontos' as TabType, label: 'Descontos', icon: Tag, desc: 'Cupons e promoções', onlineStore: true, disabled: !isAdmin },
+    { id: 'indicadores' as TabType, label: 'Indicadores', icon: BarChart3, desc: 'Acessos e visitas do site', onlineStore: true, disabled: !isAdmin },
   ];
 
   return (
@@ -752,6 +865,18 @@ function ConfiguracoesContent() {
           <button onClick={handleSalvarBilling} disabled={salvandoBilling} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
             {salvandoBilling ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
             {salvandoBilling ? 'Salvando' : 'Salvar Configuração'}
+          </button>
+        )}
+        {activeTab === 'email' && isAdmin && (
+          <button onClick={handleSalvarEmail} disabled={salvandoEmail} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
+            {salvandoEmail ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {salvandoEmail ? 'Salvando' : 'Salvar Remetente'}
+          </button>
+        )}
+        {activeTab === 'cobranca' && isAdmin && (
+          <button onClick={handleSalvarCobranca} disabled={salvandoCobranca} className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-[2px] transition-all shadow-lg active:scale-95 disabled:opacity-50 flex items-center gap-2">
+            {salvandoCobranca ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            {salvandoCobranca ? 'Salvando' : 'Salvar Cobrança'}
           </button>
         )}
         {activeTab === 'meusite' && (
@@ -827,6 +952,12 @@ function ConfiguracoesContent() {
         <main className="flex-1 overflow-y-auto bg-zinc-50/50 p-8 min-h-0">
           <div className="max-w-4xl mx-auto">
 
+            {/* ===== ABA INDICADORES DO SITE ===== */}
+            {activeTab === 'indicadores' && <IndicadoresSite />}
+
+            {/* ===== ABA LANDING (conteúdo da página pública) ===== */}
+            {activeTab === 'landing' && <LandingConfig />}
+
             {/* ===== ABA LOJA ===== */}
             {activeTab === 'loja' && (
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-400">
@@ -880,6 +1011,37 @@ function ConfiguracoesContent() {
                     <Input label="Número" name="address_number" value={formLoja.address_number} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="1000" />
                     <Input label="Complemento" name="address_complement" value={formLoja.address_complement} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="Sala 12, Loja A" />
                     <Input label="Bairro" name="neighbourhood" value={formLoja.neighbourhood} onChange={handleLojaInputChange} icon={<MapPin size={14} />} placeholder="Centro" />
+                  </div>
+                </section>
+
+                <section className="bg-white p-8 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-2 mb-2"><div className="w-1 h-4 bg-indigo-500 rounded-full"></div><h3 className="text-xs font-black text-zinc-800 uppercase tracking-[2px]">Configurações da Nota / Recibo</h3></div>
+                  <p className="text-[11px] text-zinc-400 mb-6">Informações extras que aparecem na notinha impressa (além dos dados já padronizados). A <span className="font-semibold">Descrição do Negócio</span> (acima) também é exibida na nota como observação padrão.</p>
+                  <div className="grid grid-cols-2 gap-6">
+                    <div className="col-span-2 space-y-1">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1">Observações / Rodapé da Nota</label>
+                      <textarea name="receiptNote" value={formLoja.receiptNote} onChange={handleLojaInputChange} rows={3} className="w-full bg-zinc-50 border border-zinc-200 rounded-2xl p-4 text-xs font-medium focus:ring-4 focus:ring-indigo-500/5 focus:border-indigo-500 outline-none transition-all resize-none" placeholder="Ex.: Trocas em até 7 dias mediante nota. Horário de funcionamento..." />
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight ml-1">Imagem na Nota (ex.: QR Code do PIX)</label>
+                      <div className="flex items-center gap-4">
+                        <div className="relative w-24 h-24 bg-zinc-50 border border-zinc-200 rounded-2xl flex items-center justify-center shrink-0 overflow-hidden">
+                          {formLoja.receiptImagePreview ? (
+                            <img src={formLoja.receiptImagePreview} alt="Imagem da nota" className="w-full h-full object-contain" />
+                          ) : (
+                            <QrCode size={22} className="text-zinc-300" />
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => receiptFileInputRef.current?.click()} className="px-4 py-2 bg-zinc-900 text-white text-[10px] font-black rounded-lg uppercase tracking-widest hover:bg-zinc-800 transition-all">Escolher Imagem</button>
+                            {formLoja.receiptImagePreview && <button type="button" onClick={handleRemoveReceiptImage} className="px-4 py-2 bg-white border border-red-100 text-red-500 text-[10px] font-black rounded-lg uppercase tracking-widest hover:bg-red-50 transition-all">Remover</button>}
+                          </div>
+                          <p className="text-[10px] text-zinc-400">PNG, JPG ou WebP · máx 2MB. Aparece centralizada no fim da notinha.</p>
+                        </div>
+                      </div>
+                      <input ref={receiptFileInputRef} type="file" className="hidden" accept="image/png,image/jpeg,image/webp" onChange={handleReceiptImageUpload} />
+                    </div>
                   </div>
                 </section>
               </div>
@@ -1260,6 +1422,246 @@ function ConfiguracoesContent() {
             })()}
 
             {/* ===== ABA MEU SITE ===== */}
+            {activeTab === 'email' && (
+              <div className="space-y-6 animate-in fade-in duration-400">
+
+                {emailMigracaoPendente && (
+                  <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                    <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                    <div className="text-xs text-amber-800">
+                      <p className="font-black uppercase tracking-tight">Falta preparar o banco</p>
+                      <p className="text-amber-700 mt-1">
+                        Rode <code className="font-mono bg-amber-100 px-1 py-0.5 rounded">sql/email_remetente.sql</code> no
+                        SQL Editor do Supabase para poder salvar o remetente aqui.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {!formEmail.from_address.trim() && (
+                  <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-2xl p-4">
+                    <AlertTriangle className="text-red-500 shrink-0 mt-0.5" size={18} />
+                    <div className="text-xs text-red-800">
+                      <p className="font-black uppercase tracking-tight">Os e-mails não estão chegando</p>
+                      <p className="text-red-700 mt-1 leading-relaxed">
+                        Sem remetente próprio, o sistema usa o endereço de teste do Resend
+                        (<code className="font-mono">onboarding@resend.dev</code>), que <strong>só entrega para o dono da
+                        conta do Resend</strong>. Cliente nenhum recebe — nem aviso de pedido, nem cobrança.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><Mail size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Remetente dos e-mails</h3>
+                      <p className="text-[11px] text-zinc-400">Vale para aviso de pedido e para a cobrança de consignado</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Nome que aparece</label>
+                      <input
+                        value={formEmail.from_name}
+                        onChange={e => setFormEmail(p => ({ ...p, from_name: e.target.value }))}
+                        placeholder="Íntima Sedução"
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">É o que a cliente lê na caixa de entrada.</p>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">E-mail remetente</label>
+                      <input
+                        type="email"
+                        value={formEmail.from_address}
+                        onChange={e => setFormEmail(p => ({ ...p, from_address: e.target.value }))}
+                        placeholder="contato@seudominio.com.br"
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">Precisa ser de um domínio verificado no Resend.</p>
+                    </div>
+
+                    <div className="sm:col-span-2">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Responder para</label>
+                      <input
+                        type="email"
+                        value={formEmail.reply_to}
+                        onChange={e => setFormEmail(p => ({ ...p, reply_to: e.target.value }))}
+                        placeholder="seuemail@gmail.com (opcional)"
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">
+                        Quando a cliente responder, cai aqui. Este campo aceita qualquer e-mail — Gmail serve —, porque a
+                        resposta não passa pela verificação de domínio.
+                      </p>
+                    </div>
+                  </div>
+                </section>
+
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><CheckCircle2 size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Testar o envio</h3>
+                      <p className="text-[11px] text-zinc-400">Descubra agora se chega, em vez de descobrir na cobrança</p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row gap-3">
+                    <input
+                      type="email"
+                      value={destinoTeste}
+                      onChange={e => setDestinoTeste(e.target.value)}
+                      placeholder="Deixe vazio para receber no seu próprio e-mail"
+                      className="flex-1 h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                    />
+                    <button
+                      onClick={handleEnviarTeste}
+                      disabled={enviandoTeste}
+                      className="inline-flex items-center justify-center gap-2 px-4 h-9 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl transition-colors active:scale-95 disabled:opacity-50"
+                    >
+                      {enviandoTeste ? <Loader2 size={14} className="animate-spin" /> : <Mail size={14} />}
+                      Enviar teste
+                    </button>
+                  </div>
+
+                  <p className="text-[10px] text-zinc-400 mt-3 leading-relaxed">
+                    Salve o remetente antes de testar. Se o Resend recusar, a mensagem de erro aqui diz exatamente o que
+                    falta — normalmente verificar o domínio em resend.com/domains, que exige registros de DNS e é feito
+                    fora do sistema.
+                  </p>
+                </section>
+              </div>
+            )}
+
+            {activeTab === 'cobranca' && (
+              <div className="space-y-6 animate-in fade-in duration-400">
+
+                {cobrancaMigracaoPendente && (
+                  <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                    <AlertTriangle className="text-amber-600 shrink-0 mt-0.5" size={18} />
+                    <div className="text-xs text-amber-800">
+                      <p className="font-black uppercase tracking-tight">Falta preparar o banco</p>
+                      <p className="text-amber-700 mt-1">
+                        Rode <code className="font-mono bg-amber-100 px-1 py-0.5 rounded">sql/cobrancas.sql</code> no SQL
+                        Editor do Supabase. Sem isso estas opções não têm onde ser salvas.
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Envio automático */}
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><Mail size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Lembrete automático por e-mail</h3>
+                      <p className="text-[11px] text-zinc-400">Enviado de manhã para quem está com o acerto vencido</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <PermissionToggle
+                      label="Enviar o lembrete automaticamente todo dia"
+                      checked={formCobranca.auto_email_enabled}
+                      onChange={v => setFormCobranca(p => ({ ...p, auto_email_enabled: v }))}
+                    />
+                    <PermissionToggle
+                      label="Avisar também no dia do vencimento (antes de virar atraso)"
+                      checked={formCobranca.send_on_due_date}
+                      onChange={v => setFormCobranca(p => ({ ...p, send_on_due_date: v }))}
+                    />
+
+                    <div className="max-w-xs">
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Intervalo mínimo entre e-mails (dias)</label>
+                      <input
+                        type="number" min={1} max={60} step={1}
+                        value={formCobranca.min_days_between_emails}
+                        onChange={e => setFormCobranca(p => ({ ...p, min_days_between_emails: Number(e.target.value) }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">A mesma cliente não recebe outro e-mail antes disso. Lembrar é uma coisa, importunar é outra.</p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 pt-4 border-t border-zinc-100 text-[10px] text-zinc-400 leading-relaxed">
+                    O disparo diário só acontece se o agendador estiver configurado no servidor
+                    (<code className="font-mono">CRON_SECRET</code> + chamada a <code className="font-mono">/api/cobrancas/cron</code>).
+                    O envio manual, na tela Cobranças, funciona de qualquer jeito.
+                  </div>
+                </section>
+
+                {/* Textos */}
+                <section className="bg-white p-6 rounded-2xl border border-zinc-200 shadow-sm">
+                  <div className="flex items-center gap-3 mb-5">
+                    <div className="w-10 h-10 bg-indigo-50 text-indigo-600 rounded-xl flex items-center justify-center"><MessageCircle size={20} /></div>
+                    <div>
+                      <h3 className="text-sm font-black uppercase tracking-tight">Textos das mensagens</h3>
+                      <p className="text-[11px] text-zinc-400">O que a cliente lê no WhatsApp e no e-mail</p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-5">
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Mensagem do WhatsApp</label>
+                      <textarea
+                        rows={4}
+                        value={formCobranca.whatsapp_template}
+                        onChange={e => setFormCobranca(p => ({ ...p, whatsapp_template: e.target.value }))}
+                        className="w-full px-3 py-2 border border-zinc-200 rounded-xl text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1 leading-relaxed">
+                        A mensagem sai do WhatsApp conectado no aparelho (ou no WhatsApp Web) de quem clicar em Cobrar —
+                        não existe número de origem a configurar aqui. O número em Meu Site é para onde a cliente responde.
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Assunto do e-mail</label>
+                      <input
+                        value={formCobranca.email_subject}
+                        onChange={e => setFormCobranca(p => ({ ...p, email_subject: e.target.value }))}
+                        className="w-full h-9 px-3 border border-zinc-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-tight mb-1 block">Texto de abertura do e-mail</label>
+                      <textarea
+                        rows={3}
+                        value={formCobranca.email_intro}
+                        onChange={e => setFormCobranca(p => ({ ...p, email_intro: e.target.value }))}
+                        className="w-full px-3 py-2 border border-zinc-200 rounded-xl text-xs leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                      />
+                      <p className="text-[10px] text-zinc-400 mt-1">Os dados do consignado (número, valor, prazo) entram automaticamente abaixo deste texto.</p>
+                    </div>
+
+                    <div className="bg-zinc-50 border border-zinc-200 rounded-xl p-4">
+                      <p className="text-[10px] font-black text-zinc-400 uppercase tracking-widest mb-2">Variáveis disponíveis</p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                        {VARIAVEIS_MENSAGEM.map(v => (
+                          <div key={v.chave} className="flex items-baseline gap-2 text-[11px]">
+                            <code className="font-mono text-indigo-600 font-bold">{v.chave}</code>
+                            <span className="text-zinc-500">{v.descricao}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 text-[11px] text-amber-800 leading-relaxed">
+                      <strong className="font-black">Cobrança tem regra.</strong> O Código de Defesa do Consumidor (art. 42)
+                      proíbe expor ou constranger quem deve. Escreva como lembrete, em horário comercial, e nunca trate da
+                      dívida com outra pessoa que não seja a própria cliente.
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+
             {activeTab === 'meusite' && (
               <div className="space-y-6 animate-in fade-in duration-400">
 

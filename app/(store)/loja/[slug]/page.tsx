@@ -1,654 +1,458 @@
-'use client';
-import { useEffect, useState, useMemo, useRef } from 'react';
+// app/(store)/loja/[slug]/page.tsx
+//
+// A página pública da loja. Não vende: apresenta a marca, explica a venda
+// consignada e leva a conversa para o WhatsApp — como revendedora ou como
+// cliente. O catálogo/carrinho/checkout que moravam aqui estão preservados em
+// ./_desativado (veja o README de lá).
+//
+// Server Component de propósito: HTML pronto na primeira resposta, título e
+// descrição corretos para Google e para o preview do link no WhatsApp.
+
+import type { Metadata } from 'next';
+import { notFound } from 'next/navigation';
 import {
-  ShoppingCart, Search, Instagram, MessageCircle, Store,
-  X, User, LogIn, LogOut, Package, SlidersHorizontal,
+  ArrowRight, Instagram, MapPin, MessageCircle, Phone, Quote, Sparkles,
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
-import { CartProvider, useCart } from '@/components/loja/CartContext';
-import { ProdutoCard } from '@/components/loja/ProdutoCard';
-import { supabase } from '@/src/lib/supabase/client';
 
-/* ─── Types ─────────────────────────────────── */
-interface StoreConfig {
-  slug: string;
-  store_name: string;
-  tagline?: string;
-  description?: string;
-  banner_url?: string;
-  logo_url?: string;
-  primary_color: string;
-  whatsapp_number?: string;
-  instagram_url?: string;
-  show_prices: boolean;
+import { getLandingData, linkWhatsApp } from '@/src/services/landing.service';
+import { iconeDoBeneficio } from '@/components/landing/icons';
+import LandingNav from '@/components/landing/LandingNav';
+import FaqList from '@/components/landing/FaqList';
+import Reveal from '@/components/landing/Reveal';
+
+// Conteúdo institucional muda pouco; 5 minutos de cache tiram o banco do
+// caminho de quem abre o link sem atrasar uma correção de texto.
+export const revalidate = 300;
+
+export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
+  const { slug } = await params;
+  const dados = await getLandingData(slug);
+  if (!dados) return { title: 'Loja não encontrada' };
+
+  const titulo = dados.tagline ? `${dados.store_name} · ${dados.tagline}` : dados.store_name;
+  const descricao = dados.description || dados.tagline || `Conheça a ${dados.store_name}.`;
+  const imagem = dados.banner_url || dados.about_image_url || dados.logo_url || undefined;
+
+  return {
+    title: titulo,
+    description: descricao,
+    openGraph: {
+      title: titulo,
+      description: descricao,
+      type: 'website',
+      locale: 'pt_BR',
+      siteName: dados.store_name,
+      images: imagem ? [imagem] : undefined,
+    },
+  };
 }
 
-interface Product {
-  sku: number;
-  name: string;
-  description?: string;
-  price?: number;
-  imagem?: string;
-  category?: string;
-  color?: string;
-  size?: string;
-}
+export default async function LandingPage({ params }: { params: Promise<{ slug: string }> }) {
+  const { slug } = await params;
+  const d = await getLandingData(slug);
+  if (!d) notFound();
 
-interface Category {
-  name: string;
-  color: string;
-  image_url?: string | null;
-}
+  const cor = d.primary_color;
+  const hrefRevendedora = linkWhatsApp(d.whatsapp_number, d.cta_revendedora_message);
+  const hrefCliente = linkWhatsApp(d.whatsapp_number, d.cta_cliente_message);
 
-/* ─── Skeleton ───────────────────────────────── */
-function Skeleton({ className = '' }: { className?: string }) {
-  return <div className={`bg-zinc-100 animate-pulse rounded-2xl ${className}`} />;
-}
+  const temPassos = d.consignado_steps.length > 0;
+  const temBeneficios = d.benefits.length > 0;
+  const temSobre = Boolean(d.about_text || d.owner_quote);
+  const temFaq = d.faq.length > 0;
 
-function SkeletonStore() {
-  return (
-    <div className="min-h-screen bg-zinc-50">
-      {/* Header skeleton */}
-      <div className="h-16 bg-white border-b border-zinc-100 flex items-center px-6 gap-4">
-        <Skeleton className="w-9 h-9 rounded-xl" />
-        <Skeleton className="w-28 h-5" />
-        <div className="flex-1 max-w-sm mx-auto hidden sm:block">
-          <Skeleton className="h-9 w-full rounded-xl" />
-        </div>
-        <div className="flex gap-3 ml-auto">
-          <Skeleton className="w-8 h-8 rounded-xl" />
-          <Skeleton className="w-8 h-8 rounded-xl" />
-        </div>
-      </div>
-      {/* Banner skeleton */}
-      <Skeleton className="h-52 md:h-72 w-full rounded-none" />
-      {/* Category cards row */}
-      <div className="max-w-6xl mx-auto px-4 pt-8 pb-2 flex gap-3.5">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="shrink-0 w-[110px] h-[140px] md:w-[124px] md:h-[156px] rounded-3xl" />
-        ))}
-      </div>
-      {/* Product grid */}
-      <div className="max-w-6xl mx-auto px-4 py-6 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-        {Array.from({ length: 8 }).map((_, i) => (
-          <div key={i} className="bg-white rounded-3xl overflow-hidden shadow-sm">
-            <Skeleton className="aspect-[4/5] w-full rounded-none" />
-            <div className="p-3.5 space-y-2">
-              <Skeleton className="h-3.5 w-3/4" />
-              <Skeleton className="h-3 w-1/2" />
-              <div className="flex justify-between items-center pt-1">
-                <Skeleton className="h-4 w-16" />
-                <Skeleton className="w-9 h-9 rounded-2xl" />
-              </div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/* ─── Store Content ──────────────────────────── */
-function StoreContent({ slug }: { slug: string }) {
-  const [config, setConfig] = useState<StoreConfig | null>(null);
-  const [products, setProducts] = useState<Product[]>([]);
-  const [categories, setCategories] = useState<Category[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-  const [search, setSearch] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [user, setUser] = useState<any>(null);
-  const [showUserMenu, setShowUserMenu] = useState(false);
-  const [headerScrolled, setHeaderScrolled] = useState(false);
-  const { count } = useCart();
-  const catRowRef = useRef<HTMLDivElement>(null);
-
-  /* Auth */
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setUser(session?.user || null));
-  }, []);
-
-  /* Fetch store data */
-  useEffect(() => {
-    fetch(`/api/loja/${slug}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data.error) { setError(data.error); return; }
-        setConfig(data.config);
-        setProducts(data.products);
-        setCategories(data.categories || []);
-      })
-      .catch(() => setError('Erro ao carregar a loja'))
-      .finally(() => setLoading(false));
-  }, [slug]);
-
-  /* Header shadow on scroll */
-  useEffect(() => {
-    const onScroll = () => setHeaderScrolled(window.scrollY > 10);
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
-
-  const displayCategories = useMemo(() => {
-    const dbNames = new Set(categories.map(c => c.name));
-    const productCatNames = [...new Set(products.map(p => p.category).filter(Boolean))] as string[];
-    const withProducts = new Set(productCatNames);
-    const dbWithProducts = categories.filter(c => withProducts.has(c.name));
-    const extras = productCatNames
-      .filter(name => !dbNames.has(name))
-      .map(name => ({ name, color: '#6366f1', image_url: null as string | null }));
-    return [...dbWithProducts, ...extras];
-  }, [categories, products]);
-
-  const filtered = useMemo(() => {
-    return products.filter(p => {
-      const matchSearch = !search || p.name.toLowerCase().includes(search.toLowerCase());
-      const matchCat = !selectedCategory || p.category === selectedCategory;
-      return matchSearch && matchCat;
-    });
-  }, [products, search, selectedCategory]);
-
-  if (loading) return <SkeletonStore />;
-
-  if (error || !config) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-zinc-50 gap-4">
-        <div className="w-16 h-16 rounded-2xl bg-zinc-100 flex items-center justify-center">
-          <Store size={28} className="text-zinc-300" />
-        </div>
-        <p className="text-zinc-500 font-medium">{error || 'Loja não encontrada'}</p>
-      </div>
-    );
-  }
-
-  const color = config.primary_color || '#6366f1';
+  // O menu só oferece o que existe: seção vazia no banco não vira link morto.
+  const secoes = [
+    temPassos && { id: 'como-funciona', label: 'Como funciona' },
+    temBeneficios && { id: 'beneficios', label: 'Vantagens' },
+    temSobre && { id: 'a-loja', label: 'A loja' },
+    temFaq && { id: 'perguntas', label: 'Perguntas' },
+    { id: 'contato', label: 'Contato' },
+  ].filter(Boolean) as { id: string; label: string }[];
 
   return (
-    <div className="min-h-screen bg-zinc-50/80 font-sans">
+    <div className="min-h-screen bg-zinc-50/80 font-sans scroll-smooth">
+      <LandingNav
+        storeName={d.store_name}
+        logoUrl={d.logo_url}
+        color={cor}
+        instagramUrl={d.instagram_url}
+        ctaHref={hrefRevendedora}
+        ctaLabel={d.cta_revendedora_label}
+        secoes={secoes}
+      />
 
-      {/* ── Header ─────────────────────────────────── */}
-      <header
-        className="sticky top-0 z-40 bg-white/80 backdrop-blur-xl transition-shadow duration-300"
-        style={headerScrolled ? { boxShadow: '0 4px 24px rgba(0,0,0,0.07)' } : {}}
-      >
-        {/* Gradient hairline */}
-        <div
-          className="absolute inset-x-0 bottom-0 h-px"
-          style={{ background: `linear-gradient(90deg, transparent, ${color}50, transparent)` }}
-        />
-        <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
-          {/* Logo + name */}
-          <a href={`/loja/${slug}`} className="flex items-center gap-3 shrink-0 group">
-            {config.logo_url ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={config.logo_url}
-                alt={config.store_name}
-                className="w-9 h-9 rounded-xl object-cover shadow-sm border border-zinc-100"
-              />
-            ) : (
-              <div
-                className="w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm shadow-md group-hover:scale-105 transition-transform"
-                style={{ background: `linear-gradient(135deg, ${color}, ${color}cc)` }}
-              >
-                {config.store_name.charAt(0).toUpperCase()}
-              </div>
-            )}
-            <span className="font-black text-zinc-900 text-base tracking-tight hidden sm:block">{config.store_name}</span>
-          </a>
-
-          {/* Desktop search */}
-          <div className="flex-1 max-w-sm hidden sm:block">
-            <div className="relative">
-              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-              <input
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                placeholder="Buscar produtos..."
-                className="w-full pl-9 pr-8 py-2 text-sm border border-zinc-200/80 rounded-full bg-zinc-50/80 focus:outline-none focus:ring-2 focus:border-transparent focus:bg-white transition-all"
-                style={{ '--tw-ring-color': color + '40' } as React.CSSProperties}
-              />
-              {search && (
-                <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors">
-                  <X size={13} />
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Right actions */}
-          <div className="flex items-center gap-2">
-            {config.instagram_url && (
-              <a href={config.instagram_url} target="_blank" rel="noopener noreferrer"
-                className="w-8 h-8 flex items-center justify-center rounded-xl text-zinc-400 hover:text-pink-500 hover:bg-pink-50 transition-all">
-                <Instagram size={17} />
-              </a>
-            )}
-            {config.whatsapp_number && (
-              <a href={`https://wa.me/${config.whatsapp_number.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
-                className="w-8 h-8 flex items-center justify-center rounded-xl text-zinc-400 hover:text-green-500 hover:bg-green-50 transition-all">
-                <MessageCircle size={17} />
-              </a>
-            )}
-
-            {/* User menu */}
-            <div className="relative">
-              {user ? (
-                <>
-                  <button
-                    onClick={() => setShowUserMenu(v => !v)}
-                    className="flex items-center gap-1.5 hover:bg-zinc-50 rounded-xl px-2 py-1.5 transition-colors"
-                  >
-                    {user.user_metadata?.avatar_url ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={user.user_metadata.avatar_url} alt="" className="w-7 h-7 rounded-full object-cover ring-2 ring-zinc-100" referrerPolicy="no-referrer" />
-                    ) : (
-                      <div className="w-7 h-7 rounded-full bg-zinc-100 flex items-center justify-center">
-                        <User size={14} className="text-zinc-500" />
-                      </div>
-                    )}
-                    <span className="text-xs font-bold text-zinc-700 hidden sm:block max-w-[64px] truncate">
-                      {user.user_metadata?.full_name?.split(' ')[0] || 'Conta'}
-                    </span>
-                  </button>
-                  <AnimatePresence>
-                    {showUserMenu && (
-                      <>
-                        <div className="fixed inset-0 z-40" onClick={() => setShowUserMenu(false)} />
-                        <motion.div
-                          initial={{ opacity: 0, scale: 0.95, y: -6 }}
-                          animate={{ opacity: 1, scale: 1, y: 0 }}
-                          exit={{ opacity: 0, scale: 0.95, y: -6 }}
-                          transition={{ duration: 0.15 }}
-                          className="absolute right-0 top-full mt-2 w-44 bg-white rounded-2xl shadow-xl border border-zinc-100 py-1.5 z-50 overflow-hidden"
-                        >
-                          <a href={`/loja/${slug}/conta`} className="flex items-center gap-2.5 px-4 py-2.5 text-sm text-zinc-700 hover:bg-zinc-50 transition-colors">
-                            <Package size={14} /> Minha conta
-                          </a>
-                          <div className="mx-3 my-1 border-t border-zinc-100" />
-                          <button
-                            onClick={async () => { await supabase.auth.signOut(); setUser(null); setShowUserMenu(false); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-                          >
-                            <LogOut size={14} /> Sair
-                          </button>
-                        </motion.div>
-                      </>
-                    )}
-                  </AnimatePresence>
-                </>
-              ) : (
-                <a
-                  href={`/loja/${slug}/login?next=/loja/${slug}/conta`}
-                  className="flex items-center gap-1.5 text-xs font-bold text-zinc-600 hover:text-zinc-900 border border-zinc-200 rounded-xl px-3 py-1.5 hover:bg-zinc-50 transition-all"
-                >
-                  <LogIn size={13} /> Entrar
-                </a>
-              )}
-            </div>
-
-            {/* Cart */}
-            <a href={`/loja/${slug}/carrinho`} className="relative w-9 h-9 flex items-center justify-center rounded-xl hover:bg-zinc-100 transition-colors">
-              <ShoppingCart size={19} className="text-zinc-700" />
-              <AnimatePresence>
-                {count > 0 && (
-                  <motion.span
-                    key="badge"
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    exit={{ scale: 0 }}
-                    transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full text-white text-[10px] font-black flex items-center justify-center shadow-sm"
-                    style={{ backgroundColor: color }}
-                  >
-                    {count}
-                  </motion.span>
-                )}
-              </AnimatePresence>
-            </a>
-          </div>
-        </div>
-
-        {/* Mobile search */}
-        <div className="sm:hidden px-4 pb-3">
-          <div className="relative">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 pointer-events-none" />
-            <input
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              placeholder="Buscar produtos..."
-              className="w-full pl-9 pr-4 py-2 text-sm border border-zinc-200/80 rounded-full bg-zinc-50/80 focus:outline-none focus:ring-2 focus:border-transparent focus:bg-white transition-all"
-              style={{ '--tw-ring-color': color + '40' } as React.CSSProperties}
-            />
-            {search && (
-              <button onClick={() => setSearch('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400">
-                <X size={12} />
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
-
-      {/* ── Hero / Banner ──────────────────────────── */}
-      <div className="relative h-56 md:h-[320px] overflow-hidden flex flex-col items-center justify-center text-center px-4">
-        {config.banner_url ? (
+      {/* ── Herói ──────────────────────────────────────────────────────── */}
+      <section id="topo" className="relative overflow-hidden">
+        {d.banner_url ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={config.banner_url}
-              alt="Banner"
+              src={d.banner_url}
+              alt=""
               className="absolute inset-0 w-full h-full object-cover animate-slow-zoom"
             />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/65 via-black/25 to-black/10" />
-            {/* Color tint at the bottom to blend with the page */}
-            <div
-              className="absolute inset-x-0 bottom-0 h-24 opacity-40"
-              style={{ background: `linear-gradient(to top, ${color}40, transparent)` }}
-            />
+            <div className="absolute inset-0 bg-gradient-to-b from-black/45 via-black/55 to-black/75" />
           </>
         ) : (
           <>
-            {/* Gradient fallback */}
             <div
               className="absolute inset-0"
-              style={{ background: `linear-gradient(135deg, ${color}1f 0%, ${color}08 45%, ${color}1a 100%)` }}
+              style={{ background: `linear-gradient(150deg, ${cor}22 0%, ${cor}0a 45%, ${cor}1f 100%)` }}
             />
-            {/* Animated dot grid */}
             <div
-              className="absolute inset-0 opacity-50"
+              className="absolute inset-0 opacity-60"
               style={{
-                backgroundImage: `radial-gradient(circle, ${color}30 1px, transparent 1px)`,
+                backgroundImage: `radial-gradient(circle, ${cor}33 1px, transparent 1px)`,
                 backgroundSize: '28px 28px',
-                maskImage: 'radial-gradient(ellipse 70% 80% at 50% 50%, black 30%, transparent 100%)',
-                WebkitMaskImage: 'radial-gradient(ellipse 70% 80% at 50% 50%, black 30%, transparent 100%)',
+                maskImage: 'radial-gradient(ellipse 70% 80% at 50% 45%, black 25%, transparent 100%)',
+                WebkitMaskImage: 'radial-gradient(ellipse 70% 80% at 50% 45%, black 25%, transparent 100%)',
               }}
             />
-            {/* Aurora blobs */}
-            <div className="absolute top-0 right-0 w-80 h-80 rounded-full opacity-25 blur-3xl -translate-y-1/2 translate-x-1/4 animate-aurora"
-              style={{ backgroundColor: color }} />
-            <div className="absolute bottom-0 left-0 w-64 h-64 rounded-full opacity-20 blur-3xl translate-y-1/2 -translate-x-1/4 animate-aurora-slow"
-              style={{ backgroundColor: color }} />
-            <div className="absolute top-1/2 left-1/2 w-48 h-48 rounded-full opacity-10 blur-3xl -translate-x-1/2 -translate-y-1/2 animate-aurora"
-              style={{ backgroundColor: color, animationDelay: '-5s' }} />
+            <div
+              className="absolute top-0 right-0 w-[26rem] h-[26rem] rounded-full opacity-25 blur-3xl -translate-y-1/3 translate-x-1/4 animate-aurora"
+              style={{ backgroundColor: cor }}
+            />
+            <div
+              className="absolute bottom-0 left-0 w-80 h-80 rounded-full opacity-20 blur-3xl translate-y-1/3 -translate-x-1/4 animate-aurora-slow"
+              style={{ backgroundColor: cor }}
+            />
           </>
         )}
 
-        {/* Text */}
-        <div className="relative z-10 flex flex-col items-center gap-2.5">
-          {config.logo_url && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-              className="relative mb-1"
-            >
-              {/* Glow behind logo */}
-              <div className="absolute inset-0 rounded-2xl blur-xl opacity-40 scale-110" style={{ backgroundColor: color }} />
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={config.logo_url}
-                alt={config.store_name}
-                className="relative w-16 h-16 md:w-20 md:h-20 rounded-2xl object-cover shadow-xl border-2 border-white/50"
-              />
-            </motion.div>
-          )}
-          <motion.h1
-            initial={{ opacity: 0, y: 14 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
-            className="text-3xl md:text-5xl font-black tracking-tight drop-shadow-sm"
-            style={
-              config.banner_url
-                ? { color: '#fff' }
-                : {
-                    background: `linear-gradient(110deg, ${color} 25%, ${color}99 50%, ${color} 75%)`,
-                    backgroundSize: '200% auto',
-                    WebkitBackgroundClip: 'text',
-                    WebkitTextFillColor: 'transparent',
-                    backgroundClip: 'text',
-                    animation: 'shimmer 4s linear infinite',
-                  }
-            }
-          >
-            {config.store_name}
-          </motion.h1>
-          {config.tagline && (
-            <motion.p
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.6, delay: 0.12 }}
-              className={`text-sm md:text-base font-medium max-w-md ${config.banner_url ? 'text-white/85' : 'text-zinc-500'}`}
-            >
-              {config.tagline}
-            </motion.p>
-          )}
-          {config.description && !config.tagline && (
-            <motion.p
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 0.5, delay: 0.15 }}
-              className={`text-xs max-w-sm ${config.banner_url ? 'text-white/70' : 'text-zinc-400'}`}
-            >
-              {config.description}
-            </motion.p>
-          )}
-          {/* Glass badge */}
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.6, delay: 0.25 }}
-            className={`mt-1 inline-flex items-center gap-1.5 text-[11px] font-bold px-3.5 py-1.5 rounded-full backdrop-blur-md border shadow-sm ${
-              config.banner_url
-                ? 'bg-white/15 border-white/25 text-white'
-                : 'bg-white/70 border-white text-zinc-600'
-            }`}
-          >
-            <span className="relative flex w-1.5 h-1.5">
-              <span className="absolute inline-flex w-full h-full rounded-full opacity-75 animate-ping" style={{ backgroundColor: config.banner_url ? '#fff' : color }} />
-              <span className="relative inline-flex w-1.5 h-1.5 rounded-full" style={{ backgroundColor: config.banner_url ? '#fff' : color }} />
-            </span>
-            {products.length} produto{products.length !== 1 ? 's' : ''} disponíve{products.length !== 1 ? 'is' : 'l'}
-          </motion.div>
-        </div>
-      </div>
-
-      {/* ── Categories ─────────────────────────────── */}
-      {displayCategories.length > 0 && (
-        <div className="max-w-6xl mx-auto px-4 pt-7 pb-1">
-          <div
-            ref={catRowRef}
-            className="flex gap-3.5 overflow-x-auto pb-3 pt-1.5 px-1 scrollbar-hide"
-          >
-            {/* Todos */}
-            <button
-              onClick={() => setSelectedCategory('')}
-              className="group/cat shrink-0 w-[110px] h-[140px] md:w-[124px] md:h-[156px] rounded-3xl overflow-hidden relative
-                         transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl"
-              style={!selectedCategory ? {
-                boxShadow: `0 0 0 2.5px ${color}, 0 12px 32px ${color}40`,
-              } : { boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
-            >
-              <div
-                className="absolute inset-0"
-                style={{ background: `linear-gradient(160deg, ${color}, ${color}99)` }}
-              />
-              {/* Dot pattern overlay */}
-              <div
-                className="absolute inset-0 opacity-25"
-                style={{
-                  backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.5) 1px, transparent 1px)',
-                  backgroundSize: '14px 14px',
-                }}
-              />
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5">
-                <div className="w-11 h-11 rounded-2xl bg-white/25 backdrop-blur-sm flex items-center justify-center
-                                group-hover/cat:scale-110 transition-transform duration-300">
-                  <Store size={20} className="text-white" />
-                </div>
-                <div className="text-center">
-                  <p className="text-white text-xs font-black leading-none drop-shadow-sm">Todos</p>
-                  <p className="text-white/75 text-[10px] font-medium mt-1">{products.length} itens</p>
-                </div>
+        <div className="relative max-w-3xl mx-auto px-5 py-20 md:py-28 flex flex-col items-center text-center gap-5">
+          {/* Cartão branco com `object-contain`: serve tanto para um logotipo
+              quadrado quanto para um lockup horizontal, e dá fundo claro para
+              uma arte em traço preto que sumiria sobre o banner. */}
+          {d.logo_url && (
+            <div className="relative">
+              <div className="absolute inset-0 rounded-3xl blur-2xl opacity-40 scale-110" style={{ backgroundColor: cor }} />
+              <div className="relative bg-white/90 backdrop-blur rounded-3xl px-6 py-4 shadow-2xl border border-white">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={d.logo_url}
+                  alt={d.store_name}
+                  className="h-16 md:h-20 w-auto max-w-[260px] md:max-w-[320px] object-contain"
+                />
               </div>
-            </button>
+            </div>
+          )}
 
-            {displayCategories.map(cat => {
-              const isActive = selectedCategory === cat.name;
-              const catCount = products.filter(p => p.category === cat.name).length;
-              return (
-                <button
-                  key={cat.name}
-                  onClick={() => setSelectedCategory(cat.name === selectedCategory ? '' : cat.name)}
-                  className="group/cat shrink-0 w-[110px] h-[140px] md:w-[124px] md:h-[156px] rounded-3xl overflow-hidden relative
-                             transition-all duration-300 hover:-translate-y-1.5 hover:shadow-xl"
-                  style={isActive ? {
-                    boxShadow: `0 0 0 2.5px ${color}, 0 12px 32px ${color}40`,
-                  } : { boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}
-                >
-                  {cat.image_url ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={cat.image_url}
-                        alt={cat.name}
-                        className="absolute inset-0 w-full h-full object-cover
-                                   group-hover/cat:scale-110 transition-transform duration-500 ease-out"
-                      />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
-                      {/* Active color tint */}
-                      {isActive && (
-                        <div className="absolute inset-0 opacity-30 mix-blend-overlay" style={{ backgroundColor: color }} />
-                      )}
-                      <div className="absolute inset-x-0 bottom-0 p-3 text-center">
-                        <p className="text-white text-[11px] md:text-xs font-black leading-tight line-clamp-2 drop-shadow">{cat.name}</p>
-                        <p className="text-white/65 text-[10px] font-medium mt-0.5">{catCount} {catCount === 1 ? 'item' : 'itens'}</p>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div
-                        className="absolute inset-0"
-                        style={{ background: `linear-gradient(160deg, ${cat.color}33, ${cat.color}14 55%, ${cat.color}26)` }}
-                      />
-                      <div className="absolute inset-0 bg-white/55 backdrop-blur-[2px]" />
-                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2.5 px-2">
-                        <div
-                          className="w-11 h-11 rounded-full group-hover/cat:scale-110 transition-transform duration-300"
-                          style={{
-                            background: `linear-gradient(135deg, ${cat.color}, ${cat.color}bb)`,
-                            boxShadow: `0 6px 16px ${cat.color}50`,
-                          }}
-                        />
-                        <div className="text-center">
-                          <p className="text-zinc-800 text-[11px] md:text-xs font-black leading-tight line-clamp-2">{cat.name}</p>
-                          <p className="text-zinc-400 text-[10px] font-medium mt-0.5">{catCount} {catCount === 1 ? 'item' : 'itens'}</p>
-                        </div>
-                      </div>
-                    </>
-                  )}
-                </button>
-              );
-            })}
-          </div>
+          {d.hero_eyebrow && (
+            <span
+              className={`inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[1.5px] px-3.5 py-1.5 rounded-full backdrop-blur-md border ${
+                d.banner_url ? 'bg-white/15 border-white/25 text-white' : 'bg-white/70 border-white text-zinc-600'
+              }`}
+            >
+              <Sparkles size={12} />
+              {d.hero_eyebrow}
+            </span>
+          )}
+
+          <h1
+            className="text-4xl md:text-6xl font-black tracking-tight leading-[1.05]"
+            style={d.banner_url ? { color: '#fff' } : { color: '#18181b' }}
+          >
+            {d.hero_title}
+          </h1>
+
+          {d.tagline && (
+            <p className={`text-lg md:text-2xl font-semibold max-w-xl ${d.banner_url ? 'text-white/90' : 'text-zinc-600'}`}>
+              {d.tagline}
+            </p>
+          )}
+
+          {d.description && (
+            <p className={`text-sm md:text-base leading-relaxed max-w-xl ${d.banner_url ? 'text-white/75' : 'text-zinc-500'}`}>
+              {d.description}
+            </p>
+          )}
+
+          {d.whatsapp_number && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-3 w-full sm:w-auto">
+              <a
+                href={hrefRevendedora}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="group inline-flex items-center justify-center gap-2 text-sm font-black text-white px-7 py-3.5 rounded-2xl shadow-lg hover:shadow-xl hover:-translate-y-0.5 active:scale-95 transition-all"
+                style={{ background: `linear-gradient(135deg, ${cor}, ${cor}bb)`, boxShadow: `0 10px 30px ${cor}45` }}
+              >
+                {d.cta_revendedora_label}
+                <ArrowRight size={16} className="group-hover:translate-x-0.5 transition-transform" />
+              </a>
+              <a
+                href={hrefCliente}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center justify-center gap-2 text-sm font-bold px-7 py-3.5 rounded-2xl border backdrop-blur-md transition-all active:scale-95 ${
+                  d.banner_url
+                    ? 'bg-white/10 border-white/30 text-white hover:bg-white/20'
+                    : 'bg-white border-zinc-200 text-zinc-700 hover:border-zinc-300 hover:bg-zinc-50'
+                }`}
+              >
+                <MessageCircle size={16} />
+                {d.cta_cliente_label}
+              </a>
+            </div>
+          )}
         </div>
+      </section>
+
+      {/* ── Como funciona o consignado ─────────────────────────────────── */}
+      {temPassos && (
+        <section id="como-funciona" className="max-w-6xl mx-auto px-5 py-16 md:py-24 scroll-mt-20">
+          <Reveal className="text-center max-w-2xl mx-auto mb-12">
+            <TituloSecao titulo={d.consignado_title || 'Como funciona'} subtitulo={d.consignado_subtitle} cor={cor} />
+          </Reveal>
+
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {d.consignado_steps.map((passo, i) => (
+              <Reveal key={i} delay={i * 0.08}>
+                <div className="relative h-full bg-white rounded-3xl border border-zinc-200/80 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+                  <div
+                    className="w-11 h-11 rounded-2xl flex items-center justify-center text-white font-black text-base mb-4 shadow-md"
+                    style={{ background: `linear-gradient(135deg, ${cor}, ${cor}bb)`, boxShadow: `0 8px 20px ${cor}3a` }}
+                  >
+                    {i + 1}
+                  </div>
+                  <h3 className="text-[15px] font-black text-zinc-900 mb-2 leading-snug">{passo.title}</h3>
+                  <p className="text-[13px] leading-relaxed text-zinc-500">{passo.text}</p>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </section>
       )}
 
-      {/* ── Products ───────────────────────────────── */}
-      <main className="max-w-6xl mx-auto px-4 py-6">
-        {/* Results header */}
-        <div className="flex items-center justify-between mb-5">
-          <div className="flex items-center gap-2.5">
-            <div className="w-1 h-5 rounded-full" style={{ background: `linear-gradient(to bottom, ${color}, ${color}55)` }} />
-            {selectedCategory ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-bold text-zinc-700">{selectedCategory}</span>
-                <button
-                  onClick={() => setSelectedCategory('')}
-                  className="inline-flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-700 bg-zinc-100 hover:bg-zinc-200 px-2 py-0.5 rounded-full transition-colors"
+      {/* ── Vantagens de revender ──────────────────────────────────────── */}
+      {temBeneficios && (
+        <section id="beneficios" className="relative scroll-mt-20">
+          <div className="absolute inset-0" style={{ background: `linear-gradient(180deg, transparent, ${cor}0d, transparent)` }} />
+          <div className="relative max-w-6xl mx-auto px-5 py-16 md:py-24">
+            <Reveal className="text-center max-w-2xl mx-auto mb-12">
+              <TituloSecao titulo={d.benefits_title || 'Vantagens'} subtitulo={d.benefits_subtitle} cor={cor} />
+            </Reveal>
+
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {d.benefits.map((beneficio, i) => {
+                const Icone = iconeDoBeneficio(beneficio.icon);
+                return (
+                  <Reveal key={i} delay={(i % 3) * 0.08}>
+                    <div className="h-full bg-white rounded-3xl border border-zinc-200/80 p-6 shadow-sm hover:shadow-lg hover:-translate-y-1 transition-all duration-300">
+                      <div
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center mb-4"
+                        style={{ backgroundColor: `${cor}16`, color: cor }}
+                      >
+                        <Icone size={22} />
+                      </div>
+                      <h3 className="text-[15px] font-black text-zinc-900 mb-2">{beneficio.title}</h3>
+                      <p className="text-[13px] leading-relaxed text-zinc-500">{beneficio.text}</p>
+                    </div>
+                  </Reveal>
+                );
+              })}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ── A loja e quem está por trás ────────────────────────────────── */}
+      {temSobre && (
+        <section id="a-loja" className="max-w-6xl mx-auto px-5 py-16 md:py-24 scroll-mt-20">
+          <div className="grid lg:grid-cols-2 gap-12 items-center">
+            <Reveal>
+              <RetratoDaLoja
+                imagem={d.about_image_url}
+                logo={d.logo_url}
+                nome={d.store_name}
+                cor={cor}
+              />
+            </Reveal>
+
+            <Reveal delay={0.1} className="space-y-6">
+              <TituloSecao titulo={d.about_title || 'A loja'} cor={cor} alinhamento="esquerda" />
+
+              {d.about_text && (
+                <div className="space-y-4">
+                  {d.about_text.split('\n').filter(p => p.trim()).map((paragrafo, i) => (
+                    <p key={i} className="text-[15px] leading-relaxed text-zinc-500">{paragrafo}</p>
+                  ))}
+                </div>
+              )}
+
+              {(d.owner_quote || d.owner_name) && (
+                <div
+                  className="relative rounded-3xl p-6 border"
+                  style={{ backgroundColor: `${cor}0c`, borderColor: `${cor}2a` }}
                 >
-                  <X size={10} /> limpar
-                </button>
+                  <Quote size={26} className="absolute top-5 right-5 opacity-15" style={{ color: cor }} />
+                  {d.owner_quote && (
+                    <p className="text-[15px] italic leading-relaxed text-zinc-700 mb-5">“{d.owner_quote}”</p>
+                  )}
+                  <div className="flex items-center gap-3">
+                    {d.owner_photo_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img
+                        src={d.owner_photo_url}
+                        alt={d.owner_name}
+                        className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md"
+                      />
+                    ) : (
+                      <div
+                        className="w-12 h-12 rounded-full flex items-center justify-center text-white font-black shadow-md"
+                        style={{ background: `linear-gradient(135deg, ${cor}, ${cor}bb)` }}
+                      >
+                        {(d.owner_name || d.store_name).charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    <div>
+                      {d.owner_name && <p className="text-sm font-black text-zinc-900">{d.owner_name}</p>}
+                      {d.owner_role && <p className="text-xs text-zinc-500">{d.owner_role}</p>}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </Reveal>
+          </div>
+        </section>
+      )}
+
+      {/* ── Perguntas frequentes ───────────────────────────────────────── */}
+      {temFaq && (
+        <section id="perguntas" className="max-w-3xl mx-auto px-5 py-16 md:py-24 scroll-mt-20">
+          <Reveal className="text-center mb-10">
+            <TituloSecao titulo={d.faq_title || 'Perguntas frequentes'} cor={cor} />
+          </Reveal>
+          <Reveal delay={0.08}>
+            <FaqList itens={d.faq} color={cor} />
+          </Reveal>
+        </section>
+      )}
+
+      {/* ── Contato ────────────────────────────────────────────────────── */}
+      <section id="contato" className="px-5 pb-16 md:pb-24 scroll-mt-20">
+        <Reveal className="max-w-5xl mx-auto">
+          <div
+            className="relative overflow-hidden rounded-[2rem] px-6 py-14 md:px-14 text-center"
+            style={{ background: `linear-gradient(135deg, ${cor}, ${cor}cc)` }}
+          >
+            <div
+              className="absolute inset-0 opacity-20"
+              style={{
+                backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.6) 1px, transparent 1px)',
+                backgroundSize: '22px 22px',
+              }}
+            />
+            <div className="absolute -top-16 -right-10 w-64 h-64 rounded-full bg-white/10 blur-3xl" />
+
+            <div className="relative flex flex-col items-center gap-4">
+              <h2 className="text-3xl md:text-4xl font-black text-white tracking-tight">
+                {d.contact_title || 'Vamos conversar?'}
+              </h2>
+              {d.contact_text && (
+                <p className="text-white/85 text-sm md:text-base max-w-lg leading-relaxed">{d.contact_text}</p>
+              )}
+
+              {d.whatsapp_number && (
+                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 mt-3 w-full sm:w-auto">
+                  <a
+                    href={hrefRevendedora}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 text-sm font-black px-7 py-3.5 rounded-2xl bg-white shadow-lg hover:-translate-y-0.5 active:scale-95 transition-all"
+                    style={{ color: cor }}
+                  >
+                    <MessageCircle size={16} />
+                    {d.cta_revendedora_label}
+                  </a>
+                  <a
+                    href={hrefCliente}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center justify-center gap-2 text-sm font-bold px-7 py-3.5 rounded-2xl border border-white/40 text-white bg-white/10 backdrop-blur-md hover:bg-white/20 active:scale-95 transition-all"
+                  >
+                    {d.cta_cliente_label}
+                  </a>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-center gap-x-7 gap-y-2 mt-6 text-[13px] text-white/80">
+                {d.show_address && d.endereco && (
+                  <span className="inline-flex items-center gap-1.5 text-center">
+                    <MapPin size={14} className="shrink-0" /> {d.endereco}
+                  </span>
+                )}
+                {d.telefone && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <Phone size={14} className="shrink-0" /> {d.telefone}
+                  </span>
+                )}
+                {d.instagram_url && (
+                  <a
+                    href={d.instagram_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1.5 hover:text-white transition-colors"
+                  >
+                    <Instagram size={14} className="shrink-0" /> Instagram
+                  </a>
+                )}
               </div>
-            ) : (
-              <span className="text-sm font-bold text-zinc-700">
-                Catálogo <span className="font-medium text-zinc-400">· {filtered.length} produto{filtered.length !== 1 ? 's' : ''}</span>
-              </span>
+            </div>
+          </div>
+        </Reveal>
+      </section>
+
+      {/* ── Rodapé ─────────────────────────────────────────────────────── */}
+      <footer className="relative bg-white/60 backdrop-blur-sm">
+        <div
+          className="absolute inset-x-0 top-0 h-px"
+          style={{ background: `linear-gradient(90deg, transparent, ${cor}45, transparent)` }}
+        />
+        <div className="max-w-6xl mx-auto px-5 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div
+              className="w-7 h-7 rounded-xl flex items-center justify-center text-white text-xs font-black"
+              style={{ background: `linear-gradient(135deg, ${cor}, ${cor}bb)` }}
+            >
+              {d.store_name.charAt(0).toUpperCase()}
+            </div>
+            <span className="font-bold text-zinc-700 text-sm">{d.store_name}</span>
+          </div>
+          <p className="text-xs text-zinc-400 text-center">
+            © {new Date().getFullYear()} {d.store_name} · <span className="text-zinc-300">Powered by NexusStores</span>
+          </p>
+          <div className="flex items-center gap-3">
+            {d.instagram_url && (
+              <a
+                href={d.instagram_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Instagram"
+                className="text-zinc-400 hover:text-pink-500 transition-colors"
+              >
+                <Instagram size={16} />
+              </a>
+            )}
+            {d.whatsapp_number && (
+              <a
+                href={hrefCliente}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="WhatsApp"
+                className="text-zinc-400 hover:text-green-500 transition-colors"
+              >
+                <MessageCircle size={16} />
+              </a>
             )}
           </div>
-          {filtered.length > 0 && (
-            <span className="text-xs text-zinc-400 flex items-center gap-1.5">
-              <SlidersHorizontal size={12} />
-              {filtered.length} {filtered.length !== 1 ? 'resultados' : 'resultado'}
-            </span>
-          )}
         </div>
+      </footer>
 
-        <AnimatePresence mode="wait">
-          {filtered.length === 0 ? (
-            <motion.div
-              key="empty"
-              initial={{ opacity: 0, y: 16 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="py-20 text-center"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-zinc-100 flex items-center justify-center mx-auto mb-4">
-                <Store size={28} className="text-zinc-300" />
-              </div>
-              <p className="text-zinc-500 font-medium mb-1">Nenhum produto encontrado</p>
-              <p className="text-xs text-zinc-400">Tente outro filtro ou busca</p>
-              {(search || selectedCategory) && (
-                <button
-                  onClick={() => { setSearch(''); setSelectedCategory(''); }}
-                  className="mt-4 text-xs font-bold px-4 py-2 rounded-xl border border-zinc-200 hover:bg-zinc-50 transition-colors text-zinc-600"
-                >
-                  Limpar filtros
-                </button>
-              )}
-            </motion.div>
-          ) : (
-            <motion.div
-              key={`grid-${selectedCategory}-${search}`}
-              initial="hidden"
-              animate="visible"
-              variants={{ visible: { transition: { staggerChildren: 0.045 } } }}
-              className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4"
-            >
-              {filtered.map((product, i) => (
-                <motion.div
-                  key={product.sku}
-                  variants={{
-                    hidden: { opacity: 0, y: 20, scale: 0.97 },
-                    visible: {
-                      opacity: 1, y: 0, scale: 1,
-                      transition: {
-                        duration: 0.4,
-                        delay: Math.min(i, 11) * 0.045,
-                        ease: [0.22, 1, 0.36, 1],
-                      },
-                    },
-                  }}
-                >
-                  <ProdutoCard
-                    product={product}
-                    primaryColor={color}
-                    showPrices={config.show_prices}
-                    slug={slug}
-                  />
-                </motion.div>
-              ))}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </main>
-
-      {/* ── Floating WhatsApp ──────────────────────── */}
-      {config.whatsapp_number && (
-        <motion.a
-          initial={{ opacity: 0, scale: 0, y: 20 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ type: 'spring', stiffness: 300, damping: 22, delay: 0.8 }}
-          href={`https://wa.me/${config.whatsapp_number.replace(/\D/g, '')}`}
+      {/* ── WhatsApp flutuante ─────────────────────────────────────────── */}
+      {d.whatsapp_number && (
+        <a
+          href={hrefCliente}
           target="_blank"
           rel="noopener noreferrer"
           aria-label="Falar no WhatsApp"
@@ -657,56 +461,86 @@ function StoreContent({ slug }: { slug: string }) {
                      hover:scale-110 active:scale-95 transition-transform animate-pulse-ring"
         >
           <MessageCircle size={24} />
-        </motion.a>
+        </a>
       )}
-
-      {/* ── Footer ─────────────────────────────────── */}
-      <footer className="mt-10 relative bg-white/60 backdrop-blur-sm">
-        <div
-          className="absolute inset-x-0 top-0 h-px"
-          style={{ background: `linear-gradient(90deg, transparent, ${color}45, transparent)` }}
-        />
-        <div className="max-w-6xl mx-auto px-4 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <div
-              className="w-7 h-7 rounded-xl flex items-center justify-center text-white text-xs font-black"
-              style={{ background: `linear-gradient(135deg, ${color}, ${color}bb)` }}
-            >
-              {config.store_name.charAt(0).toUpperCase()}
-            </div>
-            <span className="font-bold text-zinc-700 text-sm">{config.store_name}</span>
-          </div>
-          <p className="text-xs text-zinc-400">
-            © {new Date().getFullYear()} {config.store_name} · <span className="text-zinc-300">Powered by NexusStores</span>
-          </p>
-          <div className="flex items-center gap-3">
-            {config.instagram_url && (
-              <a href={config.instagram_url} target="_blank" rel="noopener noreferrer"
-                className="text-zinc-400 hover:text-pink-500 transition-colors">
-                <Instagram size={16} />
-              </a>
-            )}
-            {config.whatsapp_number && (
-              <a href={`https://wa.me/${config.whatsapp_number.replace(/\D/g, '')}`} target="_blank" rel="noopener noreferrer"
-                className="text-zinc-400 hover:text-green-500 transition-colors">
-                <MessageCircle size={16} />
-              </a>
-            )}
-          </div>
-        </div>
-      </footer>
     </div>
   );
 }
 
-/* ─── Page Export ────────────────────────────── */
-export default function StorePage({ params }: { params: Promise<{ slug: string }> }) {
-  const [slug, setSlug] = useState('');
-  useEffect(() => { params.then(p => setSlug(p.slug)); }, [params]);
-  if (!slug) return null;
+/* ─── Peças da página ────────────────────────────────────────────────────── */
+
+function TituloSecao({
+  titulo, subtitulo, cor, alinhamento = 'centro',
+}: {
+  titulo: string;
+  subtitulo?: string;
+  cor: string;
+  alinhamento?: 'centro' | 'esquerda';
+}) {
+  const centralizado = alinhamento === 'centro';
   return (
-    <CartProvider slug={slug}>
-      <StoreContent slug={slug} />
-    </CartProvider>
+    <div className={centralizado ? 'flex flex-col items-center' : ''}>
+      <div className="w-12 h-1 rounded-full mb-5" style={{ background: `linear-gradient(90deg, ${cor}, ${cor}55)` }} />
+      <h2 className={`text-3xl md:text-4xl font-black text-zinc-900 tracking-tight ${centralizado ? 'text-center' : ''}`}>
+        {titulo}
+      </h2>
+      {subtitulo && (
+        <p className={`mt-3 text-[15px] leading-relaxed text-zinc-500 ${centralizado ? 'text-center' : ''}`}>
+          {subtitulo}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** Imagem da seção "A loja". Sem foto enviada, monta um cartão com a logo —
+ *  melhor do que um buraco no layout enquanto a loja não manda uma imagem. */
+function RetratoDaLoja({
+  imagem, logo, nome, cor,
+}: {
+  imagem: string;
+  logo: string | null;
+  nome: string;
+  cor: string;
+}) {
+  if (imagem) {
+    return (
+      <div className="relative">
+        <div className="absolute -inset-3 rounded-[2rem] opacity-20 blur-2xl" style={{ backgroundColor: cor }} />
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img
+          src={imagem}
+          alt={nome}
+          className="relative w-full aspect-[4/3] object-cover rounded-[2rem] shadow-xl border border-white"
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="relative w-full aspect-[4/3] rounded-[2rem] overflow-hidden flex items-center justify-center border border-white shadow-xl"
+      style={{ background: `linear-gradient(150deg, ${cor}26, ${cor}0a 55%, ${cor}1f)` }}
+    >
+      <div
+        className="absolute inset-0 opacity-40"
+        style={{
+          backgroundImage: `radial-gradient(circle, ${cor}40 1px, transparent 1px)`,
+          backgroundSize: '24px 24px',
+        }}
+      />
+      <div
+        className="absolute -top-10 -left-6 w-56 h-56 rounded-full opacity-25 blur-3xl animate-aurora"
+        style={{ backgroundColor: cor }}
+      />
+      {logo ? (
+        <div className="relative bg-white/90 backdrop-blur rounded-3xl px-7 py-5 shadow-2xl border border-white">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={logo} alt={nome} className="h-16 w-auto max-w-[240px] object-contain" />
+        </div>
+      ) : (
+        <span className="relative text-5xl font-black" style={{ color: cor }}>{nome.charAt(0).toUpperCase()}</span>
+      )}
+    </div>
   );
 }

@@ -121,6 +121,25 @@ export async function criarVenda(venda: CreateSaleDTO) {
   return buscarVendaPorId(sale.id);
 }
 
+/**
+ * Conta quantas vendas (não canceladas) um cliente já possui.
+ * Usado para identificar "cliente novo" (0 compras) no PDV.
+ */
+export async function contarVendasDoCliente(customerId: number): Promise<number> {
+  const { count, error } = await supabase
+    .from("sales")
+    .select("id", { count: "exact", head: true })
+    .eq("customer_id", customerId)
+    .neq("payment_status", "cancelled");
+
+  if (error) {
+    console.error("Erro ao contar vendas do cliente:", error);
+    return 0;
+  }
+
+  return count || 0;
+}
+
 export async function buscarVendaPorId(id: number) {
   console.log("Buscando venda ID:", id);
 
@@ -145,16 +164,21 @@ export async function buscarVendaPorId(id: number) {
   return data;
 }
 
+export interface FiltrosVendas {
+  busca?: string;   // id da venda (numérico) ou nome do cliente
+  status?: string;  // 'todos' | 'Concluída' | 'Pendente' | 'Cancelada'
+  data?: string;    // 'YYYY-MM-DD' (dia exato, em UTC)
+}
+
 export async function listarVendas(
   pagina: number = 1,
-  itensPorPagina: number = 20
+  itensPorPagina: number = 20,
+  filtros?: FiltrosVendas
 ) {
-  console.log(`Listando vendas - página ${pagina}, ${itensPorPagina} por página`);
-
   const inicio = (pagina - 1) * itensPorPagina;
   const fim = inicio + itensPorPagina - 1;
 
-  const { data, error, count } = await supabase
+  let query = supabase
     .from("sales")
     .select(`
       *,
@@ -164,8 +188,45 @@ export async function listarVendas(
         product:products(sku, name, price, size)
       )
     `, { count: 'exact' })
-    .order("created_at", { ascending: false })
-    .range(inicio, fim);
+    .order("created_at", { ascending: false });
+
+  // Status (mapeia o rótulo da tela para o payment_status)
+  const statusMap: Record<string, string> = {
+    "Concluída": "paid",
+    "Pendente": "pending",
+    "Cancelada": "cancelled",
+  };
+  if (filtros?.status && filtros.status !== "todos" && statusMap[filtros.status]) {
+    query = query.eq("payment_status", statusMap[filtros.status]);
+  }
+
+  // Data (dia exato sobre sale_date, em UTC para bater com a exibição)
+  if (filtros?.data) {
+    query = query
+      .gte("sale_date", `${filtros.data}T00:00:00.000Z`)
+      .lte("sale_date", `${filtros.data}T23:59:59.999Z`);
+  }
+
+  // Busca: número → id da venda; texto → nome do cliente (via lookup de people)
+  const termo = filtros?.busca?.trim();
+  if (termo) {
+    if (/^\d+$/.test(termo)) {
+      query = query.eq("id", Number(termo));
+    } else {
+      const { data: pessoas } = await supabase
+        .from("people")
+        .select("id")
+        .ilike("name", `%${termo}%`)
+        .limit(500);
+      const ids = (pessoas || []).map((p) => p.id);
+      if (ids.length === 0) {
+        return { sales: [], total: 0, pagina, totalPaginas: 0, itensPorPagina };
+      }
+      query = query.in("customer_id", ids);
+    }
+  }
+
+  const { data, error, count } = await query.range(inicio, fim);
 
   if (error) {
     console.error("Erro ao listar vendas:", error);
@@ -232,13 +293,21 @@ export async function atualizarVendaConsignado(
     observation?: string;
     consignado_commission_percent?: number;
     consignado_net_before_commission?: number;
+    settled_at?: string | null;
   }
 ) {
   console.log(`Finalizando consignado da venda ${saleId}`, dados);
 
+  // Registra a data de fechamento quando o consignado é marcado como pago
+  // (usada nos relatórios como a data efetiva da venda). Ao reabrir, limpa.
+  const payload = { ...dados };
+  if (!("settled_at" in payload)) {
+    payload.settled_at = dados.payment_status === "paid" ? new Date().toISOString() : null;
+  }
+
   const { data, error } = await supabase
     .from("sales")
-    .update(dados)
+    .update(payload)
     .eq("id", saleId)
     .select();
 
@@ -248,6 +317,119 @@ export async function atualizarVendaConsignado(
   }
 
   return { success: true, data };
+}
+
+/**
+ * Desfaz o fechamento de um consignado: o status volta para 'pending', a data
+ * de acerto é apagada e o saldo devido (valor antes da comissão) é restaurado.
+ *
+ * Não mexe em estoque, devoluções nem itens da venda — as peças devolvidas no
+ * fechamento continuam devolvidas. O que volta é apenas a cobrança em aberto.
+ *
+ * Roda como transação única no banco (RPC) e só é permitida para administradores;
+ * a checagem de papel está na própria função do Postgres.
+ */
+export async function reabrirConsignado(saleId: number, motivo?: string) {
+  console.log(`Reabrindo consignado da venda ${saleId}`, motivo);
+
+  const { data, error } = await supabase.rpc("reabrir_consignado", {
+    p_sale_id: saleId,
+    p_motivo: motivo?.trim() || null,
+  });
+
+  if (error) {
+    console.error("Erro ao reabrir consignado:", error);
+    throw new Error(error.message);
+  }
+
+  return data as { sale_id: number; saldo_restaurado: number; reaberto_em: string };
+}
+
+export type MetodoPagamento = 'credit_card' | 'debit' | 'cash' | 'pix' | 'consignado';
+
+/**
+ * Corrige o método de pagamento de uma venda já registrada.
+ * - Para consignado: exige data prevista, muda o status para 'pending' e grava
+ *   o marcador "Venda consignada - Pagamento previsto: ..." na observação.
+ * - Saindo de consignado/pendente para método à vista: marca como 'paid' e
+ *   remove o marcador de consignado (senão a venda continuaria sendo tratada
+ *   como consignado pelas telas).
+ * - Toda alteração deixa trilha de auditoria na observação.
+ */
+export async function atualizarMetodoPagamento(
+  saleId: number,
+  novoMetodo: MetodoPagamento,
+  dataPrevistaConsignado?: string // YYYY-MM-DD, obrigatória ao trocar para consignado
+) {
+  const { data: venda, error: fetchError } = await supabase
+    .from("sales")
+    .select("payment_method, payment_status, observation")
+    .eq("id", saleId)
+    .single();
+
+  if (fetchError || !venda) {
+    throw new Error("Venda não encontrada");
+  }
+  if (venda.payment_status === 'cancelled') {
+    throw new Error("Não é possível alterar o método de uma venda cancelada");
+  }
+  if (venda.payment_method === novoMetodo) {
+    throw new Error("A venda já está com esse método de pagamento");
+  }
+
+  const metodoAntigo = venda.payment_method || "não informado";
+  let observation = venda.observation || "";
+  const patch: {
+    payment_method: string;
+    payment_status?: 'paid' | 'pending';
+    observation?: string;
+  } = { payment_method: novoMetodo };
+
+  if (novoMetodo === 'consignado') {
+    if (!dataPrevistaConsignado) {
+      throw new Error("Informe a data prevista de pagamento do consignado");
+    }
+    patch.payment_status = 'pending';
+    if (/Pagamento previsto: \d{4}-\d{2}-\d{2}/.test(observation)) {
+      observation = observation.replace(
+        /Pagamento previsto: \d{4}-\d{2}-\d{2}/,
+        `Pagamento previsto: ${dataPrevistaConsignado}`
+      );
+      if (!observation.includes("Venda consignada")) {
+        observation = `Venda consignada - ${observation}`;
+      }
+    } else {
+      observation = [`Venda consignada - Pagamento previsto: ${dataPrevistaConsignado}`, observation]
+        .filter(Boolean)
+        .join("\n");
+    }
+  } else {
+    // Corrigindo para método à vista: se estava pendente, considera paga
+    if (venda.payment_status === 'pending') {
+      patch.payment_status = 'paid';
+    }
+    // Remove o marcador de consignado da observação
+    observation = observation
+      .replace(/Venda consignada - Pagamento previsto: \d{4}-\d{2}-\d{2}( - )?/g, "")
+      .replace(/Venda consignada/g, "")
+      .trim();
+  }
+
+  patch.observation = [
+    observation,
+    `[MÉTODO ALTERADO em ${new Date().toLocaleDateString('pt-BR')}: ${metodoAntigo} → ${novoMetodo}]`,
+  ].filter(Boolean).join("\n");
+
+  const { error } = await supabase
+    .from("sales")
+    .update(patch)
+    .eq("id", saleId);
+
+  if (error) {
+    throw new Error(`Erro ao alterar método de pagamento: ${error.message}`);
+  }
+
+  return buscarVendaPorId(saleId);
 }
 
 export async function atualizarDataAcertoConsignado(saleId: number, novaData: string) {
@@ -355,6 +537,17 @@ export async function atualizarClienteVenda(saleId: number, customerId: number |
   return { success: true };
 }
 
+// Observação interna da venda — texto livre manual, NÃO impresso na notinha.
+export async function atualizarNotaInterna(saleId: number, note: string | null) {
+  const { error } = await supabase
+    .from("sales")
+    .update({ internal_note: note && note.trim() ? note.trim() : null })
+    .eq("id", saleId);
+
+  if (error) throw error;
+  return { success: true };
+}
+
 export async function atualizarValorVenda(saleId: number, novoValor: number) {
   console.log(`Atualizando valor total da venda ${saleId} para ${novoValor}`);
 
@@ -408,22 +601,67 @@ export async function getResumoVendas(periodo?: { inicio: string; fim: string })
 }
 
 /* =========================
-   DASHBOARD KPIS
+   DASHBOARD: BUSCA ÚNICA DAS VENDAS DO PERÍODO
+   Traz todas as vendas pagas do período com o superconjunto de campos que os
+   agregadores do dashboard precisam. Assim o dashboard faz UMA leitura da
+   tabela sales e todos os indicadores são calculados em memória a partir dela.
 ========================= */
-export async function getDashboardKPIs(periodo: { inicio: string; fim: string }) {
-  console.log("Buscando KPIs do dashboard para o período:", periodo);
-
-  // Busca todas as vendas 'pagas' dentro do período
+export async function fetchDashboardSales(periodo: { inicio: string; fim: string }) {
   const { data, error } = await supabase
     .from("sales")
-    .select("final_amount, id")
+    .select(`
+      id,
+      final_amount,
+      sale_date,
+      operator_id,
+      customer_id,
+      source,
+      payment_method,
+      sale_items (
+        quantity,
+        unit_cost,
+        total_price,
+        products ( sku, name, category, stock_quantity, minimum_stock )
+      ),
+      operator:operators ( id, name, role ),
+      customer:people ( id, name )
+    `)
     .eq("payment_status", "paid")
     .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
+    .lte("sale_date", periodo.fim)
+    .order("sale_date", { ascending: true });
 
   if (error) {
-    console.error("Erro ao buscar dados para KPIs:", error);
+    console.error("Erro ao buscar vendas do dashboard:", error);
     throw new Error(error.message);
+  }
+
+  return data || [];
+}
+
+/* =========================
+   DASHBOARD KPIS
+========================= */
+export async function getDashboardKPIs(
+  periodo: { inicio: string; fim: string },
+  preloaded?: any[]
+) {
+  // Usa os dados já buscados (preloaded) quando disponíveis; senão faz a busca
+  // mínima própria (usado, por ex., para o período anterior na comparação).
+  let data = preloaded;
+  if (!data) {
+    const res = await supabase
+      .from("sales")
+      .select("final_amount, id")
+      .eq("payment_status", "paid")
+      .gte("sale_date", periodo.inicio)
+      .lte("sale_date", periodo.fim);
+
+    if (res.error) {
+      console.error("Erro ao buscar dados para KPIs:", res.error);
+      throw new Error(res.error.message);
+    }
+    data = res.data || [];
   }
 
   if (!data) {
@@ -453,28 +691,11 @@ export async function getDashboardKPIs(periodo: { inicio: string; fim: string })
 /* =========================
    DASHBOARD FINANCIAL PERFORMANCE
 ========================= */
-export async function getFinancialPerformance(periodo: { inicio: string; fim: string }) {
-  console.log("Buscando dados de performance financeira para o período:", periodo);
-
-  const { data, error } = await supabase
-    .from("sales")
-    .select(`
-      sale_date,
-      final_amount,
-      sale_items (
-        quantity,
-        unit_cost
-      )
-    `)
-    .eq("payment_status", "paid")
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim)
-    .order("sale_date", { ascending: true });
-
-  if (error) {
-    console.error("Erro ao buscar dados de performance:", error);
-    throw new Error(error.message);
-  }
+export async function getFinancialPerformance(
+  periodo: { inicio: string; fim: string },
+  preloaded?: any[]
+) {
+  const data = preloaded ?? await fetchDashboardSales(periodo);
 
   if (!data) return [];
 
@@ -505,25 +726,11 @@ export async function getFinancialPerformance(periodo: { inicio: string; fim: st
 /* =========================
    DASHBOARD SALES BY CATEGORY
 ========================= */
-export async function getSalesByCategory(periodo: { inicio: string; fim: string }) {
-  console.log("Buscando dados de vendas por categoria:", periodo);
-
-  const { data: salesData, error: salesError } = await supabase
-    .from("sales")
-    .select(`
-      sale_items (
-        total_price,
-        products ( category )
-      )
-    `)
-    .eq("payment_status", "paid")
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
-
-  if (salesError) {
-    console.error("Erro ao buscar vendas para categorias:", salesError);
-    throw new Error(salesError.message);
-  }
+export async function getSalesByCategory(
+  periodo: { inicio: string; fim: string },
+  preloaded?: any[]
+) {
+  const salesData = preloaded ?? await fetchDashboardSales(periodo);
 
   if (!salesData) return [];
 
@@ -563,20 +770,11 @@ export async function getSalesByCategory(periodo: { inicio: string; fim: string 
 /* =========================
    DASHBOARD SALES BY HOUR
 ========================= */
-export async function getSalesByHour(periodo: { inicio: string; fim: string }) {
-  console.log("Buscando dados de picos de venda por hora:", periodo);
-
-  const { data, error } = await supabase
-    .from("sales")
-    .select("sale_date")
-    .eq("payment_status", "paid")
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
-
-  if (error) {
-    console.error("Erro ao buscar vendas por hora:", error);
-    throw new Error(error.message);
-  }
+export async function getSalesByHour(
+  periodo: { inicio: string; fim: string },
+  preloaded?: any[]
+) {
+  const data = preloaded ?? await fetchDashboardSales(periodo);
 
   if (!data) return [];
 
@@ -610,33 +808,12 @@ export async function getSalesByHour(periodo: { inicio: string; fim: string }) {
 /* =========================
    DASHBOARD TOP PERFORMING PRODUCTS
 ========================= */
-export async function getTopPerformingProducts(periodo: { inicio: string; fim: string }, limit: number = 4) {
-  console.log(`Buscando top ${limit} produtos com melhor performance:`, periodo);
-
-  // 1. Busca as vendas pagas no período, junto com seus itens e detalhes do produto
-  const { data: salesData, error: salesError } = await supabase
-    .from("sales")
-    .select(`
-      sale_items (
-        quantity,
-        total_price,
-        unit_cost,
-        products (
-          sku,
-          name,
-          stock_quantity,
-          minimum_stock
-        )
-      )
-    `)
-    .eq("payment_status", "paid")
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
-
-  if (salesError) {
-    console.error("Erro ao buscar vendas para top produtos:", salesError);
-    throw new Error(salesError.message);
-  }
+export async function getTopPerformingProducts(
+  periodo: { inicio: string; fim: string },
+  limit: number = 4,
+  preloaded?: any[]
+) {
+  const salesData = preloaded ?? await fetchDashboardSales(periodo);
 
   if (!salesData) return [];
 
@@ -718,20 +895,11 @@ export async function getStockRuptureKPI() {
 /* =========================
    DASHBOARD SALES BY OPERATOR
 ========================= */
-export async function getSalesByOperator(periodo: { inicio: string; fim: string }) {
-  const { data, error } = await supabase
-    .from("sales")
-    .select(`
-      final_amount,
-      operator_id,
-      operator:operators(id, name, role)
-    `)
-    .eq("payment_status", "paid")
-    .not("operator_id", "is", null)
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
-
-  if (error) throw new Error(error.message);
+export async function getSalesByOperator(
+  periodo: { inicio: string; fim: string },
+  preloaded?: any[]
+) {
+  const data = preloaded ?? await fetchDashboardSales(periodo);
   if (!data || data.length === 0) return [];
 
   const byOperator: Record<string, {
@@ -760,20 +928,12 @@ export async function getSalesByOperator(periodo: { inicio: string; fim: string 
 /* =========================
    DASHBOARD TOP CLIENTES DO MÊS
 ========================= */
-export async function getTopCustomers(periodo: { inicio: string; fim: string }, limit: number = 5) {
-  const { data, error } = await supabase
-    .from("sales")
-    .select(`
-      final_amount,
-      customer_id,
-      customer:people(id, name)
-    `)
-    .eq("payment_status", "paid")
-    .not("customer_id", "is", null)
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
-
-  if (error) throw new Error(error.message);
+export async function getTopCustomers(
+  periodo: { inicio: string; fim: string },
+  limit: number = 5,
+  preloaded?: any[]
+) {
+  const data = preloaded ?? await fetchDashboardSales(periodo);
   if (!data || data.length === 0) return [];
 
   const byCustomer: Record<number, { id: number; nome: string; vendas: number; faturamento: number }> = {};
@@ -791,6 +951,69 @@ export async function getTopCustomers(periodo: { inicio: string; fim: string }, 
   return Object.values(byCustomer)
     .sort((a, b) => b.faturamento - a.faturamento)
     .slice(0, limit);
+}
+
+/* =========================
+   DASHBOARD: VENDAS POR ORIGEM (loja física x site)
+========================= */
+export async function getSalesBySource(
+  periodo: { inicio: string; fim: string },
+  preloaded?: any[]
+) {
+  const data = preloaded ?? await fetchDashboardSales(periodo);
+
+  const resultado = {
+    loja: { vendas: 0, faturamento: 0 },
+    site: { vendas: 0, faturamento: 0 },
+  };
+
+  (data || []).forEach((s: any) => {
+    // Vendas do site marcam source='site'; PDV/loja física fica sem source.
+    const bucket = s.source === "site" ? resultado.site : resultado.loja;
+    bucket.vendas++;
+    bucket.faturamento += s.final_amount || 0;
+  });
+
+  return resultado;
+}
+
+/* =========================
+   DASHBOARD: VENDAS POR FORMA DE PAGAMENTO
+========================= */
+export async function getSalesByPaymentMethod(
+  periodo: { inicio: string; fim: string },
+  preloaded?: any[]
+) {
+  const data = preloaded ?? await fetchDashboardSales(periodo);
+
+  const labels: Record<string, string> = {
+    credit_card: "Crédito",
+    debit: "Débito",
+    cash: "Dinheiro",
+    pix: "Pix",
+    consignado: "Consignado",
+  };
+  const colors: Record<string, string> = {
+    "Crédito": "#4f46e5",
+    "Débito": "#06b6d4",
+    "Pix": "#10b981",
+    "Dinheiro": "#f59e0b",
+    "Consignado": "#8b5cf6",
+    "Outro": "#71717a",
+  };
+
+  const byMethod: Record<string, { metodo: string; vendas: number; faturamento: number; color: string }> = {};
+
+  (data || []).forEach((s: any) => {
+    const label = labels[s.payment_method] || "Outro";
+    if (!byMethod[label]) {
+      byMethod[label] = { metodo: label, vendas: 0, faturamento: 0, color: colors[label] || "#71717a" };
+    }
+    byMethod[label].vendas++;
+    byMethod[label].faturamento += s.final_amount || 0;
+  });
+
+  return Object.values(byMethod).sort((a, b) => b.faturamento - a.faturamento);
 }
 
 /* =========================
@@ -823,8 +1046,8 @@ export async function getTopProductsByCustomer(
     `)
     .eq("payment_status", "paid")
     .not("customer_id", "is", null)
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
+    // Período considera a data do acerto (settled_at) no consignado; senão a data da venda.
+    .or(`and(settled_at.gte.${periodo.inicio},settled_at.lte.${periodo.fim}),and(settled_at.is.null,sale_date.gte.${periodo.inicio},sale_date.lte.${periodo.fim})`);
 
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) return [];
@@ -923,6 +1146,7 @@ export async function getConsignadosFechados(
     .select(`
       id,
       sale_date,
+      settled_at,
       total_amount,
       final_amount,
       observation,
@@ -933,8 +1157,8 @@ export async function getConsignadosFechados(
     `)
     .eq("payment_status", "paid")
     .or("payment_method.eq.consignado,consignado_net_before_commission.not.is.null")
-    .gte("sale_date", periodo.inicio)
-    .lte("sale_date", periodo.fim);
+    // Período considera a data de fechamento (settled_at) quando existir; senão a data da venda.
+    .or(`and(settled_at.gte.${periodo.inicio},settled_at.lte.${periodo.fim}),and(settled_at.is.null,sale_date.gte.${periodo.inicio},sale_date.lte.${periodo.fim})`);
 
   if (error) throw new Error(error.message);
   if (!data || data.length === 0) return [];
@@ -951,10 +1175,16 @@ export async function getConsignadosFechados(
     const qtdVendida =
       qty?.vendida ??
       (sale.sale_items || []).reduce((s: number, i: any) => s + (i.quantity || 0), 0);
-    const percentualVendas = qtdKit > 0 ? (qtdVendida / qtdKit) * 100 : 0;
+
+    // % de Vendas calculado pelo VALOR de fato vendido (saldo, antes da comissão)
+    // sobre o valor total do kit (total_amount) — não pela quantidade de itens,
+    // pois peças de preços diferentes distorceriam o percentual.
+    const valorKit = sale.total_amount ?? 0;
+    const percentualVendas = valorKit > 0 ? (saldo / valorKit) * 100 : 0;
 
     const dataAceite = extrairDataPrevista(sale.observation);
-    const baseData = (dataAceite || sale.sale_date || "").slice(0, 10); // YYYY-MM-DD
+    // Data efetiva do relatório: fechamento (settled_at) quando houver, senão a data da venda.
+    const baseData = (sale.settled_at || sale.sale_date || "").slice(0, 10); // YYYY-MM-DD
     const [ano, mesNum] = baseData.split("-");
     const mesIdx = parseInt(mesNum || "1", 10) - 1;
     const mes = `${MESES_ABREV[mesIdx] ?? mesNum}/${ano}`;
@@ -966,7 +1196,7 @@ export async function getConsignadosFechados(
       mes,
       mesKey,
       dataAceite,
-      valorKit: sale.total_amount ?? 0,
+      valorKit,
       valorVendas: saldo,
       qtdKit,
       qtdRetornada,

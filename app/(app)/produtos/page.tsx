@@ -1,11 +1,15 @@
 "use client";
 
-import ProdutoModal from "@/components/estoque/ProdutoModal";
+import dynamic from "next/dynamic";
 import PopupConfirmacao from "@/components/estoque/PopupConfirmacao";
 import ToastNotificacao from "@/components/estoque/ToastNotificacao";
-import ImpressaoEtiquetasModal from "@/components/estoque/ImpressaoEtiquetasModal";
-import { listarProdutosPaginado, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
+import { listarProdutosPaginado, buscarProdutoPorSKU, criarProduto, atualizarProduto, deletarProduto } from "@/src/services/product.service";
 import { useState, useEffect, Suspense } from "react";
+
+// Abertos por clique. O modal de produto e o de etiquetas arrastam o jsbarcode
+// junto — carregá-los sob demanda tira essa biblioteca do bundle inicial.
+const ProdutoModal = dynamic(() => import("@/components/estoque/ProdutoModal"), { ssr: false });
+const ImpressaoEtiquetasModal = dynamic(() => import("@/components/estoque/ImpressaoEtiquetasModal"), { ssr: false });
 import { useSearchParams } from "next/navigation";
 import { useDebounce } from "@/src/hooks/useDebounce";
 import { 
@@ -75,7 +79,7 @@ interface ProdutoDB {
   supplier: string | null;
   maximum_stock: number | null;
   localizacao: string | null;
-  imagem: string | null;
+  imagem?: string | null; // ausente nas listagens (carregado só ao editar)
 }
 
 // Função para converter do banco para seu tipo Produto
@@ -374,10 +378,18 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
   };
 
   // Função para abrir modal de EDIÇÃO
-  const abrirEdicao = (produto: Produto) => {
+  // A lista não traz mais a imagem (base64) para ficar leve — buscamos o produto
+  // completo por SKU ao abrir, para o modal ter a imagem sem perder nada ao salvar.
+  const abrirEdicao = async (produto: Produto) => {
     setModoModal("edit");
-    setProdutoParaEditar(produto);
+    setProdutoParaEditar(produto); // abre já com os dados da lista
     setModalAberto(true);
+    try {
+      const completo = await buscarProdutoPorSKU(produto.id);
+      setProdutoParaEditar(converterParaProduto(completo));
+    } catch (e) {
+      console.error("Erro ao carregar produto completo para edição:", e);
+    }
   };
 
   // Função para deletar produto
@@ -642,9 +654,6 @@ const carregarProdutos = async (pagina: number = 1, isManualRefresh = false) => 
           {/* Quick Stats na Lista */}
           <div className="flex justify-between text-[10px] text-zinc-400 px-1">
             <span>{totalProdutos} {totalProdutos === 1 ? 'produto' : 'produtos'}</span>
-            <span>Valor Total: {formatarMoeda(
-              listaProdutos.reduce((acc, p) => acc + (p.preco * p.estoque), 0)
-            )}</span>
           </div>
         </div>
 

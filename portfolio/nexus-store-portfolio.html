@@ -1,0 +1,687 @@
+<title>Nexus Store — Portfólio</title>
+<style>
+  :root{
+    --paper:#F6F7F5; --surface:#FFFFFF; --surface-2:#FBFCFB;
+    --ink:#171A1F; --muted:#5C626E; --faint:#8A909B;
+    --line:#E4E6E2; --line-2:#D2D6D0;
+    --accent:#0A7A4F; --accent-ink:#065F42; --accent-soft:#E7F3EC; --accent-line:#C4E4D2;
+    --indigo:#3B4CC0;
+    --warn:#B45309; --warn-soft:#FBF1E0;
+    --bad:#DC2626; --bad-soft:#FBEBEB;
+    --sans: system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono: ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+    --wrap: 980px;
+    color-scheme: light;
+  }
+  /* Portfólio comercial: identidade em modo claro, fixa em qualquer dispositivo.
+     Os overrides abaixo garantem tema claro mesmo se o visualizador estiver em dark. */
+  :root[data-theme="light"],
+  :root[data-theme="dark"]{
+    --paper:#F6F7F5; --surface:#FFFFFF; --surface-2:#FBFCFB;
+    --ink:#171A1F; --muted:#5C626E; --faint:#8A909B;
+    --line:#E4E6E2; --line-2:#D2D6D0;
+    --accent:#0A7A4F; --accent-ink:#065F42; --accent-soft:#E7F3EC; --accent-line:#C4E4D2;
+    --indigo:#3B4CC0; --warn:#B45309; --warn-soft:#FBF1E0; --bad:#DC2626; --bad-soft:#FBEBEB;
+    color-scheme: light;
+  }
+
+  *{box-sizing:border-box;}
+  html{-webkit-text-size-adjust:100%;}
+  body{
+    margin:0; background:var(--paper); color:var(--ink);
+    font-family:var(--sans); font-size:16px; line-height:1.62;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:var(--wrap); margin:0 auto; padding:0 32px;}
+  h1,h2,h3,h4{margin:0; text-wrap:balance; line-height:1.12;}
+  p{margin:0;}
+  a{color:var(--accent-ink); text-decoration:none;}
+  a:hover{text-decoration:underline;}
+  :focus-visible{outline:2px solid var(--accent); outline-offset:3px; border-radius:3px;}
+  strong{font-weight:700; color:var(--ink);}
+
+  .eyebrow{
+    font-family:var(--mono); font-size:.7rem; font-weight:600;
+    letter-spacing:.2em; text-transform:uppercase; color:var(--accent-ink);
+    display:inline-flex; align-items:center; gap:.6em;
+  }
+  .eyebrow::before{content:""; width:22px; height:1px; background:var(--accent); display:inline-block;}
+  .eyebrow.plain{color:var(--faint);}
+  .eyebrow.plain::before{background:var(--line-2);}
+
+  /* ---------- HERO ---------- */
+  .hero{padding:72px 0 40px; border-bottom:1px solid var(--line);}
+  .hero .brand{
+    font-family:var(--mono); font-size:.72rem; letter-spacing:.32em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:30px;
+  }
+  .hero h1{
+    font-size:clamp(2.6rem,6.5vw,4.4rem); font-weight:800; letter-spacing:-.03em;
+    margin:14px 0 0;
+  }
+  .hero h1 .dot{color:var(--accent);}
+  .hero .thesis{
+    margin-top:22px; max-width:34ch; font-size:clamp(1.05rem,2.2vw,1.32rem);
+    line-height:1.5; color:var(--ink); font-weight:450;
+  }
+  .hero .thesis b{color:var(--accent-ink); font-weight:650;}
+  .chips{display:flex; flex-wrap:wrap; gap:8px; margin-top:30px;}
+  .chip{
+    font-family:var(--mono); font-size:.72rem; letter-spacing:.02em; color:var(--muted);
+    background:var(--surface); border:1px solid var(--line-2); border-radius:999px; padding:6px 12px;
+  }
+
+  /* ---------- SECTION ---------- */
+  section{padding:52px 0; border-bottom:1px solid var(--line);}
+  .sec-head{margin-bottom:30px; max-width:64ch;}
+  .sec-head h2{font-size:clamp(1.55rem,3.4vw,2.1rem); font-weight:800; letter-spacing:-.02em; margin-top:12px;}
+  .sec-head p{margin-top:12px; color:var(--muted); font-size:1.02rem; max-width:62ch;}
+  .lead{color:var(--muted); font-size:1.06rem; max-width:64ch;}
+  .lead b{color:var(--ink);}
+
+  /* ---------- STAT BAND ---------- */
+  .stats{
+    display:grid; grid-template-columns:repeat(4,1fr); gap:1px;
+    background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden;
+  }
+  .stat{background:var(--surface); padding:22px 20px;}
+  .stat .n{font-size:clamp(1.7rem,4vw,2.5rem); font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums; line-height:1;}
+  .stat .n .u{font-size:1rem; font-weight:700; color:var(--accent); margin-left:2px;}
+  .stat .l{margin-top:10px; font-size:.82rem; color:var(--muted); line-height:1.4;}
+
+  /* ---------- MODULE GROUPS ---------- */
+  .group{margin-top:36px;}
+  .group:first-of-type{margin-top:0;}
+  .group > .glabel{
+    font-family:var(--mono); font-size:.74rem; letter-spacing:.14em; text-transform:uppercase;
+    color:var(--ink); font-weight:700; padding-bottom:10px; margin-bottom:18px;
+    border-bottom:1px solid var(--line); display:flex; justify-content:space-between; align-items:baseline;
+  }
+  .group > .glabel .count{color:var(--faint); font-weight:500; letter-spacing:.05em;}
+  .cards{display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:14px;}
+  .card{
+    background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:18px 18px 16px;
+    transition:border-color .16s ease, transform .16s ease;
+  }
+  .card:hover{border-color:var(--accent-line); transform:translateY(-1px);}
+  .card h3{font-size:1.02rem; font-weight:750; letter-spacing:-.01em; display:flex; align-items:center; gap:8px;}
+  .card h3 .star{color:var(--accent); font-size:.78rem;}
+  .card p{margin-top:8px; font-size:.9rem; color:var(--muted); line-height:1.55;}
+  .tags{display:flex; flex-wrap:wrap; gap:6px; margin-top:12px;}
+  .tag{
+    font-family:var(--mono); font-size:.66rem; letter-spacing:.03em; color:var(--accent-ink);
+    background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:5px; padding:3px 7px;
+  }
+  .tag.n{color:var(--muted); background:var(--surface-2); border-color:var(--line-2);}
+
+  /* ---------- DIFERENCIAIS ---------- */
+  .diffs{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  .diff{
+    background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--accent);
+    border-radius:10px; padding:20px 22px;
+  }
+  .diff h3{font-size:1.08rem; font-weight:750; letter-spacing:-.01em;}
+  .diff p{margin-top:9px; color:var(--muted); font-size:.94rem; line-height:1.55;}
+  .diff .k{font-family:var(--mono); font-size:.68rem; letter-spacing:.12em; text-transform:uppercase; color:var(--accent-ink); display:block; margin-bottom:8px;}
+
+  /* ---------- AUDIENCE ---------- */
+  .aud{display:flex; flex-wrap:wrap; gap:9px;}
+  .aud .pill{
+    font-size:.9rem; color:var(--ink); background:var(--surface); border:1px solid var(--line-2);
+    border-radius:999px; padding:9px 15px;
+  }
+  .aud .pill.hl{background:var(--accent-soft); border-color:var(--accent-line); color:var(--accent-ink); font-weight:600;}
+
+  /* ---------- TECH / INTEGRATIONS ---------- */
+  .split{display:grid; grid-template-columns:1fr 1fr; gap:26px;}
+  .panel{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:24px;}
+  .panel h3{font-size:.78rem; font-family:var(--mono); letter-spacing:.14em; text-transform:uppercase; color:var(--ink); margin-bottom:16px;}
+  .rows{display:flex; flex-direction:column; gap:0;}
+  .row{display:flex; gap:14px; align-items:baseline; padding:11px 0; border-top:1px solid var(--line);}
+  .row:first-child{border-top:none;}
+  .row .name{font-weight:650; min-width:130px; font-size:.94rem;}
+  .row .desc{color:var(--muted); font-size:.88rem; line-height:1.45;}
+  .seclist{display:flex; flex-direction:column; gap:12px;}
+  .seclist .item{display:flex; gap:11px; font-size:.92rem; color:var(--muted); line-height:1.5;}
+  .seclist .item::before{content:""; width:7px; height:7px; margin-top:8px; border-radius:2px; background:var(--accent); flex-shrink:0; transform:rotate(45deg);}
+  .seclist .item b{color:var(--ink); font-weight:650;}
+
+  /* ---------- PLANS ---------- */
+  .plans{display:grid; grid-template-columns:repeat(3,1fr); gap:16px;}
+  .plan{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:24px 22px; display:flex; flex-direction:column;}
+  .plan.feat{border-color:var(--accent); box-shadow:0 0 0 1px var(--accent);}
+  .plan .pname{font-family:var(--mono); font-size:.76rem; letter-spacing:.14em; text-transform:uppercase; color:var(--muted);}
+  .plan.feat .pname{color:var(--accent-ink);}
+  .plan .price{margin-top:14px; font-size:1.9rem; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums;}
+  .plan .price .per{font-size:.82rem; font-weight:500; color:var(--faint); letter-spacing:0;}
+  .plan .price.custom{font-size:1.4rem;}
+  .plan .pdesc{margin-top:12px; color:var(--muted); font-size:.9rem; line-height:1.5; flex:1;}
+  .plan .badge{align-self:flex-start; margin-top:14px; font-family:var(--mono); font-size:.64rem; letter-spacing:.08em; text-transform:uppercase; color:var(--accent-ink); background:var(--accent-soft); border:1px solid var(--accent-line); border-radius:5px; padding:3px 8px;}
+  .plannote{margin-top:16px; font-size:.8rem; color:var(--faint);}
+
+  /* ---------- CTA ---------- */
+  .cta{
+    background:var(--ink); color:var(--paper); border-radius:16px; padding:44px 40px;
+    display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:24px;
+  }
+  .cta h2{font-size:clamp(1.6rem,3.2vw,2.2rem); font-weight:800; letter-spacing:-.02em; color:var(--paper); max-width:20ch;}
+  .cta p{margin-top:10px; color:color-mix(in srgb, var(--paper) 66%, transparent); font-size:.98rem; max-width:44ch;}
+  .cta .btn{
+    background:var(--accent); color:#fff; font-weight:700; font-size:.98rem;
+    padding:15px 26px; border-radius:10px; white-space:nowrap;
+  }
+  .cta .btn:hover{text-decoration:none; filter:brightness(1.06);}
+
+  /* ---------- FOOTER ---------- */
+  footer{padding:40px 0 60px;}
+  .foot{display:flex; flex-wrap:wrap; justify-content:space-between; gap:20px; align-items:flex-end;}
+  .foot .contact{font-size:.92rem; color:var(--muted); line-height:1.7;}
+  .foot .contact .ph{color:var(--faint); font-style:italic;}
+  .foot .contact strong{display:block; font-size:1rem; color:var(--ink); margin-bottom:4px; font-style:normal;}
+  .foot .mark{font-family:var(--mono); font-size:.72rem; letter-spacing:.14em; text-transform:uppercase; color:var(--faint); text-align:right;}
+
+  /* ---------- MOCKUPS DE TELA ---------- */
+  .shots{display:grid; gap:22px;}
+  .shot-cap{font-family:var(--mono); font-size:.72rem; letter-spacing:.04em; color:var(--faint); margin-top:10px;}
+  .shot-cap b{color:var(--muted); font-weight:600;}
+  .twoup{display:grid; grid-template-columns:1fr 1fr; gap:22px;}
+
+  .mock{
+    background:var(--surface); border:1px solid var(--line-2); border-radius:12px; overflow:hidden;
+    box-shadow:0 12px 30px -18px rgba(23,26,31,.35);
+  }
+  .mockbar{
+    height:34px; background:var(--surface-2); border-bottom:1px solid var(--line);
+    display:flex; align-items:center; gap:7px; padding:0 14px;
+  }
+  .mockbar i{width:9px; height:9px; border-radius:50%; background:var(--line-2); display:block;}
+  .mockbar i:nth-child(1){background:#E5786F;} .mockbar i:nth-child(2){background:#E7B34A;} .mockbar i:nth-child(3){background:#5FB884;}
+  .mockbar em{
+    font-family:var(--mono); font-style:normal; font-size:.68rem; color:var(--faint);
+    margin-left:10px; letter-spacing:.02em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .mockbody{padding:16px;}
+
+  /* Dashboard mock */
+  .m-kpis{display:grid; grid-template-columns:repeat(3,1fr); gap:10px;}
+  .m-kpi{background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:10px 11px;}
+  .m-kpi .kl{font-size:.6rem; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); font-weight:700;}
+  .m-kpi .kv{font-size:1.05rem; font-weight:800; letter-spacing:-.02em; margin-top:4px; font-variant-numeric:tabular-nums;}
+  .m-kpi .kt{font-size:.6rem; font-weight:700; color:var(--accent); margin-top:2px;}
+  .m-chart{margin-top:12px; background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:12px;}
+  .m-chart .ct{font-size:.62rem; text-transform:uppercase; letter-spacing:.08em; color:var(--faint); font-weight:700; margin-bottom:8px;}
+  .m-lower{display:grid; grid-template-columns:1fr 1.4fr; gap:10px; margin-top:10px;}
+  .m-panel{background:var(--surface-2); border:1px solid var(--line); border-radius:8px; padding:12px; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+  .m-bars{display:flex; align-items:flex-end; gap:7px; height:64px; padding-top:4px;}
+  .m-bars span{flex:1; background:var(--line-2); border-radius:3px 3px 0 0;}
+  .m-bars span.hi{background:var(--accent);}
+  .legend{display:flex; gap:12px; margin-top:8px; flex-wrap:wrap;}
+  .legend b{display:flex; align-items:center; gap:5px; font-size:.6rem; color:var(--muted); font-weight:600;}
+  .legend b::before{content:""; width:8px; height:8px; border-radius:2px; background:var(--accent);}
+  .legend b.i2::before{background:var(--indigo);}
+
+  /* PDV mock */
+  .m-pos{display:grid; grid-template-columns:1.5fr 1fr; gap:12px;}
+  .m-list{display:flex; flex-direction:column; gap:7px;}
+  .m-item{display:flex; align-items:center; gap:9px; background:var(--surface-2); border:1px solid var(--line); border-radius:7px; padding:8px 10px;}
+  .m-item .th{width:22px; height:22px; border-radius:5px; background:var(--accent-soft); border:1px solid var(--accent-line); flex-shrink:0;}
+  .m-item .nm{flex:1; font-size:.72rem; font-weight:600; color:var(--ink);}
+  .m-item .qt{font-family:var(--mono); font-size:.64rem; color:var(--faint);}
+  .m-item .pr{font-family:var(--mono); font-size:.72rem; font-weight:700; color:var(--ink);}
+  .m-total{background:var(--ink); color:#fff; border-radius:8px; padding:14px; display:flex; flex-direction:column; justify-content:space-between;}
+  .m-total .tl{font-size:.6rem; text-transform:uppercase; letter-spacing:.1em; opacity:.6;}
+  .m-total .tv{font-size:1.7rem; font-weight:800; letter-spacing:-.02em; font-variant-numeric:tabular-nums; margin-top:2px;}
+  .m-pays{display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:12px;}
+  .m-pays span{font-size:.6rem; font-weight:700; text-align:center; padding:7px 0; border-radius:6px; background:rgba(255,255,255,.1); color:#fff;}
+  .m-pays span.on{background:var(--accent); color:#fff;}
+
+  /* Store mock */
+  .m-topbar{display:flex; align-items:center; gap:10px; margin-bottom:12px;}
+  .m-logo{width:26px; height:26px; border-radius:7px; background:var(--accent);}
+  .m-search{flex:1; height:26px; border-radius:999px; background:var(--surface-2); border:1px solid var(--line);}
+  .m-grid{display:grid; grid-template-columns:repeat(3,1fr); gap:9px;}
+  .m-prod .im{aspect-ratio:1/1; border-radius:8px; background:linear-gradient(135deg,var(--accent-soft),var(--surface-2)); border:1px solid var(--line);}
+  .m-prod .pn{font-size:.64rem; color:var(--muted); margin-top:5px; line-height:1.3;}
+  .m-prod .pp{font-family:var(--mono); font-size:.7rem; font-weight:700; color:var(--ink); margin-top:2px;}
+
+  @media (max-width:820px){
+    .stats{grid-template-columns:repeat(2,1fr);}
+    .diffs,.split,.plans,.twoup{grid-template-columns:1fr;}
+    .wrap{padding:0 22px;}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;}}
+
+  /* ---------- PRINT (Salvar como PDF) ---------- */
+  @page{size:A4; margin:14mm;}
+  @media print{
+    :root{
+      --paper:#fff; --surface:#fff; --surface-2:#fff;
+      --ink:#141414; --muted:#3f3f46; --faint:#71717a;
+      --line:#d9dcd7; --line-2:#c7cbc4;
+      --accent:#0A7A4F; --accent-ink:#065F42; --accent-soft:#eef6f1; --accent-line:#c4e4d2;
+    }
+    body{font-size:11.4pt; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .wrap{max-width:none; padding:0;}
+    .hero{padding:0 0 18px;}
+    section{padding:20px 0;}
+    .card:hover{transform:none;}
+    .card,.diff,.panel,.plan,.stat,.group,.sec-head{break-inside:avoid;}
+    .cta{break-inside:avoid; background:#fff; color:#141414; border:2px solid var(--accent);}
+    .cta h2{color:#141414;} .cta p{color:#3f3f46;} .cta .btn{border:1px solid var(--accent);}
+    section.brk{break-before:page;}
+    a{color:var(--ink);}
+  }
+</style>
+
+<div class="wrap">
+
+  <!-- ===================== HERO ===================== -->
+  <header class="hero">
+    <div class="brand">Nexus&nbsp;Store</div>
+    <span class="eyebrow">Plataforma de gestão &amp; vendas · Mini-ERP</span>
+    <h1>Todo o seu negócio<br>em um só sistema<span class="dot">.</span></h1>
+    <p class="thesis">O balcão e a loja online no <b>mesmo lugar</b> — estoque, caixa, financeiro e e-commerce integrados para <b>qualquer pequeno negócio que vende</b>.</p>
+    <div class="chips">
+      <span class="chip">PDV + Loja online</span>
+      <span class="chip">Mercado Pago</span>
+      <span class="chip">Melhor Envio</span>
+      <span class="chip">Multiusuário</span>
+      <span class="chip">Consignado</span>
+      <span class="chip">Relatórios &amp; Financeiro</span>
+    </div>
+  </header>
+
+  <!-- ===================== PROPOSTA ===================== -->
+  <section>
+    <p class="lead">A maioria dos pequenos negócios controla vendas, estoque e dinheiro em planilhas e ferramentas soltas que não conversam entre si. A <b>Nexus Store</b> reúne tudo em uma base só: do produto que entra no estoque à venda no balcão ou no site, passando pela conta a pagar e chegando ao relatório do mês. <b>Uma operação inteira, sem remendos.</b></p>
+    <div class="stats" style="margin-top:34px;">
+      <div class="stat"><div class="n">12<span class="u">+</span></div><div class="l">módulos integrados na mesma base de dados</div></div>
+      <div class="stat"><div class="n">2</div><div class="l">frentes de venda: loja física (PDV) e loja online</div></div>
+      <div class="stat"><div class="n">5</div><div class="l">integrações prontas (pagamento, frete, e-mail, IA)</div></div>
+      <div class="stat"><div class="n">6</div><div class="l">relatórios gerenciais com exportação em CSV</div></div>
+    </div>
+  </section>
+
+  <!-- ===================== TELAS ===================== -->
+  <section class="brk">
+    <div class="sec-head">
+      <span class="eyebrow">Telas do sistema</span>
+      <h2>Bonito de usar — no balcão e no navegador</h2>
+      <p>Interface limpa e rápida, pensada para o dia a dia de quem vende. Abaixo, uma amostra do painel de gestão, do caixa e da loja online.</p>
+    </div>
+
+    <div class="shots">
+      <!-- Dashboard -->
+      <div>
+        <div class="mock" aria-hidden="true">
+          <div class="mockbar"><i></i><i></i><i></i><em>nexus-store · painel de gestão</em></div>
+          <div class="mockbody">
+            <div class="m-kpis">
+              <div class="m-kpi"><div class="kl">Faturamento</div><div class="kv">R$ 48.320</div><div class="kt">▲ 12,4%</div></div>
+              <div class="m-kpi"><div class="kl">Vendas</div><div class="kv">312</div><div class="kt">▲ 8,1%</div></div>
+              <div class="m-kpi"><div class="kl">Ticket médio</div><div class="kv">R$ 154,80</div><div class="kt">▲ 3,9%</div></div>
+            </div>
+            <div class="m-chart">
+              <div class="ct">Receita vs. custo — últimos 30 dias</div>
+              <svg viewBox="0 0 320 84" width="100%" height="84" preserveAspectRatio="none" role="img" aria-label="Gráfico de receita">
+                <defs>
+                  <linearGradient id="ar" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#0A7A4F" stop-opacity="0.22"/>
+                    <stop offset="100%" stop-color="#0A7A4F" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <path d="M0,60 L40,52 L80,57 L120,40 L160,45 L200,28 L240,33 L280,17 L320,23 L320,84 L0,84 Z" fill="url(#ar)"/>
+                <path d="M0,60 L40,52 L80,57 L120,40 L160,45 L200,28 L240,33 L280,17 L320,23" fill="none" stroke="#0A7A4F" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+                <path d="M0,70 L40,66 L80,68 L120,60 L160,63 L200,55 L240,58 L280,50 L320,53" fill="none" stroke="#C7CBC4" stroke-width="1.6" stroke-dasharray="3 3"/>
+              </svg>
+            </div>
+            <div class="m-lower">
+              <div class="m-panel">
+                <svg viewBox="0 0 72 72" width="72" height="72" role="img" aria-label="Mix por categoria">
+                  <circle cx="36" cy="36" r="28" fill="none" stroke="#E4E6E2" stroke-width="12"/>
+                  <circle cx="36" cy="36" r="28" fill="none" stroke="#0A7A4F" stroke-width="12" stroke-dasharray="109 176" transform="rotate(-90 36 36)"/>
+                  <circle cx="36" cy="36" r="28" fill="none" stroke="#3B4CC0" stroke-width="12" stroke-dasharray="39 176" stroke-dashoffset="-109" transform="rotate(-90 36 36)"/>
+                </svg>
+                <div class="legend"><b>Loja</b><b class="i2">Site</b></div>
+              </div>
+              <div class="m-panel" style="align-items:stretch;">
+                <div style="font-size:.62rem;text-transform:uppercase;letter-spacing:.08em;color:var(--faint);font-weight:700;margin-bottom:4px;">Picos por hora</div>
+                <div class="m-bars">
+                  <span style="height:30%"></span><span style="height:45%"></span><span style="height:38%"></span>
+                  <span class="hi" style="height:78%"></span><span style="height:60%"></span><span style="height:52%"></span>
+                  <span class="hi" style="height:88%"></span><span style="height:64%"></span><span style="height:40%"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="shot-cap"><b>Painel de gestão</b> — faturamento, ticket médio, mix loja × site e horários de pico, com comparativo de período.</p>
+      </div>
+
+      <!-- PDV + Loja -->
+      <div class="twoup">
+        <div>
+          <div class="mock" aria-hidden="true">
+            <div class="mockbar"><i></i><i></i><i></i><em>nexus-store · caixa</em></div>
+            <div class="mockbody">
+              <div class="m-pos">
+                <div class="m-list">
+                  <div class="m-item"><span class="th"></span><span class="nm">Vestido midi</span><span class="qt">2×</span><span class="pr">179,80</span></div>
+                  <div class="m-item"><span class="th"></span><span class="nm">Conjunto renda</span><span class="qt">1×</span><span class="pr">129,90</span></div>
+                  <div class="m-item"><span class="th"></span><span class="nm">Meia-calça</span><span class="qt">3×</span><span class="pr">59,70</span></div>
+                  <div class="m-item"><span class="th"></span><span class="nm">Body cavado</span><span class="qt">1×</span><span class="pr">89,90</span></div>
+                </div>
+                <div class="m-total">
+                  <div>
+                    <div class="tl">Total a pagar</div>
+                    <div class="tv">R$ 459,30</div>
+                  </div>
+                  <div class="m-pays">
+                    <span>Dinheiro</span><span class="on">PIX</span><span>Débito</span><span>Crédito</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <p class="shot-cap"><b>PDV / Caixa</b> — venda por leitor, com PIX, cartão e consignado.</p>
+        </div>
+
+        <div>
+          <div class="mock" aria-hidden="true">
+            <div class="mockbar"><i></i><i></i><i></i><em>sualoja.com.br</em></div>
+            <div class="mockbody">
+              <div class="m-topbar"><span class="m-logo"></span><span class="m-search"></span></div>
+              <div class="m-grid">
+                <div class="m-prod"><div class="im"></div><div class="pn">Vestido midi</div><div class="pp">R$ 89,90</div></div>
+                <div class="m-prod"><div class="im"></div><div class="pn">Conjunto renda</div><div class="pp">R$ 129,90</div></div>
+                <div class="m-prod"><div class="im"></div><div class="pn">Body cavado</div><div class="pp">R$ 89,90</div></div>
+                <div class="m-prod"><div class="im"></div><div class="pn">Kimono seda</div><div class="pp">R$ 159,90</div></div>
+                <div class="m-prod"><div class="im"></div><div class="pn">Meia-calça</div><div class="pp">R$ 19,90</div></div>
+                <div class="m-prod"><div class="im"></div><div class="pn">Robe plush</div><div class="pp">R$ 119,90</div></div>
+              </div>
+            </div>
+          </div>
+          <p class="shot-cap"><b>Loja online</b> — vitrine com a sua marca, busca e carrinho.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== MÓDULOS ===================== -->
+  <section class="brk">
+    <div class="sec-head">
+      <span class="eyebrow">O que a Nexus Store faz</span>
+      <h2>Um módulo para cada parte da operação</h2>
+      <p>Cada área trabalha sozinha e conversa com as outras. A venda baixa o estoque, o recebimento de mercadoria gera a conta a pagar, e tudo aparece no mesmo painel.</p>
+    </div>
+
+    <div class="group">
+      <div class="glabel">Operação de vendas <span class="count">3 módulos</span></div>
+      <div class="cards">
+        <div class="card">
+          <h3>PDV · Caixa</h3>
+          <p>Venda rápida por leitor de código de barras, SKU ou nome, com cadastro na hora de produto novo. Dinheiro, PIX, débito, crédito e consignado, com recibo para impressão.</p>
+          <div class="tags"><span class="tag">Multi-pagamento</span><span class="tag">Cadastro rápido</span><span class="tag">Autorização por PIN</span></div>
+        </div>
+        <div class="card">
+          <h3>Vendas &amp; Devoluções</h3>
+          <p>Histórico completo com busca e filtros. Cancelamento com estorno automático ao estoque, devoluções e trocas parciais, e correção de forma de pagamento com rastro de auditoria.</p>
+          <div class="tags"><span class="tag">Troca / devolução</span><span class="tag">Estorno ao estoque</span></div>
+        </div>
+        <div class="card">
+          <h3>Consignado <span class="star">★</span></h3>
+          <p>Ciclo completo de consignação: saída do balcão, acompanhamento do que está "na rua", acerto com cálculo de comissão e alertas automáticos de acerto atrasado.</p>
+          <div class="tags"><span class="tag">Diferencial</span><span class="tag">Comissão</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="glabel">Estoque &amp; Compras <span class="count">2 módulos</span></div>
+      <div class="cards">
+        <div class="card">
+          <h3>Produtos &amp; Estoque</h3>
+          <p>Catálogo com custo, preço, categoria, cor, tamanho e localização. Estoque mínimo/máximo, alerta de ruptura e impressão de etiquetas de código de barras em vários formatos.</p>
+          <div class="tags"><span class="tag">Etiquetas de código de barras</span><span class="tag">Alerta de ruptura</span></div>
+        </div>
+        <div class="card">
+          <h3>Compras &amp; Fornecedores</h3>
+          <p>Cadastro de fornecedores e pedidos de compra com fluxo de aprovação. O recebimento da mercadoria atualiza o estoque, recalcula o <b>custo médio</b> e gera a conta a pagar — tudo automático.</p>
+          <div class="tags"><span class="tag">Recebimento → custo médio</span><span class="tag">Gera conta a pagar</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="glabel">Financeiro &amp; Gestão <span class="count">3 módulos</span></div>
+      <div class="cards">
+        <div class="card">
+          <h3>Financeiro</h3>
+          <p>Contas a pagar com parcelas, contas de caixa e banco com saldo, baixas com juros/desconto e estorno. Resumo do que está vencido, vence hoje ou nos próximos dias.</p>
+          <div class="tags"><span class="tag">Caixa &amp; Banco</span><span class="tag">Parcelas</span></div>
+        </div>
+        <div class="card">
+          <h3>Dashboard</h3>
+          <p>Visão executiva: faturamento, ticket médio, ruptura de estoque, mix por categoria, horários de pico, ranking de produtos, operadores e clientes — e loja física × site.</p>
+          <div class="tags"><span class="tag">Comparativo de período</span><span class="tag">Loja × Site</span></div>
+        </div>
+        <div class="card">
+          <h3>Relatórios</h3>
+          <p>Seis relatórios: por cliente, por produto, consignados fechados e "na rua", posição de estoque valorizada e resultado mensal (receita, custo, lucro e margem). Exporta CSV.</p>
+          <div class="tags"><span class="tag">Exporta CSV</span><span class="tag">6 visões</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="glabel">Clientes <span class="count">1 módulo</span></div>
+      <div class="cards">
+        <div class="card">
+          <h3>Clientes · CRM</h3>
+          <p>Cadastro completo com histórico de compras e documentos anexados. Limite de venda por cliente — vendas acima do limite pedem liberação por PIN de gerente.</p>
+          <div class="tags"><span class="tag">Histórico de compras</span><span class="tag">Limite por cliente</span><span class="tag">Documentos</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="glabel">Loja online <span class="count">5 recursos</span></div>
+      <div class="cards">
+        <div class="card">
+          <h3>Vitrine personalizável</h3>
+          <p>Loja pública com cor, banner e categorias da sua marca, busca de produtos, página de produto e links de WhatsApp e Instagram.</p>
+          <div class="tags"><span class="tag">Sua marca</span></div>
+        </div>
+        <div class="card">
+          <h3>Checkout &amp; Pagamento</h3>
+          <p>Pagamento pelo Mercado Pago com repreço no servidor, webhook assinado e confirmação real do pagamento <b>antes</b> de faturar. A venda cai no mesmo painel, marcada como "site".</p>
+          <div class="tags"><span class="tag">Mercado Pago</span><span class="tag">Seguro</span></div>
+        </div>
+        <div class="card">
+          <h3>Frete em tempo real</h3>
+          <p>Cálculo de frete por CEP via Melhor Envio, com configuração de dimensões e regra de frete grátis acima de um valor.</p>
+          <div class="tags"><span class="tag">Melhor Envio</span><span class="tag">Frete grátis</span></div>
+        </div>
+        <div class="card">
+          <h3>Cupons &amp; Descontos</h3>
+          <p>Cupons por porcentagem ou valor fixo, com validade, uso máximo e pedido mínimo, além de descontos automáticos por faixa de valor.</p>
+          <div class="tags"><span class="tag">Promoções</span></div>
+        </div>
+        <div class="card">
+          <h3>Conta &amp; Expedição</h3>
+          <p>Cliente acompanha pedidos e rastreio. Você atualiza o status (preparando, enviado, entregue) com código de rastreio e um e-mail é enviado automaticamente.</p>
+          <div class="tags"><span class="tag">Rastreio</span><span class="tag">E-mail automático</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="group">
+      <div class="glabel">Equipe, configuração &amp; inteligência <span class="count">6 recursos</span></div>
+      <div class="cards">
+        <div class="card">
+          <h3>Usuários &amp; Permissões</h3>
+          <p>Perfis de administrador, gerente e colaborador, com acesso controlado por papel em cada área do sistema.</p>
+          <div class="tags"><span class="tag n">3 perfis</span></div>
+        </div>
+        <div class="card">
+          <h3>Operadores &amp; PIN</h3>
+          <p>Operadores de caixa com PIN e permissões (cancelar venda, dar desconto, processar devolução) e autorização de gerente para exceções.</p>
+          <div class="tags"><span class="tag n">Controle no balcão</span></div>
+        </div>
+        <div class="card">
+          <h3>Configurações</h3>
+          <p>Dados da loja, categorias, formas de pagamento e assinatura, site, frete, descontos e indicadores — tudo autogerenciável, sem depender de suporte.</p>
+          <div class="tags"><span class="tag n">Autogerenciável</span></div>
+        </div>
+        <div class="card">
+          <h3>NexusIA <span class="star">★</span></h3>
+          <p>Assistente com inteligência artificial que responde já sabendo o contexto real da sua loja — como estoque crítico e vendas pendentes.</p>
+          <div class="tags"><span class="tag">Assistente IA</span></div>
+        </div>
+        <div class="card">
+          <h3>Indicadores do site</h3>
+          <p>Analytics próprio de acessos: visitas, dispositivos, localização e páginas mais vistas — anônimo, sem cookies e sem armazenar IP (LGPD).</p>
+          <div class="tags"><span class="tag">Privacidade LGPD</span></div>
+        </div>
+        <div class="card">
+          <h3>Notificações</h3>
+          <p>Alertas automáticos de estoque crítico, consignados atrasados e cadastros desatualizados — que somem sozinhos quando a situação é resolvida.</p>
+          <div class="tags"><span class="tag n">Automático</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== DIFERENCIAIS ===================== -->
+  <section class="brk">
+    <div class="sec-head">
+      <span class="eyebrow">Por que a Nexus Store é diferente</span>
+      <h2>O que sistemas de prateleira não entregam</h2>
+    </div>
+    <div class="diffs">
+      <div class="diff">
+        <span class="k">Físico + online, base única</span>
+        <h3>Balcão e site na mesma operação</h3>
+        <p>As mesmas tabelas de produto, estoque e venda alimentam o PDV e a loja online. A venda do site entra no mesmo dashboard, marcada por origem — sem exportar, importar ou conciliar nada.</p>
+      </div>
+      <div class="diff">
+        <span class="k">Consignação de ponta a ponta</span>
+        <h3>Consignado que funciona de verdade</h3>
+        <p>Saída no balcão, acompanhamento do que está na rua, acerto com comissão, devoluções parciais, relatórios dedicados e aviso de atraso. Uma capacidade que quase nenhum sistema pequeno tem.</p>
+      </div>
+      <div class="diff">
+        <span class="k">Integridade de ERP</span>
+        <h3>Números que fecham</h3>
+        <p>Recebimento de mercadoria → custo médio → conta a pagar acontecem em uma única transação no banco de dados. Estoque e financeiro nunca ficam pela metade se algo falhar no meio.</p>
+      </div>
+      <div class="diff">
+        <span class="k">Segurança &amp; privacidade</span>
+        <h3>Confiável por dentro</h3>
+        <p>Preços recalculados no servidor, webhooks de pagamento assinados, PINs que nunca saem do servidor e analytics que não guarda IP nem usa cookies. Segurança que o cliente não vê, mas sente.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PARA QUEM É ===================== -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Para quem é</span>
+      <h2>Feito para escalar com qualquer pequeno negócio</h2>
+      <p>Se você vende — no balcão, pelo WhatsApp ou pela internet — a Nexus Store se adapta. Não é um sistema de um segmento só.</p>
+    </div>
+    <div class="aud">
+      <span class="pill">Moda &amp; vestuário</span>
+      <span class="pill">Cosméticos &amp; perfumaria</span>
+      <span class="pill">Mercadinhos &amp; conveniência</span>
+      <span class="pill">Pet shops</span>
+      <span class="pill">Papelarias</span>
+      <span class="pill">Calçados &amp; acessórios</span>
+      <span class="pill hl">Revenda &amp; consignação</span>
+      <span class="pill">Distribuidoras pequenas</span>
+      <span class="pill">Prestadores que vendem produtos</span>
+      <span class="pill hl">Qualquer PME que vende</span>
+    </div>
+  </section>
+
+  <!-- ===================== TECNOLOGIA ===================== -->
+  <section class="brk">
+    <div class="sec-head">
+      <span class="eyebrow">Integrações &amp; tecnologia</span>
+      <h2>Construído sobre uma base moderna e segura</h2>
+    </div>
+    <div class="split">
+      <div class="panel">
+        <h3>Integrações prontas</h3>
+        <div class="rows">
+          <div class="row"><span class="name">Mercado Pago</span><span class="desc">Pagamentos online com verificação de aprovação e webhook assinado.</span></div>
+          <div class="row"><span class="name">Melhor Envio</span><span class="desc">Cotação de frete em tempo real por CEP.</span></div>
+          <div class="row"><span class="name">Resend</span><span class="desc">E-mails automáticos de status do pedido, com template da marca.</span></div>
+          <div class="row"><span class="name">Supabase</span><span class="desc">Banco PostgreSQL, login (Google e e-mail) e armazenamento de arquivos.</span></div>
+          <div class="row"><span class="name">Google&nbsp;/&nbsp;Gemini</span><span class="desc">Login social e o assistente NexusIA.</span></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Base tecnológica</h3>
+        <div class="seclist">
+          <div class="item"><span><b>Next.js 16 &amp; React 19</b> — aplicação web rápida e moderna, acessível de qualquer navegador.</span></div>
+          <div class="item"><span><b>PostgreSQL (Supabase)</b> — banco relacional robusto, com operações transacionais que garantem consistência.</span></div>
+          <div class="item"><span><b>TypeScript &amp; Tailwind</b> — código tipado e interface consistente, fáceis de manter e evoluir.</span></div>
+          <div class="item"><span><b>Segurança por padrão</b> — controle de acesso por papel, repreço no servidor e verificação de pagamentos.</span></div>
+          <div class="item"><span><b>LGPD</b> — analytics anônimo, sem cookies e sem armazenar endereço IP.</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== PLANOS ===================== -->
+  <section>
+    <div class="sec-head">
+      <span class="eyebrow">Planos</span>
+      <h2>Comece pequeno, cresça sem trocar de sistema</h2>
+      <p>Assinatura mensal, com escopo ajustável ao tamanho do negócio. Os valores abaixo são uma referência e podem ser personalizados.</p>
+    </div>
+    <div class="plans">
+      <div class="plan">
+        <span class="pname">Starter</span>
+        <div class="price">R$ 199<span class="per">,90 / mês</span></div>
+        <p class="pdesc">Para quem está começando: PDV, estoque, clientes e o essencial da operação de balcão.</p>
+      </div>
+      <div class="plan feat">
+        <span class="pname">Pro</span>
+        <div class="price">R$ 349<span class="per">,90 / mês</span></div>
+        <p class="pdesc">A operação completa: loja online, financeiro, compras, relatórios e consignação.</p>
+        <span class="badge">Mais completo</span>
+      </div>
+      <div class="plan">
+        <span class="pname">Enterprise</span>
+        <div class="price custom">Sob consulta</div>
+        <p class="pdesc">Para operações maiores: necessidades específicas, volume e acompanhamento dedicado.</p>
+      </div>
+    </div>
+    <p class="plannote">Escopo dos planos configurável conforme a necessidade de cada negócio.</p>
+  </section>
+
+  <!-- ===================== CTA ===================== -->
+  <section style="border-bottom:none;">
+    <div class="cta">
+      <div>
+        <h2>Leve a Nexus Store para o seu negócio</h2>
+        <p>Uma demonstração mostra em minutos como o balcão, o estoque e a loja online funcionam juntos.</p>
+      </div>
+      <a class="btn" href="https://wa.me/5551982049463">Falar no WhatsApp</a>
+    </div>
+  </section>
+
+  <!-- ===================== FOOTER ===================== -->
+  <footer id="contato">
+    <div class="foot">
+      <div class="contact">
+        <strong>Nexus Store</strong>
+        Misael Cruz · misaelgomec@gmail.com · (51) 98204-9463<br>
+        Bruno Soares · brunossoares.bfs@gmail.com · (51) 99306-9226
+      </div>
+      <div class="mark">Nexus Store · Mini-ERP<br>Gestão &amp; vendas</div>
+    </div>
+  </footer>
+
+</div>
