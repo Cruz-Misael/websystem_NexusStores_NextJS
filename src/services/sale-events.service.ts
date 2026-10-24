@@ -229,7 +229,7 @@ function agruparDevolucoes(
       chave: `ret-${r.id}`,
       quando: r.created_at,
       tipo: r.type === "troca" ? "troca" : "devolucao",
-      resumo: `${qtd} ${qtd === 1 ? "peça devolvida" : "peças devolvidas"} ao estoque`,
+      resumo: `${qtd} ${qtd === 1 ? "peça devolvida" : "peças devolvidas"}`,
       saiu: [...pecas.values()],
       entrou: [],
       valorDepois: null,
@@ -304,7 +304,23 @@ export async function listarHistoricoVenda(
     .eq("sale_id", saleId)
     .order("created_at", { ascending: false });
 
-  const antigas = ((rets || []) as ReturnBruto[]).filter((r) => !returnsJaContados.has(r.id));
+  // Eventos gravados antes de passarmos a guardar o return_id não têm como ser
+  // amarrados pelo id. Nesses casos vale a coincidência de tempo: evento e
+  // devolução nascem no mesmo fluxo, com segundos de diferença — se houver um
+  // evento de troca/devolução/acerto pertinho, é o mesmo fato, e mostrar os
+  // dois faria a tela repetir a mesma devolução.
+  const JANELA_MESMO_FATO_MS = 2 * 60 * 1000;
+  const momentosDeEvento = (evs || [])
+    .filter((e) => ["troca", "devolucao", "fechamento_consignado"].includes(e.type))
+    .map((e) => Date.parse(e.created_at));
+
+  const jaDescritaPorEvento = (r: ReturnBruto) => {
+    if (returnsJaContados.has(r.id)) return true;
+    const quando = Date.parse(r.created_at);
+    return momentosDeEvento.some((m) => Math.abs(m - quando) <= JANELA_MESMO_FATO_MS);
+  };
+
+  const antigas = ((rets || []) as ReturnBruto[]).filter((r) => !jaDescritaPorEvento(r));
 
   const skus = [...new Set(antigas.flatMap((r) => (r.return_items || []).map((i) => i.product_id)))];
   const nomePorProduto = new Map<number, string>();

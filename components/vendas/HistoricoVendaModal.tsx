@@ -179,8 +179,12 @@ export default function HistoricoVendaModal({ saleId, observacao, onClose }: Pro
                           </span>
                         </div>
 
-                        <ListaPecas titulo="Saíram" pecas={item.saiu} cor="bg-amber-50 text-amber-700" />
-                        <ListaPecas titulo="Entraram" pecas={item.entrou} cor="bg-emerald-50 text-emerald-700" />
+                        <ListaPecas
+                          titulo={item.tipo === "reabertura_consignado" ? "Peças" : "Voltaram para a loja"}
+                          pecas={item.saiu}
+                          cor="bg-amber-50 text-amber-700"
+                        />
+                        <ListaPecas titulo="Levou no lugar" pecas={item.entrou} cor="bg-emerald-50 text-emerald-700" />
 
                         {(item.saldo !== undefined || item.cobrado !== undefined || item.valorDepois != null) && (
                           <div className="mt-3 pt-3 border-t border-zinc-100 grid grid-cols-2 sm:grid-cols-4 gap-3">

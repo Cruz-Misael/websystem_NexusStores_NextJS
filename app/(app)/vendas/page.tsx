@@ -436,8 +436,9 @@ export default function HistoricoVendasCompacto() {
       setAtualizando(true);
 
       // 1. Processar Devoluções
+      let devolucaoCriada: { id?: number } | null = null;
       if (payload.itens.length > 0) {
-        await criarDevolucao({
+        devolucaoCriada = await criarDevolucao({
           vendaId: payload.vendaId,
           itens: payload.itens.map((item: any) => ({
             itemId: item.itemId,
@@ -492,14 +493,22 @@ export default function HistoricoVendasCompacto() {
       await registrarEventoVenda({
         saleId: payload.vendaId,
         tipo: payload.tipo === 'troca' ? 'troca' : 'devolucao',
-        resumo: [
-          saiu.length ? `${saiu.reduce((t: number, i: any) => t + i.qtd, 0)} saíram` : null,
-          entrou.length ? `${entrou.reduce((t: number, i: any) => t + i.qtd, 0)} entraram` : null,
-        ].filter(Boolean).join(' · ') || 'Ajuste de itens',
+        resumo: (() => {
+          const nVoltou = saiu.reduce((t: number, i: any) => t + i.qtd, 0);
+          const nLevou = entrou.reduce((t: number, i: any) => t + i.qtd, 0);
+          const partes = [
+            nVoltou ? `${nVoltou} ${nVoltou === 1 ? 'peça devolvida' : 'peças devolvidas'}` : null,
+            nLevou ? `${nLevou} ${nLevou === 1 ? 'peça levada no lugar' : 'peças levadas no lugar'}` : null,
+          ].filter(Boolean);
+          return partes.join(' · ') || 'Ajuste de itens';
+        })(),
         saiu,
         entrou,
         valorAntes: selecionada?.final_amount ?? null,
         valorDepois: payload.valorFinal ?? null,
+        // Amarra o evento à devolução: sem isto o histórico mostra o mesmo
+        // fato duas vezes, uma por cada fonte.
+        extras: devolucaoCriada?.id ? { return_id: devolucaoCriada.id } : undefined,
       });
 
       setVendas(prev => prev.map(v =>
@@ -558,8 +567,9 @@ export default function HistoricoVendasCompacto() {
       const breakdown: ConsignadoItemBreakdown = { itensOriginais, itensDevolvidos, itensFicaram };
 
       // 1. Processar devolução dos itens não vendidos
+      let devolucaoDoAcerto: { id?: number } | null = null;
       if (payload.itens.length > 0) {
-        await criarDevolucao({
+        devolucaoDoAcerto = await criarDevolucao({
           vendaId: payload.vendaId,
           itens: payload.itens.map((item: any) => ({
             itemId: item.itemId,
@@ -638,6 +648,7 @@ export default function HistoricoVendasCompacto() {
           comissao_percent: pct,
           comissao_valor: saldo * pct / 100,
           cobrado: payload.valorFinal,
+          ...(devolucaoDoAcerto?.id ? { return_id: devolucaoDoAcerto.id } : {}),
         },
       });
 
