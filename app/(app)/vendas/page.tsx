@@ -11,7 +11,8 @@ const HistoricoVendaModal = dynamic(() => import("@/components/vendas/HistoricoV
 import { listarVendas, buscarVendaPorId, atualizarStatusPagamento, atualizarVendaConsignado, atualizarQuantidadeItemVenda, adicionarItemVenda, atualizarValorVenda, atualizarClienteVenda, atualizarDataAcertoConsignado, atualizarMetodoPagamento, atualizarNotaInterna, reabrirConsignado, MetodoPagamento } from "@/src/services/sales.service";
 import { criarDevolucao } from "@/src/services/returns.service";
 import { registrarEventoVenda } from "@/src/services/sale-events.service";
-import { resumoMovimentacao } from "@/src/lib/movimentacao";
+import { contagemExplicada, contagemPecas, resumoMovimentacao } from "@/src/lib/movimentacao";
+import Tamanho from "@/components/ui/Tamanho";
 import { supabase } from "@/src/lib/supabase/client";
 
 const METODO_LABELS: Record<string, string> = {
@@ -1366,11 +1367,18 @@ export default function HistoricoVendasCompacto() {
                 <div className="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
                   <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 flex justify-between items-center">
                     <h3 className="font-semibold text-gray-700 text-xs uppercase tracking-wide">Itens do Pedido</h3>
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs text-gray-500">{selecionada.items?.filter(i => i.quantity > 0).length || 0} itens</span>
-                      <span className="text-xs text-gray-400">·</span>
-                      <span className="text-xs text-gray-500">{selecionada.items?.reduce((acc, i) => acc + (i.quantity > 0 ? i.quantity : 0), 0) || 0} unidades</span>
-                    </div>
+                    <span
+                      className="text-xs text-gray-500"
+                      title={contagemExplicada(
+                        selecionada.items?.reduce((acc, i) => acc + (i.quantity > 0 ? i.quantity : 0), 0) || 0,
+                        selecionada.items?.filter(i => i.quantity > 0).length || 0,
+                      )}
+                    >
+                      {contagemPecas(
+                        selecionada.items?.reduce((acc, i) => acc + (i.quantity > 0 ? i.quantity : 0), 0) || 0,
+                        selecionada.items?.filter(i => i.quantity > 0).length || 0,
+                      )}
+                    </span>
                   </div>
                   <table className="w-full text-left border-collapse">
                     <thead>
@@ -1385,8 +1393,9 @@ export default function HistoricoVendasCompacto() {
                       {selecionada.items?.filter(item => item.quantity > 0).map((item) => (
                         <tr key={item.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50/50">
                           <td className="px-4 py-3">
-                            <p className="font-medium text-gray-800">
-                              {item.product?.name || item.product_name || "Produto não identificado"}
+                            <p className="font-medium text-gray-800 flex items-start gap-1.5">
+                              <Tamanho valor={item.product?.size} />
+                              <span>{item.product?.name || item.product_name || "Produto não identificado"}</span>
                             </p>
                             <p className="text-xs text-gray-400">
                               SKU: {item.product?.sku || item.product_id}

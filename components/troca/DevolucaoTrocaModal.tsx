@@ -19,6 +19,7 @@ import {
   listarProdutosPaginado,
 } from "@/src/services/product.service";
 import { useDebounce } from "@/src/hooks/useDebounce";
+import Tamanho from "@/components/ui/Tamanho";
 import {
   TITULO_ENTROU,
   TITULO_SAIU,
@@ -47,16 +48,6 @@ interface ItemVenda {
   entrouEm?: string;
   /** Quantas linhas desta mesma peça a venda tem (>1 = peça repetida). */
   linhasDaMesmaPeca?: number;
-}
-
-/** Etiqueta do tamanho: o que a conferência física procura primeiro. */
-function Tamanho({ valor }: { valor?: string }) {
-  if (!valor) return null;
-  return (
-    <span className="shrink-0 text-[11px] font-black uppercase bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
-      {valor}
-    </span>
-  );
 }
 
 /** "entrou na troca de 20/10" — explica a peça que não veio no kit original. */
