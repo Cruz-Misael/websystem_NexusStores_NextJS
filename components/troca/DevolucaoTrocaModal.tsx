@@ -256,8 +256,10 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
             : "Produto não encontrado."
         );
       }
-    } catch {
-      setMensagemErro("Erro na busca.");
+    } catch (e) {
+      // A mensagem do serviço diz o que houve (cadastro duplicado, por
+      // exemplo). "Erro na busca" sozinho mandava a pessoa adivinhar.
+      setMensagemErro(e instanceof Error ? e.message : "Erro na busca.");
     } finally {
       setTimeout(() => { lockBip.current = false; }, 400);
     }

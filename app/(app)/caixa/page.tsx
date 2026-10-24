@@ -452,7 +452,7 @@ export default function CaixaPDVPro() {
       setCadastroRapido({ nome: "", preco: "", estoque: 1, tamanho: "" });
     } catch (error) {
       console.error("Erro ao buscar produto:", error);
-      mostrarToast("Erro ao buscar produto", "erro");
+      mostrarToast(error instanceof Error ? error.message : "Erro ao buscar produto", "erro");
     } finally {
       setBuscandoProduto(false);
       // Garante que o foco volte após a limpeza do estado

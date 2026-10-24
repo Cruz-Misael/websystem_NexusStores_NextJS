@@ -70,20 +70,39 @@ export async function buscarProdutoPorSKU(sku: number) {
   return data;
 }
 
+/**
+ * Acha o produto pelo código de barras ou pelo SKU.
+ *
+ * O cadastro tem códigos de barras repetidos — o mesmo número em duas fichas,
+ * normalmente uma ativa e outra desativada que ficou para trás. Pedir uma
+ * linha só ao banco fazia a bipagem falhar com "erro na busca" justamente
+ * nesses produtos, enquanto todos os outros funcionavam.
+ *
+ * Com mais de uma ficha, vale a que está ativa. Se houver duas ATIVAS com o
+ * mesmo código, aí não dá para escolher no lugar de quem está no balcão: a
+ * peça errada entraria na venda em silêncio, então o erro é explícito e diz o
+ * que arrumar.
+ */
 export async function buscarProdutoPorBarcodeOuSKU(codigo: string) {
-  console.log("Buscando produto por código/SKU:", codigo);
-
-  // Tenta por SKU (se for número)
   const skuNum = parseInt(codigo);
-  
+
   const { data, error } = await supabase
     .from("products")
     .select("*")
-    .or(`barcode.eq.${codigo}${!isNaN(skuNum) ? `,sku.eq.${skuNum}` : ''}`)
-    .maybeSingle();
+    .or(`barcode.eq.${codigo}${!isNaN(skuNum) ? `,sku.eq.${skuNum}` : ''}`);
 
   if (error) throw error;
-  return data;
+  if (!data || data.length === 0) return null;
+  if (data.length === 1) return data[0];
+
+  const ativos = data.filter((p) => p.is_active);
+  if (ativos.length === 1) return ativos[0];
+  if (ativos.length === 0) return data[0];
+
+  throw new Error(
+    `O código ${codigo} está cadastrado em ${ativos.length} produtos ativos ` +
+    `(SKU ${ativos.map((p) => p.sku).join(", ")}). Corrija o cadastro para saber qual é a peça.`
+  );
 }
 
 export async function listarProdutos() {
