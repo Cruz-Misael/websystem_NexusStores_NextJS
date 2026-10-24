@@ -140,6 +140,42 @@ export async function contarVendasDoCliente(customerId: number): Promise<number>
   return count || 0;
 }
 
+/**
+ * Quanto o cliente ainda deve, somando todas as vendas em aberto.
+ *
+ * É o número que o limite de mercadoria precisa olhar: o teto é por cliente,
+ * não por venda, senão três kits de R$ 2.400 passam por um teto de R$ 2.500
+ * sem que nenhum deles, sozinho, o ultrapasse.
+ *
+ * @param ignorarVendaId venda que o chamador já está recalculando — ela entra
+ *   na conta pelo valor novo, não pelo que está gravado.
+ */
+export async function saldoEmAbertoDoCliente(
+  customerId: number,
+  ignorarVendaId?: number
+): Promise<number> {
+  let query = supabase
+    .from("sales")
+    .select("final_amount")
+    .eq("customer_id", customerId)
+    .eq("payment_status", "pending");
+
+  if (ignorarVendaId !== undefined) query = query.neq("id", ignorarVendaId);
+
+  const { data, error } = await query;
+
+  if (error) {
+    // Sem o saldo não dá para afirmar que a cliente está dentro do teto, e
+    // liberar no escuro é o contrário do que a trava existe para fazer.
+    // Infinito faz a regra pedir autorização sozinha, sem depender de quem
+    // chama lembrar de tratar um caso de erro.
+    console.error("Erro ao somar o saldo em aberto do cliente:", error);
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return (data || []).reduce((total, v) => total + (v.final_amount || 0), 0);
+}
+
 export async function buscarVendaPorId(id: number) {
   console.log("Buscando venda ID:", id);
 
@@ -147,7 +183,7 @@ export async function buscarVendaPorId(id: number) {
     .from("sales")
     .select(`
       *,
-      customer:people(id, name, email, phone),
+      customer:people(id, name, email, phone, sales_limit),
       items:sale_items(
         *,
         product:products(sku, name, price, size)
@@ -182,7 +218,7 @@ export async function listarVendas(
     .from("sales")
     .select(`
       *,
-      customer:people(id, name, email),
+      customer:people(id, name, email, sales_limit),
       items:sale_items(
         *,
         product:products(sku, name, price, size)
