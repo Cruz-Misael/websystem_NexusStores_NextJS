@@ -1578,7 +1578,22 @@ export default function HistoricoVendasCompacto() {
               // SKU e tamanho alimentam a busca por nome do modal, que mostra a
               // mesma ficha do dropdown do caixa (nome, SKU, barras, TAM).
               sku: item.product?.sku ?? item.product_id ?? undefined,
-              tamanho: item.product?.size || undefined
+              tamanho: item.product?.size || undefined,
+              // Só marca quando entrou bem depois da venda: as linhas originais
+              // compartilham a data da venda, e um dia de folga evita apontar
+              // como "troca" um item lançado na mesma tarde.
+              entrouEm:
+                item.created_at &&
+                new Date(item.created_at).getTime() >
+                  new Date(selecionada.sale_date).getTime() + 86400000
+                  ? item.created_at
+                  : undefined,
+              // Quantas linhas desta mesma peça existem na venda — é o que
+              // explica o CONJUNTO BARBIE aparecendo devolvido e em mãos ao
+              // mesmo tempo: são duas peças iguais, não uma contradição.
+              linhasDaMesmaPeca: selecionada.items.filter(
+                (x) => x.product_id === item.product_id
+              ).length,
             }))
           }}
           onClose={() => setModalAberto(false)}

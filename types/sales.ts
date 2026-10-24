@@ -30,6 +30,9 @@ export interface SaleItem {
   product_barcode?: string;
   unit_cost: number;
   discount_per_item: number;
+  // Quando esta peça entrou na venda. Igual à data da venda nas linhas
+  // originais; posterior quando entrou por troca.
+  created_at?: string;
   // Objeto do produto aninhado
   product: NestedProduct;
 }

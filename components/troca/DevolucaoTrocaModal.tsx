@@ -37,6 +37,33 @@ interface ItemVenda {
   codigoBarras: string;
   sku?: number | string;
   tamanho?: string;
+  /** Preenchido quando a peça entrou por troca, depois da venda. */
+  entrouEm?: string;
+  /** Quantas linhas desta mesma peça a venda tem (>1 = peça repetida). */
+  linhasDaMesmaPeca?: number;
+}
+
+/** Etiqueta do tamanho: o que a conferência física procura primeiro. */
+function Tamanho({ valor }: { valor?: string }) {
+  if (!valor) return null;
+  return (
+    <span className="shrink-0 text-[11px] font-black uppercase bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+      {valor}
+    </span>
+  );
+}
+
+/** "entrou na troca de 20/10" — explica a peça que não veio no kit original. */
+function EntrouPorTroca({ quando }: { quando?: string }) {
+  if (!quando) return null;
+  const dia = new Date(quando).toLocaleDateString("pt-BR", {
+    day: "2-digit", month: "2-digit", timeZone: "America/Sao_Paulo",
+  });
+  return (
+    <span className="text-[10px] font-semibold text-violet-600 whitespace-nowrap">
+      entrou na troca de {dia}
+    </span>
+  );
 }
 
 interface NovoItem {
@@ -433,6 +460,13 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
   // Saldo que o cliente deve antes de aplicar o desconto de lucro
   const saldoDevedor = valorTotalCompra - valorTotalRemovido + valorAdicionado;
 
+  // Contagem em PEÇAS, que é como a loja confere: o resto da tela fala em
+  // dinheiro, e a pergunta na hora de bipar é "quantas saíram, quantas
+  // voltaram, quantas ficam".
+  const pecasQueSairam = venda?.itens?.reduce((t, i) => t + i.quantidade, 0) ?? 0;
+  const pecasAdicionadas = itensNovos.reduce((t, i) => t + i.quantidade, 0);
+  const pecasQueFicam = pecasQueSairam - quantidadeRemovida + pecasAdicionadas;
+
   const pctLucro = Math.min(100, Math.max(0, parseFloat(percentualLucro) || 0));
   const valorDescontoLucro = isConsignado ? saldoDevedor * (pctLucro / 100) : 0;
   const valorFinalConsignado = saldoDevedor - valorDescontoLucro;
@@ -519,9 +553,39 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                 </p>
               </div>
             </div>
-            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-zinc-100 rounded-lg transition-colors text-zinc-400">
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-3">
+              {/* Placar em peças, atualizando a cada bipada. */}
+              <div className="hidden sm:flex items-center gap-3 bg-zinc-50 border border-zinc-200 rounded-lg px-3 py-1.5">
+                <div className="text-center">
+                  <p className="text-[9px] font-black text-zinc-400 uppercase tracking-widest leading-none">Saíram</p>
+                  <p className="text-sm font-bold text-zinc-700 leading-tight">{pecasQueSairam}</p>
+                </div>
+                <div className="w-px h-6 bg-zinc-200" />
+                <div className="text-center">
+                  <p className="text-[9px] font-black text-amber-500 uppercase tracking-widest leading-none">Devolvidas</p>
+                  <p className="text-sm font-bold text-amber-600 leading-tight">{quantidadeRemovida}</p>
+                </div>
+                {pecasAdicionadas > 0 && (
+                  <>
+                    <div className="w-px h-6 bg-zinc-200" />
+                    <div className="text-center">
+                      <p className="text-[9px] font-black text-violet-500 uppercase tracking-widest leading-none">Entraram</p>
+                      <p className="text-sm font-bold text-violet-600 leading-tight">{pecasAdicionadas}</p>
+                    </div>
+                  </>
+                )}
+                <div className="w-px h-6 bg-zinc-200" />
+                <div className="text-center">
+                  <p className="text-[9px] font-black text-emerald-500 uppercase tracking-widest leading-none">
+                    {isConsignado ? 'Ficam' : 'Restam'}
+                  </p>
+                  <p className="text-sm font-black text-emerald-600 leading-tight">{pecasQueFicam}</p>
+                </div>
+              </div>
+              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center hover:bg-zinc-100 rounded-lg transition-colors text-zinc-400">
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 flex overflow-hidden">
@@ -577,21 +641,20 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                                 {/* Nome completo em até 2 linhas: a coluna do modal é
                                     mais estreita que a busca do caixa e cortar em
                                     uma linha esconde o fim do nome. */}
-                                <p className="text-sm font-semibold text-zinc-800 line-clamp-2 leading-tight" title={item.nome}>
-                                  {item.nome}
+                                <p className="text-sm font-semibold text-zinc-800 line-clamp-2 leading-tight flex items-start gap-1.5" title={item.nome}>
+                                  <Tamanho valor={item.tamanho} />
+                                  <span>{item.nome}</span>
                                 </p>
                                 <p className="text-[10px] text-zinc-400 font-mono truncate mt-0.5">
                                   {item.sku ? `SKU ${item.sku}` : `Item ${item.id}`}
                                   {item.codigoBarras ? ` · ${item.codigoBarras}` : ''}
                                 </p>
+                                <EntrouPorTroca quando={item.entrouEm} />
                               </div>
                               <div className="shrink-0 text-right">
                                 <p className={`text-sm font-bold ${esgotado ? 'text-zinc-400' : 'text-zinc-900'}`}>
                                   {money(item.precoUnitario)}
                                 </p>
-                                {item.tamanho && (
-                                  <p className="text-[10px] font-medium text-indigo-500 uppercase leading-tight">{item.tamanho}</p>
-                                )}
                                 <p className="text-[10px] text-zinc-400 leading-tight whitespace-nowrap">
                                   {jaMarcado > 0 ? `${jaMarcado}/${item.quantidade} marcada(s)` : `${item.quantidade} un.`}
                                 </p>
@@ -619,12 +682,21 @@ export default function DevolucaoTrocaModal({ venda, onClose, onConfirm, isConsi
                       }`}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-semibold text-zinc-800 line-clamp-2 leading-tight" title={item.nome}>
-                          {item.nome}
-                          {item.tamanho && (
-                            <span className="ml-1.5 text-[10px] font-medium text-indigo-500 uppercase">{item.tamanho}</span>
-                          )}
+                        <p className="text-sm font-semibold text-zinc-800 line-clamp-2 leading-tight flex items-start gap-1.5" title={item.nome}>
+                          <Tamanho valor={item.tamanho} />
+                          <span>{item.nome}</span>
                         </p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <EntrouPorTroca quando={item.entrouEm} />
+                          {(item.linhasDaMesmaPeca ?? 1) > 1 && (
+                            <span
+                              className="text-[10px] font-semibold text-amber-600 whitespace-nowrap"
+                              title="A venda tem mais de uma peça igual a esta. Uma pode já ter sido devolvida — não é erro."
+                            >
+                              esta peça aparece {item.linhasDaMesmaPeca}× na venda
+                            </span>
+                          )}
+                        </div>
                         <p className="text-[10px] text-zinc-400 font-mono truncate mt-0.5">
                           {item.sku ? `SKU ${item.sku} · ` : ''}
                           {item.codigoBarras || item.id} · {item.quantidade} unid. · R$ {item.precoUnitario.toFixed(2)}
