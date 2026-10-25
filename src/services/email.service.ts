@@ -1,5 +1,6 @@
 import { Resend } from 'resend';
 import { supabaseAdmin } from '@/src/lib/supabase/admin';
+import { DEMO_ATIVO, MSG_DESLIGADO_NA_DEMO } from '@/src/lib/demo';
 
 // Último recurso: o que estiver no ambiente. O endereço padrão do Resend
 // (onboarding@resend.dev) só entrega para o dono da conta — serve para testar,
@@ -129,6 +130,8 @@ function buildHtml(params: OrderStatusEmailParams): string {
 }
 
 export async function sendOrderStatusEmail(params: OrderStatusEmailParams): Promise<void> {
+  // Na demonstração os endereços são fictícios e a chave do Resend é a do dono.
+  if (DEMO_ATIVO) return;
   const resend = getResend();
   if (!resend) {
     console.error('RESEND_API_KEY não configurada — e-mail de pedido não enviado.');
@@ -239,6 +242,7 @@ function buildCollectionHtml(params: CollectionEmailParams): string {
  * que nada saiu.
  */
 export async function sendCollectionEmail(params: CollectionEmailParams): Promise<void> {
+  if (DEMO_ATIVO) throw new Error(MSG_DESLIGADO_NA_DEMO.email);
   const resend = getResend();
   if (!resend) throw new Error('RESEND_API_KEY não configurada — nenhum e-mail foi enviado.');
 
@@ -261,6 +265,7 @@ export async function sendCollectionEmail(params: CollectionEmailParams): Promis
  * verificado aparece de forma legível, em vez de virar silêncio.
  */
 export async function sendTestEmail(to: string): Promise<{ from: string; usandoEnderecoDeTeste: boolean }> {
+  if (DEMO_ATIVO) throw new Error(MSG_DESLIGADO_NA_DEMO.email);
   const resend = getResend();
   if (!resend) throw new Error('RESEND_API_KEY não configurada no servidor.');
 

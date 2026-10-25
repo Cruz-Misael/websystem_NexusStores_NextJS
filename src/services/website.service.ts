@@ -1,4 +1,5 @@
 import { supabase } from "@/src/lib/supabase/client";
+import { DEMO_ATIVO, MSG_DESLIGADO_NA_DEMO } from "@/src/lib/demo";
 
 /* ─── Listas editáveis da landing ─────────────────────────────────────────── */
 
@@ -155,6 +156,7 @@ export async function uploadBanner(file: File): Promise<string> {
 /** Sobe uma imagem da landing (banner, foto da loja, retrato da fundadora)
  *  para o bucket público `logos`, que já é o bucket de imagens da marca. */
 export async function uploadImagemSite(file: File, prefixo: string): Promise<string> {
+  if (DEMO_ATIVO) throw new Error(MSG_DESLIGADO_NA_DEMO.upload);
   const ext = file.name.split('.').pop();
   const filePath = `${prefixo}-${Date.now()}.${ext}`;
   const { error } = await supabase.storage.from('logos').upload(filePath, file);

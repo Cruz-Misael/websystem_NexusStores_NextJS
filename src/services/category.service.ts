@@ -1,4 +1,5 @@
 import { supabase } from "@/src/lib/supabase/client";
+import { DEMO_ATIVO, MSG_DESLIGADO_NA_DEMO } from "@/src/lib/demo";
 
 export interface ProductCategory {
   id: string;
@@ -12,6 +13,8 @@ export interface ProductCategory {
 }
 
 export async function uploadCategoryImage(file: File): Promise<string> {
+  // O bucket é público: na demonstração, aberta a qualquer um, viraria hospedagem.
+  if (DEMO_ATIVO) throw new Error(MSG_DESLIGADO_NA_DEMO.upload);
   const ext = file.name.split('.').pop();
   const filePath = `category-${Date.now()}.${ext}`;
   const { error } = await supabase.storage.from('logos').upload(filePath, file);

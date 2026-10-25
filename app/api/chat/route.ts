@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/src/lib/supabase/admin";
 import { requireOperator } from "@/src/lib/supabase/server";
+import { DEMO_ATIVO } from "@/src/lib/demo";
 
 const SYSTEM_PROMPT = `Voce e a Nexus IA, assistente integrada ao NexusStores. Seu papel e ajudar os operadores a entender e usar o sistema e informar sobre a situacao atual da operacao com base nos dados reais da loja.
 
@@ -140,12 +141,35 @@ async function buscarContextoLoja(): Promise<string> {
 const MAX_MESSAGES = 40;
 const MAX_MESSAGE_LENGTH = 4000;
 
+// Na demonstração qualquer visitante conversa, e a chave do Gemini é do dono.
+// O teto é por IP e vive na memória da instância — não é contabilidade exata,
+// é o freio que impede alguém de deixar um script consumindo a cota.
+const DEMO_PERGUNTAS_POR_HORA = 15;
+const perguntasDemo = new Map<string, number[]>();
+
+function estourouTetoDemo(req: NextRequest): boolean {
+  const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim() || "sem-ip";
+  const agora = Date.now();
+  const naUltimaHora = (perguntasDemo.get(ip) ?? []).filter((t) => agora - t < 3_600_000);
+  const estourou = naUltimaHora.length >= DEMO_PERGUNTAS_POR_HORA;
+  if (!estourou) naUltimaHora.push(agora);
+  perguntasDemo.set(ip, naUltimaHora);
+  return estourou;
+}
+
 export async function POST(req: NextRequest) {
   try {
     // O contexto carrega dados internos da operação — apenas operadores ativos
     const auth = await requireOperator();
     if (!auth) {
       return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+    }
+
+    if (DEMO_ATIVO && estourouTetoDemo(req)) {
+      return NextResponse.json(
+        { error: `Na demonstração a Nexus IA responde até ${DEMO_PERGUNTAS_POR_HORA} perguntas por hora. Tente de novo mais tarde.` },
+        { status: 429 }
+      );
     }
 
     const { messages } = await req.json();

@@ -16,6 +16,7 @@ import {
   enviarCobrancas,
   ultimosEmailsPorVenda,
 } from "@/src/lib/cobranca-server";
+import { DEMO_ATIVO } from "@/src/lib/demo";
 
 // A função serverless tem tempo contado e os envios são espaçados para não
 // bater no limite do Resend (~2/s). Com isso cabem uns 50 lembretes por
@@ -46,6 +47,11 @@ async function disparar(req: NextRequest) {
       console.error("CRON_SECRET não configurado — disparo automático de cobrança recusado.");
     }
     return NextResponse.json({ error: "Não autorizado" }, { status: 401 });
+  }
+
+  // O cron é o mesmo em todo deploy; na demonstração as revendedoras são fictícias.
+  if (DEMO_ATIVO) {
+    return NextResponse.json({ ok: true, enviados: 0, motivo: "demonstração: envio de e-mail desligado" });
   }
 
   const settings = await carregarSettings();
