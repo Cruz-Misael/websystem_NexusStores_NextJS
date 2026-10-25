@@ -3,6 +3,10 @@
     {
       "path": "/api/cobrancas/cron",
       "schedule": "0 12 * * *"
+    },
+    {
+      "path": "/api/demo/recarregar",
+      "schedule": "0 6 * * *"
     }
   ]
 }

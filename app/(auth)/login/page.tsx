@@ -15,6 +15,8 @@ import { toast, Toaster } from 'react-hot-toast';
 import { supabase } from '@/lib/supabase/client';
 import { UserService } from '@/services/user.service';
 import { LoginClientLogic } from './LoginClientLogic';
+import { DEMO_ATIVO } from '@/src/lib/demo';
+import { EntrarNaDemo } from '@/components/demo/EntrarNaDemo';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,6 +96,18 @@ export default function LoginPage() {
               Acesse sua conta para gerenciar seu negócio.
             </p>
           </div>
+
+          {DEMO_ATIVO && (
+            <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 space-y-3">
+              <p className="text-sm text-zinc-700">
+                <strong className="text-zinc-900">Só quer conhecer o sistema?</strong> Entre na demonstração,
+                com uma loja de exemplo pronta. Não precisa de cadastro.
+              </p>
+              <EntrarNaDemo className="group w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white py-3 rounded-xl font-black text-xs uppercase tracking-[2px] transition-all disabled:opacity-70">
+                Testar a demonstração
+              </EntrarNaDemo>
+            </div>
+          )}
 
           {/* Social Logins */}
           <div className="grid grid-cols-2 gap-3">

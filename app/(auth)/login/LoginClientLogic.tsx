@@ -15,6 +15,8 @@ export function LoginClientLogic() {
       // Limpa a sessão no cliente (o middleware não consegue fazer isso pelo redirect)
       supabase.auth.signOut();
       toast.error('Seu acesso foi revogado. Entre em contato com o administrador.');
+    } else if (error === 'demo_indisponivel') {
+      toast.error('A demonstração não abriu agora. Tente de novo em instantes.');
     }
   }, [searchParams]);
 

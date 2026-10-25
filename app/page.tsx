@@ -9,6 +9,8 @@ import {
   Building2, ShoppingCart,
   Check, TrendingUp, ChevronDown, Zap,
 } from 'lucide-react';
+import { DEMO_ATIVO } from '@/src/lib/demo';
+import { EntrarNaDemo } from '@/components/demo/EntrarNaDemo';
 
 /* ═══════════════════════════════════════════════
    DATA
@@ -382,13 +384,19 @@ export default function HomePage() {
                 transition={{ duration: 0.7, delay: 0.38 }}
                 className="flex flex-col sm:flex-row gap-3 mb-10"
               >
-                <Link
-                  href="/login"
-                  className="group flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-xs uppercase tracking-[1.8px] px-8 py-4 rounded-2xl shadow-2xl shadow-indigo-900/40 transition-all hover:-translate-y-1"
-                >
-                  Acessar minha loja
-                  <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
-                </Link>
+                {DEMO_ATIVO ? (
+                  <EntrarNaDemo className="group w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-xs uppercase tracking-[1.8px] px-8 py-4 rounded-2xl shadow-2xl shadow-indigo-900/40 transition-all hover:-translate-y-1 disabled:opacity-70">
+                    Testar a demonstração
+                  </EntrarNaDemo>
+                ) : (
+                  <Link
+                    href="/login"
+                    className="group flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-xs uppercase tracking-[1.8px] px-8 py-4 rounded-2xl shadow-2xl shadow-indigo-900/40 transition-all hover:-translate-y-1"
+                  >
+                    Acessar minha loja
+                    <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                  </Link>
+                )}
                 <a
                   href="#funcionalidades"
                   className="flex items-center justify-center gap-2 bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.12] text-white font-semibold text-sm px-8 py-4 rounded-2xl transition-all hover:-translate-y-0.5 backdrop-blur-sm"
@@ -572,12 +580,19 @@ export default function HomePage() {
             </p>
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center mb-8">
+              {DEMO_ATIVO && (
+                <EntrarNaDemo className="group w-full flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-xs uppercase tracking-[2px] px-10 py-4 rounded-2xl shadow-2xl shadow-indigo-900/50 transition-all hover:-translate-y-1 disabled:opacity-70">
+                  Testar a demonstração
+                </EntrarNaDemo>
+              )}
               <Link
                 href="/login"
-                className="group flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-xs uppercase tracking-[2px] px-10 py-4 rounded-2xl shadow-2xl shadow-indigo-900/50 transition-all hover:-translate-y-1"
+                className={DEMO_ATIVO
+                  ? "flex items-center justify-center gap-2 bg-white/[0.06] hover:bg-white/[0.10] border border-white/[0.12] text-white font-semibold text-sm px-10 py-4 rounded-2xl transition-all hover:-translate-y-0.5"
+                  : "group flex items-center justify-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-black text-xs uppercase tracking-[2px] px-10 py-4 rounded-2xl shadow-2xl shadow-indigo-900/50 transition-all hover:-translate-y-1"}
               >
                 Entrar no sistema
-                <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+                {!DEMO_ATIVO && <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />}
               </Link>
             </div>
 

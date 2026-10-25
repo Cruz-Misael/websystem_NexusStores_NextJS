@@ -7,6 +7,7 @@ import { SidebarProvider, useSidebar } from "@/src/contexts/SidebarContext";
 import Sidebar from "@/components/Sidebar";
 import Topbar from "@/components/Topbar";
 import BillingGuard from "@/components/billing/BillingGuard";
+import FaixaDemo from "@/components/demo/FaixaDemo";
 
 // Carregados sob demanda: o modal de planos só abre por clique, e o widget de IA
 // não é crítico para a primeira renderização. Tira ambos do bundle inicial.
@@ -27,6 +28,7 @@ function AppLayoutInner({ children }: { children: React.ReactNode }) {
 
       {/* ml-0 no mobile (sidebar sobrepõe), ml-16/ml-64 no desktop */}
       <div className={`h-screen flex flex-col flex-1 transition-all duration-300 ${collapsed ? "ml-0 md:ml-16" : "ml-0 md:ml-64"}`}>
+        <FaixaDemo />
         <Topbar onOpenPlans={() => setOpenPlans(true)} />
         <BillingGuard>
           <main className="flex-1 overflow-y-auto px-4 md:px-6 pb-6 pt-2 bg-slate-100">

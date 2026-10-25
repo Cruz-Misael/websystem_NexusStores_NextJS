@@ -157,6 +157,11 @@ export default function NexusIA() {
       });
 
       const data = await res.json();
+      // Limite de uso (demonstração): a explicação do servidor vale mais que o erro genérico.
+      if (res.status === 429 && data.error) {
+        setMensagens((prev) => [...prev, { role: "assistant", content: data.error }]);
+        return;
+      }
       if (!res.ok) throw new Error(data.error || "Erro desconhecido");
 
       setMensagens((prev) => [...prev, { role: "assistant", content: data.reply }]);

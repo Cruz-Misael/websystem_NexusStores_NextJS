@@ -41,6 +41,7 @@ import {
   formatarValor,
   linkWhatsapp,
 } from "@/src/lib/cobranca";
+import { DEMO_ATIVO, MSG_DESLIGADO_NA_DEMO } from "@/src/lib/demo";
 
 const PAPEIS_PERMITIDOS = ["admin", "gerente"];
 
@@ -216,6 +217,13 @@ export default function CobrancasPage() {
 
   const cobrarPorWhatsapp = async (c: CobrancaPendente) => {
     if (!c.whatsapp) return;
+
+    // Na demonstração os telefones são fictícios: mostra a mensagem em vez de
+    // abrir uma conversa com um número que pode ser de alguém de verdade.
+    if (DEMO_ATIVO) {
+      toast(`${MSG_DESLIGADO_NA_DEMO.whatsapp}\n\n${mensagemDe(c)}`, { duration: 9000, style: { whiteSpace: "pre-line", maxWidth: 460 } });
+      return;
+    }
 
     // Abre antes de registrar: o clique do usuário é o que autoriza a janela.
     // Registrar primeiro faria o navegador tratar como pop-up e bloquear.
